@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reports - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <h2><i class="bi bi-bar-chart-fill me-2"></i>Reports & Analytics</h2>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs bg-white rounded-top px-3 pt-2" id="reportTabs">
+      <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-revenue">Revenue</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-occupancy">Occupancy</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-customers">Customers</a></li>
+    </ul>
+
+    <div class="tab-content bg-white rounded-bottom shadow-sm p-4">
+      <!-- Revenue Tab -->
+      <div class="tab-pane fade show active" id="tab-revenue">
+        <div class="row g-2 mb-4 align-items-end">
+          <div class="col-md-2">
+            <label class="form-label">From</label>
+            <input type="date" class="form-control" id="rev-from">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">To</label>
+            <input type="date" class="form-control" id="rev-to">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Group By</label>
+            <select class="form-select" id="rev-group">
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+            </select>
+          </div>
+          <div class="col-md-3 d-flex gap-2">
+            <button class="btn btn-primary" id="btn-load-revenue">Load Report</button>
+            <a href="#" class="btn btn-outline-secondary" id="btn-revenue-csv"><i class="bi bi-filetype-csv me-1"></i>CSV</a>
+            <a href="#" class="btn btn-outline-danger" id="btn-revenue-pdf"><i class="bi bi-filetype-pdf me-1"></i>PDF</a>
+          </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="row g-3 mb-4">
+          <div class="col-md-3">
+            <div class="stat-card success">
+              <div class="stat-value" id="rev-total">$0</div>
+              <div class="stat-label">Total Revenue</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div class="stat-value" id="rev-longterm">$0</div>
+              <div class="stat-label">Long Term</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card info">
+              <div class="stat-value" id="rev-eftpos">$0</div>
+              <div class="stat-label">Eftpos</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div class="stat-value" id="rev-cash">$0</div>
+              <div class="stat-label">Cash</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card danger">
+              <div class="stat-value" id="rev-account">$0</div>
+              <div class="stat-label">On Account</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="chart-container mb-4">
+          <canvas id="revenueChart" height="100"></canvas>
+        </div>
+
+        <!-- Table -->
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead>
+              <tr>
+                <th>Period</th><th>Invoices</th><th>Eftpos</th><th>Cash</th>
+                <th>On Account</th><th>Long Term</th><th>Outstanding</th><th>Total</th>
+              </tr>
+            </thead>
+            <tbody id="revenue-tbody">
+              <tr><td colspan="8" class="text-center text-muted">Load a report</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Occupancy Tab -->
+      <div class="tab-pane fade" id="tab-occupancy">
+        <div class="row g-2 mb-4 align-items-end">
+          <div class="col-md-2">
+            <label class="form-label">From</label>
+            <input type="date" class="form-control" id="occ-from">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">To</label>
+            <input type="date" class="form-control" id="occ-to">
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-primary mt-4" id="btn-load-occupancy">Load Report</button>
+          </div>
+        </div>
+
+        <div class="chart-container mb-4">
+          <canvas id="occupancyChart" height="100"></canvas>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead>
+              <tr><th>Date</th><th>Cars In</th><th>Same Day</th><th>Overnight</th><th>Occupancy</th></tr>
+            </thead>
+            <tbody id="occupancy-tbody">
+              <tr><td colspan="5" class="text-center text-muted">Load a report</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Customers Tab -->
+      <div class="tab-pane fade" id="tab-customers">
+        <div class="row g-2 mb-4 align-items-end">
+          <div class="col-md-2">
+            <label class="form-label">From</label>
+            <input type="date" class="form-control" id="cust-from">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">To</label>
+            <input type="date" class="form-control" id="cust-to">
+          </div>
+          <div class="col-md-3 d-flex gap-2">
+            <button class="btn btn-primary mt-4" id="btn-load-customers">Load Report</button>
+            <a href="#" class="btn btn-outline-secondary mt-4" id="btn-customer-csv"><i class="bi bi-filetype-csv me-1"></i>CSV</a>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-12">
+            <div class="form-section-title">Top Customers by Visits</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover">
+                <thead>
+                  <tr><th>#</th><th>Name</th><th>Phone</th><th>Visits</th><th>Total Spent</th><th>Last Visit</th></tr>
+                </thead>
+                <tbody id="top-customers-tbody">
+                  <tr><td colspan="6" class="text-center text-muted">Load a report</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="col-md-12">
+            <div class="form-section-title">Account Customer Usage</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover">
+                <thead>
+                  <tr><th>Company</th><th>Total Visits</th><th>Total Billed</th></tr>
+                </thead>
+                <tbody id="account-usage-tbody">
+                  <tr><td colspan="3" class="text-center text-muted">Load a report</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('reports');
+
+    let revenueChart = null;
+    let occupancyChart = null;
+
+    // Set default date ranges (this month)
+    const now = new Date();
+    const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+
+    ['rev-from','occ-from','cust-from'].forEach(id => document.getElementById(id).value = firstOfMonth);
+    ['rev-to','occ-to','cust-to'].forEach(id => document.getElementById(id).value = todayStr);
+
+    // Revenue report
+    async function loadRevenueReport() {
+      const from = document.getElementById('rev-from').value;
+      const to = document.getElementById('rev-to').value;
+      const group = document.getElementById('rev-group').value;
+
+      const res = await fetch(`/api/reports/revenue?from=${from}&to=${to}&group_by=${group}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById('rev-total').textContent = formatCurrency(data.summary.total_revenue);
+      document.getElementById('rev-longterm').textContent = formatCurrency(data.summary.longterm_total || 0);
+      document.getElementById('rev-eftpos').textContent = formatCurrency(data.summary.eftpos_total);
+      document.getElementById('rev-cash').textContent = formatCurrency(data.summary.cash_total);
+      document.getElementById('rev-account').textContent = formatCurrency(data.summary.on_account_total);
+
+      // Update CSV/PDF links
+      document.getElementById('btn-revenue-csv').href = `/api/reports/revenue/csv?from=${from}&to=${to}`;
+      document.getElementById('btn-revenue-pdf').href = `/api/reports/revenue/pdf?from=${from}&to=${to}`;
+
+      // Table
+      document.getElementById('revenue-tbody').innerHTML = data.revenue.map(r => `
+        <tr>
+          <td class="fw-bold">${r.period}</td>
+          <td>${r.invoices}</td>
+          <td>${formatCurrency(r.eftpos)}</td>
+          <td>${formatCurrency(r.cash)}</td>
+          <td>${formatCurrency(r.on_account)}</td>
+          <td class="text-primary">${formatCurrency(r.longterm || 0)}</td>
+          <td class="text-warning">${formatCurrency(r.outstanding)}</td>
+          <td class="fw-bold text-success">${formatCurrency(r.total)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="8" class="text-center text-muted">No data</td></tr>';
+
+      // Chart
+      const labels = data.revenue.map(r => r.period).reverse();
+      const totals = data.revenue.map(r => r.total).reverse();
+      const eftpos = data.revenue.map(r => r.eftpos).reverse();
+      const cash = data.revenue.map(r => r.cash).reverse();
+      const account = data.revenue.map(r => r.on_account).reverse();
+      const longterm = data.revenue.map(r => r.longterm || 0).reverse();
+
+      if (revenueChart) revenueChart.destroy();
+      revenueChart = new Chart(document.getElementById('revenueChart'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Eftpos', data: eftpos, backgroundColor: '#27ae60' },
+            { label: 'Cash', data: cash, backgroundColor: '#2980b9' },
+            { label: 'On Account', data: account, backgroundColor: '#e74c3c' },
+            { label: 'Long Term', data: longterm, backgroundColor: '#8e44ad' }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'top' }, title: { display: true, text: 'Revenue Breakdown' } },
+          scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: v => '$' + v } } }
+        }
+      });
+    }
+
+    // Occupancy report
+    async function loadOccupancyReport() {
+      const from = document.getElementById('occ-from').value;
+      const to = document.getElementById('occ-to').value;
+      const res = await fetch(`/api/reports/occupancy?from=${from}&to=${to}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById('occupancy-tbody').innerHTML = data.occupancy.map(r => {
+        const pct = Math.min(100, Math.round((r.cars_in / data.capacity) * 100));
+        return `
+          <tr>
+            <td class="fw-bold">${r.date}</td>
+            <td>${r.cars_in}</td>
+            <td>${r.same_day}</td>
+            <td>${r.overnight}</td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="occupancy-bar flex-fill" style="height:14px;">
+                  <div class="occupancy-fill ${pct > 80 ? 'critical' : pct > 60 ? 'high' : ''}" style="width:${pct}%"></div>
+                </div>
+                <span class="small fw-bold">${pct}%</span>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('') || '<tr><td colspan="5" class="text-center text-muted">No data</td></tr>';
+
+      // Chart
+      const labels = data.occupancy.map(r => r.date).reverse();
+      const cars = data.occupancy.map(r => r.cars_in).reverse();
+      if (occupancyChart) occupancyChart.destroy();
+      occupancyChart = new Chart(document.getElementById('occupancyChart'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Cars In',
+            data: cars,
+            borderColor: '#2980b9',
+            backgroundColor: 'rgba(41,128,185,0.1)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { title: { display: true, text: `Daily Cars In (Capacity: ${data.capacity})` } },
+          scales: { y: { min: 0, max: Math.max(data.capacity, ...cars) + 5 } }
+        }
+      });
+    }
+
+    // Customer report
+    async function loadCustomerReport() {
+      const from = document.getElementById('cust-from').value;
+      const to = document.getElementById('cust-to').value;
+      const res = await fetch(`/api/reports/customers?from=${from}&to=${to}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById('btn-customer-csv').href = `/api/reports/customers/csv?from=${from}&to=${to}`;
+
+      document.getElementById('top-customers-tbody').innerHTML = data.topCustomers.map((c, i) => `
+        <tr>
+          <td class="text-muted">${i+1}</td>
+          <td class="fw-bold">${c.name}</td>
+          <td>${c.phone||''}</td>
+          <td><span class="badge bg-primary">${c.visits}</span></td>
+          <td class="text-success fw-bold">${formatCurrency(c.total_spent)}</td>
+          <td class="small">${c.last_visit ? formatDateShort(c.last_visit) : ''}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="6" class="text-center text-muted">No data</td></tr>';
+
+      document.getElementById('account-usage-tbody').innerHTML = data.accountUsage.map(a => `
+        <tr>
+          <td class="fw-bold">${a.company_name}</td>
+          <td><span class="badge bg-info">${a.visits}</span></td>
+          <td class="text-danger fw-bold">${formatCurrency(a.total_billed)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="3" class="text-center text-muted">No account usage</td></tr>';
+    }
+
+    document.getElementById('btn-load-revenue').addEventListener('click', loadRevenueReport);
+    document.getElementById('btn-load-occupancy').addEventListener('click', loadOccupancyReport);
+    document.getElementById('btn-load-customers').addEventListener('click', loadCustomerReport);
+
+    async function init() {
+      await checkAuth();
+      await loadRevenueReport();
+      updateNavCarsCount();
+    }
+    init();
+  </script>
+</body>
+</html>

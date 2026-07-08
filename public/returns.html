@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Car Returns - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <h2><i class="bi bi-car-front me-2"></i>Car Returns</h2>
+      <div class="d-flex gap-2">
+        <a href="/invoice.html" class="btn btn-sm btn-success"><i class="bi bi-receipt me-1"></i>New Invoice</a>
+        <a href="/menu.html" class="btn btn-sm btn-outline-primary"><i class="bi bi-house me-1"></i>Menu</a>
+      </div>
+    </div>
+
+    <div class="alert alert-info small mb-3">
+      <strong>Pick up:</strong> when a car is collected, click <strong>Pick Up</strong> — it drops off this list and the menu “Returning Today” count updates immediately.
+      <strong>No return date:</strong> in-yard bookings with blank/TBC return dates appear under <strong>Overdue / Unknown</strong>.
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="search-bar">
+      <div class="row g-2 align-items-end">
+        <div class="col-auto d-flex align-items-center gap-2">
+          <button class="btn btn-outline-secondary btn-sm" id="btn-prev-day">←</button>
+          <input type="date" class="form-control" id="filter-date" style="width:160px;">
+          <button class="btn btn-outline-secondary btn-sm" id="btn-next-day">→</button>
+          <button class="btn btn-primary btn-sm" id="btn-reload"><i class="bi bi-arrow-clockwise"></i> Reload</button>
+        </div>
+        <div class="col-auto">
+          <div class="d-flex gap-3">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="dateFilter" id="filter-return" value="return_date" checked>
+              <label class="form-check-label small" for="filter-return">Return Date</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="dateFilter" id="filter-brought-in" value="date_brought_in">
+              <label class="form-check-label small" for="filter-brought-in">Date Car Brought In</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="dateFilter" id="filter-paid" value="date_paid">
+              <label class="form-check-label small" for="filter-paid">Date Customer Paid</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="show-voided">
+              <label class="form-check-label small" for="show-voided">Show Voided</label>
+            </div>
+          </div>
+        </div>
+        <div class="col-auto d-flex gap-2">
+          <select class="form-select form-select-sm" id="return-time-filter" style="width:130px;">
+            <option value="all">All Times</option>
+            <option value="tbc">TBC Only</option>
+            <option value="timed">Timed Only</option>
+          </select>
+          <select class="form-select form-select-sm" id="search-type" style="width:130px;">
+            <option value="">Invoice No</option>
+            <option value="name">Name</option>
+            <option value="rego">Rego</option>
+          </select>
+          <input type="text" class="form-control form-control-sm" id="search-input" placeholder="Search..." style="width:150px;">
+          <button class="btn btn-primary btn-sm" id="btn-search"><i class="bi bi-search"></i> Search</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Totals bar -->
+    <div class="d-flex align-items-center gap-3 mb-3 p-2 bg-white rounded shadow-sm">
+      <div class="fw-bold text-primary" id="date-display"></div>
+      <div class="ms-auto fw-bold"><i class="bi bi-car-front me-1"></i>Total Cars: <span id="total-cars" class="text-danger fs-5">0</span></div>
+      <button class="btn btn-sm btn-outline-dark" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+    </div>
+
+    <!-- Returns Table -->
+    <div id="returns-container">
+      <div class="text-center py-5 text-muted"><div class="spinner-border"></div><p class="mt-2">Loading returns...</p></div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('returns');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlDate = urlParams.get('date');
+    const urlTimeFilter = urlParams.get('time_filter');
+    /** Set after /api/dashboard/stats (NZ business date = menu “Returning Today”). */
+    let currentDate = urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate) ? urlDate : today();
+
+    function isTbcReturnTime(car) {
+      return !car || !car.return_time || !String(car.return_time).trim();
+    }
+
+    function filterCarsByReturnTime(cars) {
+      const mode = document.getElementById('return-time-filter')?.value || 'all';
+      if (!cars || mode === 'all') return cars || [];
+      if (mode === 'tbc') return cars.filter(isTbcReturnTime);
+      if (mode === 'timed') return cars.filter(c => !isTbcReturnTime(c));
+      return cars;
+    }
+
+    async function loadReturns() {
+      const filter = document.querySelector('input[name="dateFilter"]:checked').value;
+      const search = document.getElementById('search-input').value;
+      const searchType = document.getElementById('search-type').value;
+      const showVoided = document.getElementById('show-voided').checked;
+      const timeFilter = document.getElementById('return-time-filter')?.value || 'all';
+
+      const params = new URLSearchParams({
+        date: currentDate,
+        filter,
+        show_voided: showVoided
+      });
+      if (search) {
+        params.append('search', search);
+        params.append('search_type', searchType || 'invoice');
+      }
+
+      // Persist current view in URL for easy sharing/bookmarks.
+      const qs = new URLSearchParams(window.location.search);
+      qs.set('date', currentDate);
+      if (timeFilter && timeFilter !== 'all') qs.set('time_filter', timeFilter);
+      else qs.delete('time_filter');
+      history.replaceState(null, '', `/returns.html?${qs.toString()}`);
+
+      const res = await fetch('/api/returns?' + params.toString());
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById('date-display').textContent =
+        new Date(currentDate + 'T00:00:00').toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      renderReturnsTable(data);
+      updateNavCarsCount();
+    }
+
+    function renderReturnsTable(data) {
+      const container = document.getElementById('returns-container');
+
+      if (data.total === 0 && (!data.overdue || data.overdue.length === 0)) {
+        container.innerHTML = '<div class="text-center py-5 text-muted"><i class="bi bi-car-front" style="font-size:3rem;"></i><p class="mt-2">No returns for this date</p></div>';
+        return;
+      }
+
+      let html = '';
+
+      // Group returns by time
+      const groups = data.groups || {};
+      let totalShown = 0;
+      let groupedCars = 0;
+      for (const [time, cars] of Object.entries(groups)) {
+        const filteredCars = filterCarsByReturnTime(cars);
+        if (filteredCars.length === 0) continue;
+        groupedCars += filteredCars.length;
+        totalShown += filteredCars.length;
+        const timeLabel = (time && String(time).trim()) ? time : 'TBC';
+        html += `
+          <div class="mb-3">
+            <div class="returns-group-header">
+              <span>${currentDate} - Return Time: <strong>${timeLabel}</strong></span>
+              <span>${filteredCars.length} Car${filteredCars.length !== 1 ? 's' : ''}</span>
+            </div>
+            ${renderCarsTable(filteredCars)}
+          </div>`;
+      }
+
+      // Overdue/Unknown (still in yard)
+      const overdueFiltered = filterCarsByReturnTime(data.overdue || []);
+      if (overdueFiltered.length > 0) {
+        totalShown += overdueFiltered.length;
+        html += `
+          <div class="mb-3">
+            <div class="returns-overdue-header d-flex justify-content-between">
+              <span>Overdue / Unknown (Not Picked Up)</span>
+              <span>Total Cars: ${overdueFiltered.length}</span>
+            </div>
+            ${renderCarsTable(overdueFiltered)}
+          </div>`;
+      }
+
+      document.getElementById('total-cars').textContent = totalShown;
+      container.innerHTML = html;
+
+      // Attach pickup buttons
+      container.querySelectorAll('.btn-pickup').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id;
+          const status = btn.dataset.status === 'Car In Yard' ? 'Picked Up' : 'Car In Yard';
+          const res = await fetch(`/api/returns/${id}/pickup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ picked_up: status })
+          });
+          if (res.ok) {
+            showAlert(`Marked as: ${status}`, 'success');
+            loadReturns();
+          }
+        });
+      });
+    }
+
+    function renderCarsTable(cars) {
+      if (!cars || cars.length === 0) return '<p class="text-muted small px-3 py-2">No cars</p>';
+      return `
+        <div class="table-container">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th style="width:30px;">P/Up</th>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Rego</th>
+                  <th>Make</th>
+                  <th>Inv#</th>
+                  <th>Key</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Return</th>
+                  <th>Time</th>
+                  <th>Notes</th>
+                  <th>Staff</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${cars.map(car => {
+                  const rc = rowClass(car.paid_status);
+                  const isInYard = car.picked_up === 'Car In Yard';
+                  return `
+                    <tr class="${rc}">
+                      <td>
+                        <div class="pickup-dot ${isInYard ? 'in-yard' : 'picked-up'}" title="${car.picked_up}"></div>
+                      </td>
+                      <td class="fw-bold small">${car.last_name||''}, ${car.first_name||''}</td>
+                      <td class="small">${car.phone||''}</td>
+                      <td class="fw-bold small">${car.rego||''}</td>
+                      <td class="small">${car.make||''}</td>
+                      <td class="small">${car.invoice_number||''}</td>
+                      <td class="small">${car.no_key ? 'No Key' : (car.key_number||'')}</td>
+                      <td class="fw-bold small">${formatCurrency(car.payment_amount)}</td>
+                      <td>${statusBadge(car.paid_status)}</td>
+                      <td class="small">${formatDateShort(car.return_date)}</td>
+                      <td class="small">${car.return_time ? car.return_time : '<span class="badge bg-secondary-subtle text-secondary-emphasis">TBC</span>'}</td>
+                      <td class="small text-muted" style="max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${car.notes||''}</td>
+                      <td class="small">${car.staff_name||''}</td>
+                      <td>
+                        <div class="d-flex gap-1">
+                          <a href="/invoice.html?id=${car.id}" class="btn btn-action btn-outline-primary">Edit</a>
+                          <button class="btn btn-action ${isInYard ? 'btn-outline-success' : 'btn-outline-secondary'} btn-pickup"
+                            data-id="${car.id}" data-status="${car.picked_up}">
+                            ${isInYard ? 'Pick Up' : 'In Yard'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+
+    // Date navigation
+    document.getElementById('filter-date').value = currentDate;
+    document.getElementById('btn-prev-day').addEventListener('click', () => {
+      currentDate = addDays(currentDate, -1);
+      document.getElementById('filter-date').value = currentDate;
+      loadReturns();
+    });
+    document.getElementById('btn-next-day').addEventListener('click', () => {
+      currentDate = addDays(currentDate, 1);
+      document.getElementById('filter-date').value = currentDate;
+      loadReturns();
+    });
+    document.getElementById('filter-date').addEventListener('change', (e) => {
+      currentDate = e.target.value;
+      loadReturns();
+    });
+    document.getElementById('btn-reload').addEventListener('click', loadReturns);
+    document.getElementById('btn-search').addEventListener('click', loadReturns);
+    document.getElementById('search-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') loadReturns(); });
+    document.getElementById('return-time-filter').addEventListener('change', loadReturns);
+    document.querySelectorAll('input[name="dateFilter"]').forEach(r => r.addEventListener('change', loadReturns));
+    document.getElementById('show-voided').addEventListener('change', loadReturns);
+
+    async function init() {
+      await checkAuth();
+      if (urlTimeFilter && ['all','tbc','timed'].includes(urlTimeFilter)) {
+        const tf = document.getElementById('return-time-filter');
+        if (tf) tf.value = urlTimeFilter;
+      }
+      const statsRes = await fetch('/api/dashboard/stats', { cache: 'no-store' });
+      if (statsRes.ok) {
+        const stats = await statsRes.json();
+        if (stats.businessDate) {
+          // URL ?date=YYYY-MM-DD overrides (e.g. bookmark); otherwise match menu card
+          if (!urlDate || !/^\d{4}-\d{2}-\d{2}$/.test(urlDate)) {
+            currentDate = stats.businessDate;
+          }
+          const fd = document.getElementById('filter-date');
+          if (fd) fd.value = currentDate;
+        }
+      }
+      await loadReturns();
+    }
+    init();
+  </script>
+</body>
+</html>

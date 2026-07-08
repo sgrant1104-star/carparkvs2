@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Main Menu - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <!-- System Title -->
+    <div class="text-center mb-4 mt-2">
+      <h1 style="font-size:1.8rem; font-weight:900; color: var(--primary); letter-spacing:1px; text-decoration:underline;">
+        CAR STORAGE INVOICE SYSTEM
+      </h1>
+      <p class="text-muted mb-0" id="carpark-subtitle">Loading...</p>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="stat-card success">
+          <div class="stat-value" id="stat-cars"><i class="bi bi-arrow-clockwise spin"></i></div>
+          <div class="stat-label"><i class="bi bi-car-front-fill"></i> Cars in Yard</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-revenue-today">--</div>
+          <div class="stat-label"><i class="bi bi-cash"></i> Revenue Today</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card warning">
+          <div class="stat-value" id="stat-returning">--</div>
+          <div class="stat-label"><i class="bi bi-arrow-return-left"></i> Returning Today</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card info">
+          <div class="stat-value" id="stat-occupancy">--</div>
+          <div class="stat-label"><i class="bi bi-speedometer2"></i> Occupancy</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Action Buttons -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-4">
+        <a href="/invoice.html" class="menu-card menu-card-invoice">
+          <i class="bi bi-receipt"></i>
+          INVOICE
+        </a>
+      </div>
+      <div class="col-6 col-md-4">
+        <a href="/returns.html" class="menu-card menu-card-returns">
+          <i class="bi bi-car-front"></i>
+          RETURNS
+        </a>
+      </div>
+      <div class="col-6 col-md-4">
+        <a href="/keybox.html" class="menu-card menu-card-keybox">
+          <i class="bi bi-key-fill"></i>
+          KEY BOX
+        </a>
+      </div>
+      <div class="col-6 col-md-4">
+        <a href="/longterm.html" class="menu-card menu-card-longterm">
+          <i class="bi bi-calendar-week-fill"></i>
+          LONG TERM
+        </a>
+      </div>
+      <div class="col-6 col-md-4">
+        <a href="/accounts.html" class="menu-card menu-card-accounts">
+          <i class="bi bi-building"></i>
+          ACCOUNTS
+        </a>
+      </div>
+      <div class="col-6 col-md-4">
+        <a href="/endday.html" class="menu-card menu-card-endday">
+          <i class="bi bi-calendar-check-fill"></i>
+          END DAY
+        </a>
+      </div>
+    </div>
+
+    <!-- Secondary Actions -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <a href="/reports.html" class="menu-card menu-card-reports" style="padding:18px 15px; font-size:1rem;">
+          <i class="bi bi-bar-chart-fill" style="font-size:1.8rem;"></i>
+          REPORTS
+        </a>
+      </div>
+      <div class="col-6 col-md-3">
+        <a href="/banking.html" class="menu-card menu-card-banking" style="padding:18px 15px; font-size:1rem;">
+          <i class="bi bi-bank2" style="font-size:1.8rem;"></i>
+          BANKING
+        </a>
+      </div>
+      <div class="col-6 col-md-3">
+        <a href="/email.html" class="menu-card menu-card-email" style="padding:18px 15px; font-size:1rem;">
+          <i class="bi bi-envelope-fill" style="font-size:1.8rem;"></i>
+          EMAIL ACCOUNTS
+        </a>
+      </div>
+      <div class="col-6 col-md-3 admin-only">
+        <a href="/admin.html" class="menu-card menu-card-admin" style="padding:18px 15px; font-size:1rem;">
+          <i class="bi bi-gear-fill" style="font-size:1.8rem;"></i>
+          ADMIN
+        </a>
+      </div>
+    </div>
+
+    <!-- Quick Stats / Recent Activity -->
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="form-card">
+          <div class="form-section-title"><i class="bi bi-clock-history me-2"></i>Recent Invoices</div>
+          <div id="recent-invoices">
+            <div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm"></div></div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            <a href="/invoice.html" class="btn btn-sm btn-outline-primary">New Invoice</a>
+            <a href="/invoices.html" class="btn btn-sm btn-outline-secondary">View all invoices</a>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="form-card">
+          <div class="form-section-title"><i class="bi bi-arrow-return-left me-2"></i>Returning Today</div>
+          <div id="returning-today">
+            <div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm"></div></div>
+          </div>
+          <a href="/returns.html" class="btn btn-sm btn-outline-warning mt-2">View All Returns</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Revenue Quick Bar -->
+    <div class="form-card mt-3">
+      <div class="form-section-title"><i class="bi bi-graph-up me-2"></i>This Month's Revenue</div>
+      <div class="row g-2 align-items-center">
+        <div class="col-md-3">
+          <div class="text-center">
+            <div style="font-size:1.6rem; font-weight:700; color:var(--success)" id="month-revenue">--</div>
+            <div class="small text-muted">Total Revenue</div>
+          </div>
+        </div>
+        <div class="col-md-9">
+          <div id="revenue-breakdown">
+            <div class="text-center text-muted py-2"><div class="spinner-border spinner-border-sm"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    // Render navbar
+    document.getElementById('navbar-container').innerHTML = renderNavbar('menu');
+
+    async function loadMenuData() {
+      const user = await checkAuth();
+      if (!user) return;
+
+      // Load carpark info
+      const cpRes = await fetch('/api/dashboard/carpark-info');
+      if (cpRes.ok) {
+        const cp = await cpRes.json();
+        document.getElementById('carpark-subtitle').textContent = cp.name + (cp.address ? ' — ' + cp.address : '');
+      }
+
+      // Load dashboard stats (always fresh — occupancy depends on current key_box rows)
+      const statsRes = await fetch('/api/dashboard/stats', { cache: 'no-store' });
+      if (!statsRes.ok) return;
+      const stats = await statsRes.json();
+
+      document.getElementById('stat-cars').textContent = stats.carsInYard;
+      document.getElementById('stat-revenue-today').textContent = formatCurrency(stats.revenueToday);
+      document.getElementById('stat-returning').textContent = stats.carsReturnToday;
+      const occ = Number(stats.occupancyRate ?? 0);
+      document.getElementById('stat-occupancy').textContent = `${occ.toFixed(1)}%`;
+      document.getElementById('nav-cars-count').textContent = stats.carsInYard + ' Cars';
+      document.getElementById('month-revenue').textContent = formatCurrency(stats.revenueMonth);
+
+      // Revenue breakdown
+      const methodHtml = (stats.revenueByMethod || []).map(m => `
+        <div class="d-flex align-items-center mb-1">
+          <div class="me-2 small fw-bold" style="min-width:80px;">${m.paid_status || 'Unknown'}</div>
+          <div class="flex-fill">
+            <div class="occupancy-bar">
+              <div class="occupancy-fill" style="width:${stats.revenueMonth > 0 ? Math.min(100, (m.total/stats.revenueMonth*100)) : 0}%"></div>
+            </div>
+          </div>
+          <div class="ms-2 small fw-bold">${formatCurrency(m.total)}</div>
+        </div>
+      `).join('');
+      document.getElementById('revenue-breakdown').innerHTML = methodHtml || '<p class="text-muted small">No payments recorded this month</p>';
+
+      // Recent invoices
+      const recentHtml = (stats.recentInvoices || []).slice(0, 6).map(inv => `
+        <div class="d-flex align-items-center justify-content-between py-1 border-bottom">
+          <div class="small">
+            <strong class="me-1">#${inv.invoice_number}</strong>
+            <span class="text-muted">${inv.first_name||''} ${inv.last_name||''}</span>
+            <span class="ms-1 text-muted">${inv.rego||''}</span>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            ${statusBadge(inv.paid_status)}
+            <span class="small fw-bold">${formatCurrency(inv.total_price)}</span>
+            <a href="/invoice.html?id=${inv.id}" class="btn btn-action btn-outline-primary">Edit</a>
+          </div>
+        </div>
+      `).join('');
+      document.getElementById('recent-invoices').innerHTML = recentHtml || '<p class="text-muted small">No recent invoices</p>';
+
+      // Returning today — use same calendar date as dashboard stats (NZ business date)
+      const retDate = stats.businessDate || today();
+      const retRes = await fetch(`/api/returns?date=${encodeURIComponent(retDate)}`);
+      if (retRes.ok) {
+        const retData = await retRes.json();
+        const allReturns = Object.values(retData.groups || {}).flat();
+        const retHtml = allReturns.slice(0, 5).map(inv => `
+          <div class="d-flex align-items-center justify-content-between py-1 border-bottom ${rowClass(inv.paid_status)}">
+            <div class="small ps-1">
+              <strong>${inv.first_name||''} ${inv.last_name||''}</strong>
+              <span class="text-muted ms-1">${inv.rego||''}</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              ${inv.return_time
+                ? `<span class="small text-muted">${inv.return_time}</span>`
+                : '<span class="badge bg-secondary-subtle text-secondary-emphasis">TBC</span>'}
+              ${statusBadge(inv.paid_status)}
+              <a href="/invoice.html?id=${inv.id}" class="btn btn-action btn-outline-secondary">View</a>
+            </div>
+          </div>
+        `).join('');
+        document.getElementById('returning-today').innerHTML = retHtml || '<p class="text-muted small py-2">No cars returning today</p>';
+      }
+    }
+
+    loadMenuData();
+    // Refresh every 30 seconds so the count stays live
+    setInterval(loadMenuData, 30000);
+    // Also refresh immediately whenever the user comes back to this tab
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') loadMenuData();
+    });
+  </script>
+</body>
+</html>

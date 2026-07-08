@@ -1,0 +1,622 @@
+/* === Carpark Management System Styles === */
+:root {
+  --primary: #1a5276;
+  --primary-light: #2980b9;
+  --success: #27ae60;
+  --warning: #f39c12;
+  --danger: #e74c3c;
+  --info: #2980b9;
+  --light-bg: #f8f9fa;
+  --dark-text: #2c3e50;
+  --menu-green: #27ae60;
+  --menu-yellow: #f1c40f;
+  --menu-blue: #2980b9;
+  --menu-purple: #8e44ad;
+  --menu-pink: #e91e8c;
+  --menu-red: #e74c3c;
+  --row-eftpos: #d5f5e3;
+  --row-internet-banking: #ede7f6;
+  --row-onaccount: #fadbd8;
+  --row-topay: #fef9e7;
+  --row-voided: #ecf0f1;
+}
+
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #ecf0f1;
+  color: var(--dark-text);
+  min-height: 100vh;
+}
+
+/* === Navigation Bar === */
+.navbar {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.navbar-brand {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff !important;
+  letter-spacing: 0.5px;
+}
+
+.navbar .nav-link {
+  color: rgba(255,255,255,0.9) !important;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.7rem !important;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.navbar .nav-link:hover, .navbar .nav-link.active {
+  background: rgba(255,255,255,0.2) !important;
+  color: #fff !important;
+}
+
+.navbar-cars-count {
+  color: #f1c40f;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+/* === Page Container === */
+.page-container {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header {
+  background: white;
+  border-radius: 8px;
+  padding: 15px 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+/* === Main Menu Cards === */
+.menu-card {
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  text-decoration: none;
+  display: block;
+  color: white;
+  text-align: center;
+  padding: 25px 15px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.menu-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+  color: white;
+}
+
+.menu-card i {
+  display: block;
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+}
+
+.menu-card-invoice { background: linear-gradient(135deg, #27ae60, #2ecc71); }
+.menu-card-returns { background: linear-gradient(135deg, #e67e22, #f39c12); }
+.menu-card-keybox { background: linear-gradient(135deg, #8e44ad, #9b59b6); }
+.menu-card-longterm { background: linear-gradient(135deg, #c0392b, #e74c3c); }
+.menu-card-accounts { background: linear-gradient(135deg, #2980b9, #3498db); }
+.menu-card-reports { background: linear-gradient(135deg, #1a5276, #2c3e50); }
+.menu-card-banking { background: linear-gradient(135deg, #16a085, #1abc9c); }
+.menu-card-endday { background: linear-gradient(135deg, #7f8c8d, #95a5a6); }
+.menu-card-email { background: linear-gradient(135deg, #d35400, #e67e22); }
+.menu-card-admin { background: linear-gradient(135deg, #2c3e50, #34495e); }
+
+/* === Stats Cards === */
+.stat-card {
+  background: white;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  text-align: center;
+  border-left: 5px solid var(--primary);
+  margin-bottom: 15px;
+}
+
+.stat-card .stat-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--primary);
+  line-height: 1;
+}
+
+.stat-card .stat-label {
+  font-size: 0.8rem;
+  color: #7f8c8d;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 5px;
+}
+
+.stat-card.success { border-left-color: var(--success); }
+.stat-card.success .stat-value { color: var(--success); }
+.stat-card.warning { border-left-color: var(--warning); }
+.stat-card.warning .stat-value { color: var(--warning); }
+.stat-card.danger { border-left-color: var(--danger); }
+.stat-card.danger .stat-value { color: var(--danger); }
+.stat-card.info { border-left-color: var(--info); }
+.stat-card.info .stat-value { color: var(--info); }
+
+/* === Data Tables === */
+.table-container {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  overflow: hidden;
+}
+
+.table {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.table thead th {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 10px 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.table tbody td {
+  padding: 8px 12px;
+  vertical-align: middle;
+  border-color: #ecf0f1;
+}
+
+/* Row color coding - matching original system */
+.row-eftpos { background-color: var(--row-eftpos) !important; }
+.row-internet-banking { background-color: var(--row-internet-banking) !important; }
+.row-onaccount { background-color: var(--row-onaccount) !important; }
+.row-topay { background-color: var(--row-topay) !important; }
+.row-cash { background-color: #d6eaf8 !important; }
+.row-voided { background-color: var(--row-voided) !important; opacity: 0.7; }
+
+/* Status badges */
+.badge-eftpos { background: #27ae60; color: white; }
+.badge-cash { background: #2980b9; color: white; }
+.badge-onaccount { background: #e74c3c; color: white; }
+.badge-topay { background: #f39c12; color: white; }
+.badge-voided { background: #95a5a6; color: white; }
+
+.status-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+/* === Pickup indicator (P/Up) === */
+.pickup-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.pickup-dot.in-yard { background: #27ae60; }
+.pickup-dot.picked-up { background: #95a5a6; }
+.pickup-dot.overdue { background: #e74c3c; }
+
+/* === Forms === */
+.form-card {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  padding: 20px;
+  margin-bottom: 15px;
+}
+
+.form-section-title {
+  font-weight: 700;
+  color: var(--primary);
+  border-bottom: 2px solid var(--primary);
+  padding-bottom: 8px;
+  margin-bottom: 15px;
+  font-size: 1rem;
+}
+
+.form-control, .form-select {
+  border: 1px solid #bdc3c7;
+  border-radius: 5px;
+  font-size: 0.9rem;
+}
+
+.form-control:focus, .form-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 0.2rem rgba(26,82,118,0.15);
+}
+
+.form-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #5d6d7e;
+  margin-bottom: 3px;
+}
+
+/* Total price highlight */
+.total-price-field {
+  background: #fef9e7 !important;
+  border-color: #f39c12 !important;
+  font-weight: 700 !important;
+  font-size: 1.1rem !important;
+  color: var(--dark-text) !important;
+}
+
+.payment-field {
+  background: #fef9e7 !important;
+  border-color: #f39c12 !important;
+}
+
+/* Invoice number display */
+.invoice-number-display {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--primary);
+  background: #eaf0fb;
+  border-radius: 8px;
+  padding: 5px 15px;
+}
+
+/* === Buttons === */
+.btn-calculate {
+  background: linear-gradient(135deg, #27ae60, #2ecc71);
+  color: white;
+  border: none;
+  font-weight: 600;
+}
+
+.btn-calculate:hover {
+  background: linear-gradient(135deg, #1e8449, #27ae60);
+  color: white;
+}
+
+.btn-save-invoice {
+  background: linear-gradient(135deg, #e67e22, #f39c12);
+  color: white;
+  border: none;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.btn-save-invoice:hover {
+  background: linear-gradient(135deg, #d35400, #e67e22);
+  color: white;
+}
+
+.btn-void {
+  background: #95a5a6;
+  color: white;
+  border: none;
+}
+
+.btn-void:hover {
+  background: #7f8c8d;
+  color: white;
+}
+
+/* === Long Term Grid === */
+/* Shared 8-column template: LT#, Name, Renewal, Payment, Rego1, Rego2, Phone, Edit */
+.lt-card-header-row,
+.lt-card {
+  display: grid;
+  grid-template-columns:
+    48px
+    minmax(0, 1.1fr)
+    minmax(96px, auto)
+    minmax(76px, auto)
+    82px
+    82px
+    minmax(88px, 1fr)
+    auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.lt-card-header-row {
+  padding: 0 8px;
+}
+
+.lt-card-header-row .lt-h {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.lt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.lt-grid > div {
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .lt-grid { grid-template-columns: 1fr; }
+}
+
+.lt-card {
+  background: #fadbd8;
+  border-radius: 8px;
+  padding: 12px 15px;
+  border-left: 4px solid #e74c3c;
+}
+
+.lt-cell-renewal,
+.lt-cell-payment {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.lt-number {
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 0.9rem;
+}
+
+.lt-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lt-rego {
+  font-size: 0.8rem;
+  color: #5d6d7e;
+  background: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  justify-self: start;
+}
+
+.lt-phone-cell {
+  font-size: 0.85rem;
+  color: #5d6d7e;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* === Returns page === */
+.returns-group-header {
+  background: var(--primary);
+  color: white;
+  padding: 8px 15px;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.returns-overdue-header {
+  background: var(--danger);
+  color: white;
+  padding: 8px 15px;
+  font-weight: 700;
+}
+
+/* === Login Page === */
+.login-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 50%, #1abc9c 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  background: white;
+  border-radius: 15px;
+  padding: 40px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  max-width: 400px;
+  width: 100%;
+}
+
+.login-logo {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.login-logo h1 {
+  font-size: 1.5rem;
+  color: var(--primary);
+  font-weight: 700;
+  margin-top: 10px;
+}
+
+.login-logo p {
+  color: #7f8c8d;
+  font-size: 0.9rem;
+}
+
+/* === Account Email Preview === */
+.account-section {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 15px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+
+.account-section h4 {
+  color: #e74c3c;
+  font-weight: 700;
+  margin-bottom: 15px;
+}
+
+.account-total {
+  color: var(--success);
+  font-weight: 700;
+  margin-top: 10px;
+}
+
+/* === Reports Charts === */
+.chart-container {
+  background: white;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin-bottom: 15px;
+}
+
+/* === Occupancy bar === */
+.occupancy-bar {
+  height: 20px;
+  background: #ecf0f1;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.occupancy-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #27ae60, #2ecc71);
+  border-radius: 10px;
+  transition: width 0.5s;
+}
+
+.occupancy-fill.high { background: linear-gradient(90deg, #f39c12, #e67e22); }
+.occupancy-fill.critical { background: linear-gradient(90deg, #e74c3c, #c0392b); }
+
+/* === Loading spinner === */
+.loading-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255,255,255,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+/* === Alerts === */
+.alert-banner {
+  position: fixed;
+  top: 70px;
+  right: 20px;
+  z-index: 1050;
+  min-width: 300px;
+  max-width: 400px;
+}
+
+/* === Modal Overrides === */
+.modal-header {
+  background: var(--primary);
+  color: white;
+  border-radius: calc(0.3rem - 1px) calc(0.3rem - 1px) 0 0;
+}
+
+.modal-title { font-weight: 700; }
+.btn-close { filter: invert(1); }
+
+/* === Print Styles === */
+@media print {
+  .navbar, .no-print { display: none !important; }
+  .page-container { padding: 0; }
+  body { background: white; }
+}
+
+/* === Responsive === */
+@media (max-width: 576px) {
+  .page-container { padding: 10px; }
+  .menu-card { padding: 15px 10px; font-size: 1rem; }
+  .menu-card i { font-size: 1.8rem; }
+  .stat-card .stat-value { font-size: 2rem; }
+}
+
+/* === Key Box === */
+.key-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+}
+
+.key-item {
+  border-radius: 8px;
+  padding: 10px 5px;
+  text-align: center;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 1rem;
+  transition: transform 0.15s;
+  border: 2px solid transparent;
+}
+
+.key-item:hover { transform: scale(1.05); }
+.key-item.available { background: var(--row-eftpos); border-color: #27ae60; color: #1a5276; }
+.key-item.in-use { background: var(--row-onaccount); border-color: #e74c3c; color: #7b241c; }
+.key-item .key-name { font-size: 0.65rem; font-weight: 400; display: block; color: #5d6d7e; }
+
+/* === Scrollbar === */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #ecf0f1; }
+::-webkit-scrollbar-thumb { background: #bdc3c7; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #95a5a6; }
+
+/* Table action buttons */
+.btn-action {
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Search bar */
+.search-bar {
+  background: white;
+  border-radius: 10px;
+  padding: 15px 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin-bottom: 15px;
+}
+
+.statement-table th,
+.statement-table td {
+  vertical-align: middle;
+}
+
+.statement-table tfoot td {
+  border-top: 2px solid var(--success);
+}
+
+.table-info td {
+  background-color: #e8f4fc !important;
+}

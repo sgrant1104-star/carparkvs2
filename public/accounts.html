@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accounts - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <h2><i class="bi bi-building me-2"></i>Annual Accounts</h2>
+      <button class="btn btn-success" id="btn-new-acct"><i class="bi bi-plus-lg me-1"></i>New Account</button>
+    </div>
+
+    <div class="alert alert-secondary small mb-3">
+      Company accounts are matched on the <strong>Invoice</strong> page automatically by your existing customer/account links.
+      <strong>Total balance</strong> is all-time invoiced minus all payments recorded here.
+    </div>
+
+    <div class="table-container">
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Rego 1 / 2</th>
+              <th>Contact</th>
+              <th>Phone</th>
+              <th>Billing Email</th>
+              <th>Discount</th>
+              <th>Credit Balance</th>
+              <th>This month</th>
+              <th>Total balance</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="accounts-tbody">
+            <tr><td colspan="10" class="text-center"><div class="spinner-border spinner-border-sm"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Account Detail: Invoices -->
+    <div id="account-detail" class="d-none mt-4">
+      <div class="form-card">
+        <div class="form-section-title d-flex align-items-center justify-content-between">
+          <span><i class="bi bi-list-ul me-2"></i>Invoices for: <span id="detail-company-name"></span></span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('account-detail').classList.add('d-none')">Close</button>
+        </div>
+
+        <div class="row g-2 mb-3">
+          <div class="col-md-3">
+            <label class="form-label">Month</label>
+            <select class="form-select form-select-sm" id="detail-month">
+              <option value="1">January</option><option value="2">February</option>
+              <option value="3">March</option><option value="4">April</option>
+              <option value="5">May</option><option value="6">June</option>
+              <option value="7">July</option><option value="8">August</option>
+              <option value="9">September</option><option value="10">October</option>
+              <option value="11">November</option><option value="12">December</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Year</label>
+            <input type="number" class="form-control form-control-sm" id="detail-year" value="2026">
+          </div>
+          <div class="col-md-3 d-flex align-items-end">
+            <button class="btn btn-primary btn-sm" id="btn-load-statement">Load Statement</button>
+          </div>
+        </div>
+
+        <div id="account-statement">
+          <p class="text-muted small">Select month/year and click Load Statement</p>
+        </div>
+
+        <div class="border-top pt-3 mt-3">
+          <div class="form-section-title"><i class="bi bi-cash-coin me-2"></i>Payments (paid vs outstanding)</div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-3">
+              <label class="form-label">Amount</label>
+              <input type="number" step="0.01" class="form-control form-control-sm" id="acct-pay-amount" placeholder="e.g. 230.00">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Payment date</label>
+              <input type="date" class="form-control form-control-sm" id="acct-pay-date">
+              <div class="form-text small">Defaults to the month you’re viewing.</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Method</label>
+              <select class="form-select form-select-sm" id="acct-pay-method">
+                <option value="">--</option>
+                <option>Internet Bank</option>
+                <option>Eftpos</option>
+                <option>Cash</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Reference</label>
+              <input type="text" class="form-control form-control-sm" id="acct-pay-ref" placeholder="optional">
+            </div>
+            <div class="col-12 d-flex gap-2 align-items-center">
+              <button class="btn btn-sm btn-success" id="btn-add-acct-payment"><i class="bi bi-plus-circle me-1"></i>Add Payment</button>
+              <div class="small text-muted" id="acct-pay-summary"></div>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0">
+              <thead class="table-light">
+                <tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th class="text-end"></th></tr>
+              </thead>
+              <tbody id="acct-payments-tbody">
+                <tr><td colspan="5" class="text-center text-muted small">No payments recorded for this period.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Modal -->
+  <div class="modal fade" id="acctModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="acct-modal-title">Add Account Customer</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="acct-id">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">Company Name *</label>
+              <input type="text" class="form-control" id="acct-company" placeholder="Company Name" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Contact Name</label>
+              <input type="text" class="form-control" id="acct-contact" placeholder="Contact person">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Phone</label>
+              <input type="text" class="form-control" id="acct-phone">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Email</label>
+              <input type="email" class="form-control" id="acct-email">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Billing Email (for monthly statements)</label>
+              <input type="email" class="form-control" id="acct-billing-email">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Discount %</label>
+              <input type="number" step="0.1" class="form-control" id="acct-discount" value="0">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Credit Balance $</label>
+              <input type="number" step="0.01" class="form-control" id="acct-credit">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Notes</label>
+              <input type="text" class="form-control" id="acct-notes">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger" id="btn-delete-acct" style="display:none;">Deactivate</button>
+          <button type="button" class="btn btn-primary" id="btn-save-acct">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('accounts');
+
+    let currentAccountId = null;
+
+    // Set current month
+    document.getElementById('detail-month').value = new Date().getMonth() + 1;
+    document.getElementById('detail-year').value = new Date().getFullYear();
+
+    async function loadAccounts() {
+      const res = await fetch('/api/accounts');
+      if (!res.ok) return;
+      const accounts = await res.json();
+      const tbody = document.getElementById('accounts-tbody');
+
+      if (accounts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No account customers yet</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = accounts.map(a => `
+        <tr>
+          <td class="fw-bold">${a.company_name}</td>
+          <td class="small">${[a.rego_1, a.rego_2].filter(Boolean).join(' / ') || '—'}</td>
+          <td>${a.contact_name||''}</td>
+          <td>${a.phone||''}</td>
+          <td>${a.billing_email||a.email||''}</td>
+          <td>${a.discount_percent > 0 ? `<span class="badge bg-info">${a.discount_percent}%</span>` : '—'}</td>
+          <td>${a.credit_balance > 0 ? `<span class="text-success fw-bold">${formatCurrency(a.credit_balance)}</span>` : '—'}</td>
+          <td class="small">${a.month_payment_status === 'Outstanding'
+            ? `<span class="badge bg-warning text-dark">Outstanding ${formatCurrency(a.month_outstanding || 0)}</span>`
+            : (a.month_payment_status === 'Paid' ? '<span class="badge bg-success">Paid</span>' : '—')}</td>
+          <td class="small">${a.balance_payment_status === 'Outstanding'
+            ? `<span class="badge bg-danger">Owing ${formatCurrency(a.balance_outstanding || 0)}</span>`
+            : (a.balance_payment_status === 'Paid' ? '<span class="badge bg-success">Clear</span>' : '—')}</td>
+          <td>
+            <div class="d-flex gap-1">
+              <button class="btn btn-action btn-warning btn-edit" data-id="${a.id}">Edit</button>
+              <button class="btn btn-action btn-outline-info btn-view" data-id="${a.id}" data-name="${a.company_name}">View</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => openEditAcct(btn.dataset.id));
+      });
+      document.querySelectorAll('.btn-view').forEach(btn => {
+        btn.addEventListener('click', () => showAccountDetail(btn.dataset.id, btn.dataset.name));
+      });
+    }
+
+    async function openEditAcct(id) {
+      const res = await fetch(`/api/accounts/${id}`);
+      if (!res.ok) return;
+      const a = await res.json();
+      document.getElementById('acct-id').value = a.id;
+      document.getElementById('acct-modal-title').textContent = 'Edit Account';
+      document.getElementById('acct-company').value = a.company_name;
+      document.getElementById('acct-contact').value = a.contact_name||'';
+      document.getElementById('acct-phone').value = a.phone||'';
+      document.getElementById('acct-email').value = a.email||'';
+      document.getElementById('acct-billing-email').value = a.billing_email||'';
+      document.getElementById('acct-discount').value = a.discount_percent||0;
+      document.getElementById('acct-credit').value = a.credit_balance||0;
+      document.getElementById('acct-notes').value = a.notes||'';
+      document.getElementById('btn-delete-acct').style.display = 'inline-block';
+      new bootstrap.Modal('#acctModal').show();
+    }
+
+    function showAccountDetail(id, name) {
+      currentAccountId = id;
+      document.getElementById('detail-company-name').textContent = name;
+      document.getElementById('account-detail').classList.remove('d-none');
+      document.getElementById('account-detail').scrollIntoView({ behavior: 'smooth' });
+      loadStatement();
+    }
+
+    /** Default payment date to match the statement month (avoids April when paying March). */
+    function applyStatementPaymentDateDefault() {
+      const year = parseInt(document.getElementById('detail-year').value, 10);
+      const month = parseInt(document.getElementById('detail-month').value, 10);
+      const el = document.getElementById('acct-pay-date');
+      if (!el || !Number.isFinite(year) || !Number.isFinite(month)) return;
+      const now = new Date();
+      const cy = now.getFullYear();
+      const cm = now.getMonth() + 1;
+      const cd = now.getDate();
+      const todayStr = `${cy}-${String(cm).padStart(2, '0')}-${String(cd).padStart(2, '0')}`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const monthEndStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      const monthStartStr = `${year}-${String(month).padStart(2, '0')}-01`;
+      if (year === cy && month === cm) {
+        el.value = todayStr;
+        return;
+      }
+      const t0 = new Date(year, month - 1, 1).getTime();
+      const t1 = new Date(cy, cm - 1, cd).getTime();
+      el.value = t0 < t1 ? monthEndStr : monthStartStr;
+    }
+
+    async function loadStatement() {
+      if (!currentAccountId) return;
+      const month = document.getElementById('detail-month').value;
+      const year = document.getElementById('detail-year').value;
+      const res = await fetch(`/api/accounts/${currentAccountId}/statement?month=${month}&year=${year}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const stmtEl = document.getElementById('account-statement');
+      const paid = Number(data.paid || 0);
+      const outstanding = Number(data.outstanding || 0);
+      const total = Number(data.total || 0);
+      const monthLabel = `${monthName(month)} ${year}`;
+
+      const summaryCards = `
+        <div class="row g-2 mb-3">
+          <div class="col-md-4"><div class="stat-card text-center p-3"><div class="text-muted small">Invoiced</div><div class="fs-5 fw-bold text-primary">${formatCurrency(total)}</div></div></div>
+          <div class="col-md-4"><div class="stat-card text-center p-3"><div class="text-muted small">Paid</div><div class="fs-5 fw-bold text-success">${formatCurrency(paid)}</div></div></div>
+          <div class="col-md-4"><div class="stat-card text-center p-3"><div class="text-muted small">Outstanding</div><div class="fs-5 fw-bold ${outstanding > 0 ? 'text-danger' : 'text-success'}">${formatCurrency(outstanding)}</div></div></div>
+        </div>`;
+
+      if (data.invoices.length === 0) {
+        stmtEl.innerHTML = summaryCards + '<p class="text-muted">No invoices for this period.</p>';
+      } else {
+        stmtEl.innerHTML = summaryCards + `
+        <div class="table-responsive">
+          <table class="table table-sm table-hover table-bordered statement-table">
+            <thead class="table-light">
+              <tr><th>Stay</th><th>Name</th><th>Rego</th><th class="text-end">Amount</th><th>Status</th><th>Invoice</th></tr>
+            </thead>
+            <tbody>
+              ${data.invoices.map(inv => `
+                <tr>
+                  <td class="small text-nowrap">${formatDateShort(inv.date_in)} – ${formatDateShort(inv.return_date)}</td>
+                  <td>${inv.first_name||''} ${inv.last_name||''}</td>
+                  <td class="fw-bold">${inv.rego||''}</td>
+                  <td class="text-end fw-bold text-success">${formatCurrency(inv.total_price || 0)}</td>
+                  <td>${statusBadge(inv.paid_status)}</td>
+                  <td><a href="/invoice.html?id=${inv.id}" class="btn btn-sm btn-outline-primary py-0">#${inv.invoice_number}</a></td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="table-success">
+                <td colspan="3" class="fw-bold">Total — ${monthLabel}</td>
+                <td class="fw-bold text-end fs-6">${formatCurrency(total)}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          <a href="/email.html" class="btn btn-sm btn-outline-primary"><i class="bi bi-envelope me-1"></i>Send statement email</a>
+          <a href="/api/email/account-invoice.pdf?month=${month}&year=${year}&account_ids=${currentAccountId}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-pdf me-1"></i>Download PDF</a>
+        </div>
+      `;
+      }
+
+      document.getElementById('acct-pay-summary').textContent =
+        `${monthLabel}: invoiced ${formatCurrency(total)} · paid ${formatCurrency(paid)} · outstanding ${formatCurrency(outstanding)}.`;
+      const pt = document.getElementById('acct-payments-tbody');
+      const payments = data.payments || [];
+      pt.innerHTML = payments.length
+        ? payments.map(p => `
+          <tr>
+            <td class="small">${p.payment_date || ''}</td>
+            <td class="fw-bold text-success">${formatCurrency(p.amount || 0)}</td>
+            <td class="small">${p.payment_method || ''}</td>
+            <td class="small">${p.transaction_reference || ''}</td>
+            <td class="text-end">
+              <button type="button" class="btn btn-sm btn-outline-danger btn-delete-acct-payment" data-id="${p.id}" title="Delete payment"><i class="bi bi-trash"></i></button>
+            </td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="5" class="text-center text-muted small">No payments recorded for this period.</td></tr>';
+
+      pt.querySelectorAll('.btn-delete-acct-payment').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const pid = btn.dataset.id;
+          if (!pid || !confirm('Remove this payment entry?')) return;
+          const del = await fetch(`/api/accounts/${currentAccountId}/payments/${pid}`, { method: 'DELETE' });
+          const err = await del.json().catch(() => ({}));
+          if (!del.ok) { showAlert(err.error || 'Could not delete payment', 'danger'); return; }
+          showAlert('Payment removed', 'success');
+          await loadStatement();
+          await loadAccounts();
+        });
+      });
+
+      applyStatementPaymentDateDefault();
+    }
+
+    document.getElementById('btn-load-statement').addEventListener('click', loadStatement);
+
+    document.getElementById('btn-add-acct-payment').addEventListener('click', async () => {
+      if (!currentAccountId) return;
+      const amount = parseFloat(document.getElementById('acct-pay-amount').value);
+      const payment_date = document.getElementById('acct-pay-date').value;
+      const payment_method = document.getElementById('acct-pay-method').value;
+      const transaction_reference = document.getElementById('acct-pay-ref').value;
+      if (!Number.isFinite(amount) || amount <= 0) { showAlert('Enter a valid payment amount', 'danger'); return; }
+      if (!payment_date) { showAlert('Select a payment date', 'danger'); return; }
+      const res = await fetch(`/api/accounts/${currentAccountId}/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_date, amount, payment_method, transaction_reference })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showAlert(data.error || 'Failed to add payment', 'danger'); return; }
+      showAlert('Payment recorded', 'success');
+      document.getElementById('acct-pay-amount').value = '';
+      document.getElementById('acct-pay-ref').value = '';
+      await loadStatement();
+      await loadAccounts();
+    });
+
+    document.getElementById('btn-new-acct').addEventListener('click', () => {
+      document.getElementById('acct-id').value = '';
+      document.getElementById('acct-modal-title').textContent = 'New Account Customer';
+      document.getElementById('acct-company').value = '';
+      document.getElementById('acct-contact').value = '';
+      document.getElementById('acct-phone').value = '';
+      document.getElementById('acct-email').value = '';
+      document.getElementById('acct-billing-email').value = '';
+      document.getElementById('acct-discount').value = '0';
+      document.getElementById('acct-credit').value = '0';
+      document.getElementById('acct-notes').value = '';
+      document.getElementById('btn-delete-acct').style.display = 'none';
+      new bootstrap.Modal('#acctModal').show();
+    });
+
+    document.getElementById('btn-save-acct').addEventListener('click', async () => {
+      const id = document.getElementById('acct-id').value;
+      const payload = {
+        company_name: document.getElementById('acct-company').value,
+        contact_name: document.getElementById('acct-contact').value,
+        phone: document.getElementById('acct-phone').value,
+        email: document.getElementById('acct-email').value,
+        billing_email: document.getElementById('acct-billing-email').value,
+        discount_percent: document.getElementById('acct-discount').value,
+        credit_balance: document.getElementById('acct-credit').value,
+        notes: document.getElementById('acct-notes').value
+      };
+
+      if (!payload.company_name) { showAlert('Company name required', 'danger'); return; }
+
+      const url = id ? `/api/accounts/${id}` : '/api/accounts';
+      const method = id ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        showAlert(id ? 'Account updated' : 'Account created', 'success');
+        bootstrap.Modal.getInstance('#acctModal').hide();
+        await loadAccounts();
+      } else {
+        const err = await res.json();
+        showAlert(err.error || 'Error', 'danger');
+      }
+    });
+
+    document.getElementById('btn-delete-acct').addEventListener('click', async () => {
+      const id = document.getElementById('acct-id').value;
+      if (!id || !confirm('Deactivate this account?')) return;
+      await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+      showAlert('Account deactivated', 'warning');
+      bootstrap.Modal.getInstance('#acctModal').hide();
+      loadAccounts();
+    });
+
+    async function init() {
+      await checkAuth();
+      await loadAccounts();
+      updateNavCarsCount();
+    }
+    init();
+  </script>
+</body>
+</html>

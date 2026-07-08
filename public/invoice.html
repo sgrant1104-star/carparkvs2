@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <div class="d-flex align-items-center gap-3">
+        <h2><i class="bi bi-receipt me-2"></i>Invoice</h2>
+        <div class="invoice-number-display">V: <span id="inv-number-display">NEW</span></div>
+        <div class="text-muted small" id="inv-status-badge"></div>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="/returns.html" class="btn btn-sm btn-outline-warning"><i class="bi bi-car-front"></i> Returns</a>
+        <a href="/longterm.html" class="btn btn-sm btn-outline-danger"><i class="bi bi-calendar-week"></i> Long Term</a>
+        <a href="/keybox.html" class="btn btn-sm btn-outline-secondary"><i class="bi bi-key"></i> Key Box</a>
+        <a href="/menu.html" class="btn btn-sm btn-outline-primary"><i class="bi bi-house"></i> Main Menu</a>
+      </div>
+    </div>
+
+    <!-- Search for existing customer -->
+    <div class="search-bar mb-0" id="customer-search-area">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">Search Customer by Name</label>
+          <input type="text" class="form-control" id="customer-search" placeholder="Last name or first name...">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Find Invoice #</label>
+          <input type="number" class="form-control" id="invoice-search-number" placeholder="e.g. 19025">
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-outline-primary w-100" id="btn-search-invoice">
+            <i class="bi bi-receipt-cutoff"></i> Open Invoice
+          </button>
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-success w-100" id="btn-search-customer">
+            <i class="bi bi-search"></i> Search By Name
+          </button>
+        </div>
+        <div class="col-md-2">
+          <button type="button" class="btn btn-primary w-100" id="btn-new-invoice">
+            <i class="bi bi-plus-lg"></i> New Invoice
+          </button>
+        </div>
+      </div>
+      <!-- Customer search results -->
+      <div id="customer-search-results" class="mt-2"></div>
+    </div>
+
+    <form id="invoiceForm">
+      <input type="hidden" id="inv-id" value="">
+      <input type="hidden" id="inv-customer-id" value="">
+
+      <div class="row g-3 mt-1">
+        <!-- Left Column: Vehicle & Customer Details -->
+        <div class="col-lg-7">
+          <!-- Vehicle & Key Info -->
+          <div class="form-card mb-3">
+            <div class="row g-2">
+              <div class="col-4">
+                <label class="form-label">KEY #</label>
+                <select class="form-select" id="inv-key-number">
+                  <option value="">No Key</option>
+                </select>
+              </div>
+              <div class="col-3">
+                <label class="form-label">&nbsp;</label>
+                <div class="form-check pt-2">
+                  <input class="form-check-input" type="checkbox" id="inv-no-key">
+                  <label class="form-check-label" for="inv-no-key">No Key</label>
+                </div>
+              </div>
+              <div class="col-5">
+                <label class="form-label">Rego</label>
+                <input type="text" class="form-control text-uppercase fw-bold" id="inv-rego" placeholder="NZC356">
+              </div>
+            </div>
+          </div>
+
+          <!-- Customer Details -->
+          <div class="form-card mb-3">
+            <div class="form-section-title">Customer Details</div>
+            <div class="row g-2">
+              <div class="col-md-5">
+                <label class="form-label">Last Name</label>
+                <input type="text" class="form-control text-uppercase" id="inv-last-name" placeholder="KNIGHT">
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">First Name</label>
+                <input type="text" class="form-control" id="inv-first-name" placeholder="Michael">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">Alert</label>
+                <button type="button" class="btn btn-warning btn-sm w-100 mt-0" id="btn-customer-alert" title="Customer Alert">
+                  <i class="bi bi-exclamation-triangle"></i>
+                </button>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">Phone</label>
+                <input type="text" class="form-control" id="inv-phone" placeholder="021 000 0000">
+              </div>
+              <div class="col-md-7">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-control" id="inv-email" placeholder="customer@email.com">
+              </div>
+            </div>
+            <!-- Customer alert display -->
+            <div id="customer-alert-display" class="alert alert-warning mt-2 d-none small p-2">
+              <i class="bi bi-exclamation-triangle me-1"></i>
+              <span id="customer-alert-text"></span>
+            </div>
+          </div>
+
+          <!-- Dates & Flight -->
+          <div class="form-card mb-3">
+            <div class="form-section-title">Dates & Flight Info</div>
+            <div class="row g-2">
+              <div class="col-md-4">
+                <label class="form-label">Date In</label>
+                <input type="date" class="form-control" id="inv-date-in">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Time In</label>
+                <input type="time" class="form-control" id="inv-time-in">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Stay (Nights)</label>
+                <input type="number" class="form-control fw-bold" id="inv-nights" min="0" value="1" style="background:#eaf0fb;" title="You can edit nights directly">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Return Date</label>
+                <div class="input-group">
+                  <button class="btn btn-outline-secondary btn-sm" type="button" id="btn-prev-date">←</button>
+                  <input type="date" class="form-control" id="inv-return-date">
+                  <button class="btn btn-outline-secondary btn-sm" type="button" id="btn-next-date">→</button>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Return Time</label>
+                <select class="form-select form-select-sm mb-1" id="inv-flight-arrival-select"
+                        title="Live Air NZ arrivals at Bay of Islands (KKE)">
+                  <option value="">✈ Loading flights…</option>
+                </select>
+                <input type="time" class="form-control" id="inv-return-time" value="14:35">
+                <div class="form-check mt-1">
+                  <input class="form-check-input" type="checkbox" id="inv-return-time-tbc">
+                  <label class="form-check-label small" for="inv-return-time-tbc">Return date &amp; time to be confirmed</label>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">On Account</label>
+                <select class="form-select" id="inv-account-customer">
+                  <option value="">-- Direct Customer --</option>
+                </select>
+              </div>
+              <input type="hidden" id="inv-flight-info" value="">
+              <input type="hidden" id="inv-flight-type" value="Standard - On Flight">
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div class="form-card">
+            <div class="row g-2">
+              <div class="col-md-6">
+                <label class="form-label">Invoice Notes</label>
+                <textarea class="form-control" id="inv-notes" rows="2" placeholder="Add note..."></textarea>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Car Handling</label>
+                <div class="form-check mt-1">
+                  <input class="form-check-input" type="checkbox" id="inv-do-not-move">
+                  <label class="form-check-label fw-bold text-danger" for="inv-do-not-move">PLEASE DO NOT MOVE CAR</label>
+                </div>
+                <div class="mt-2">
+                  <label class="form-label">Picked Up</label>
+                  <select class="form-select" id="inv-picked-up">
+                    <option value="Car In Yard">Car In Yard</option>
+                    <option value="Picked Up">Picked Up</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Voided">Voided</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Pricing & Payment -->
+        <div class="col-lg-5">
+          <!-- Dates (compact top) -->
+          <div class="form-card mb-3">
+            <div class="row g-2 align-items-center">
+              <div class="col-6">
+                <label class="form-label">DATE IN</label>
+                <div class="fw-bold" id="date-in-display">Today</div>
+              </div>
+              <div class="col-6">
+                <label class="form-label">TIME IN</label>
+                <div id="time-in-display" class="fw-bold">--:--</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Price Calculation -->
+          <div class="form-card mb-3">
+            <div class="form-section-title">Pricing</div>
+            <div class="row g-2 align-items-end mb-2">
+              <div class="col-6">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="inv-discount-10">
+                  <label class="form-check-label fw-bold text-success" for="inv-discount-10">
+                    -10% Discount <small class="text-muted fw-normal">(optional)</small>
+                  </label>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Credit $</label>
+                <div class="fw-bold" id="credit-display">N/A</div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-calculate w-100 mb-2" id="btn-calculate">
+              <i class="bi bi-calculator me-1"></i> Calculate Price
+            </button>
+            <div class="small mb-2" id="pricing-mode-label">
+              <span class="badge bg-secondary-subtle text-secondary-emphasis">Mode: Manual / Short-stay</span>
+            </div>
+            <div class="row g-2 align-items-center">
+              <div class="col-4">
+                <label class="form-label fw-bold">Total Price $</label>
+              </div>
+              <div class="col-8">
+                <input type="number" step="0.01" class="form-control total-price-field" id="inv-total-price" placeholder="0.00">
+              </div>
+            </div>
+            <div class="small text-muted mt-1" id="price-breakdown"></div>
+          </div>
+
+          <!-- Payment 1 -->
+          <div class="form-card mb-3">
+            <div class="form-section-title">Payment</div>
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label">PAID STATUS</label>
+                <select class="form-select" id="inv-paid-status">
+                  <option value="To Pay">Please Pick...</option>
+                  <option value="Eftpos">Eftpos</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Internet Banking">Internet Banking</option>
+                  <option value="OnAcc">On Account</option>
+                  <option value="To Pay">To Pay</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Payment $</label>
+                <input type="number" step="0.01" class="form-control payment-field" id="inv-payment-amount" placeholder="0.00">
+              </div>
+              <div class="col-12 d-none" id="inv-payment-date-1-wrap">
+                <label class="form-label">Payment received (date)</label>
+                <input type="date" class="form-control" id="inv-payment-date-1">
+                <div class="form-text">Banked / received date (used for End of Day &amp; banking on this calendar day).</div>
+              </div>
+            </div>
+
+            <!-- Split payment toggle -->
+            <div class="form-check mt-2 mb-2">
+              <input class="form-check-input" type="checkbox" id="split-payment-toggle">
+              <label class="form-check-label" for="split-payment-toggle">Split Payment (2nd Payment)</label>
+            </div>
+
+            <!-- Payment 2 -->
+            <div id="payment2-section" class="d-none border-top pt-2">
+              <div class="small fw-bold text-muted mb-2">2nd Payment</div>
+              <div class="row g-2">
+                <div class="col-12">
+                  <label class="form-label">PAID STATUS</label>
+                  <select class="form-select" id="inv-paid-status-2">
+                    <option value="">-- None --</option>
+                    <option value="Eftpos">Eftpos</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Internet Banking">Internet Banking</option>
+                    <option value="OnAcc">On Account</option>
+                    <option value="To Pay">To Pay</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">2nd Payment $</label>
+                  <input type="number" step="0.01" class="form-control payment-field" id="inv-payment-amount-2" placeholder="0.00">
+                </div>
+                <div class="col-12 d-none" id="inv-payment-date-2-wrap">
+                  <label class="form-label">2nd payment received (date)</label>
+                  <input type="date" class="form-control" id="inv-payment-date-2">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Staff -->
+          <div class="form-card mb-3">
+            <div class="row g-2 align-items-end">
+              <div class="col-7">
+                <label class="form-label">Staff Member</label>
+                <select class="form-select" id="inv-staff">
+                  <option value="">Please Pick...</option>
+                </select>
+              </div>
+              <div class="col-5">
+                <label class="form-label">Receipt Type</label>
+                <select class="form-select" id="receipt-type">
+                  <option value="pdf">Print (PDF)</option>
+                  <option value="email">Email Receipt</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-save-invoice btn-lg" id="btn-save">
+              <i class="bi bi-floppy me-2"></i>
+              <span id="save-btn-text">SAVE INVOICE</span>
+            </button>
+            <div class="row g-2">
+              <div class="col-6">
+                <button type="button" class="btn btn-outline-primary w-100" id="btn-print-receipt" disabled>
+                  <i class="bi bi-printer me-1"></i> Print Receipt
+                </button>
+              </div>
+              <div class="col-6">
+                <button type="button" class="btn btn-outline-success w-100" id="btn-email-receipt" disabled>
+                  <i class="bi bi-envelope me-1"></i> Email Receipt
+                </button>
+              </div>
+            </div>
+            <div class="row g-2">
+              <div class="col-4">
+                <button type="button" class="btn btn-void w-100" id="btn-void-invoice" disabled>
+                  <i class="bi bi-x-circle me-1"></i> Void
+                </button>
+              </div>
+              <div class="col-4">
+                <button type="button" class="btn btn-outline-warning w-100" id="btn-refund" disabled>
+                  <i class="bi bi-arrow-counterclockwise me-1"></i> Refund
+                </button>
+              </div>
+              <div class="col-4">
+                <button type="button" class="btn btn-danger w-100" id="btn-delete-invoice" disabled
+                        title="Permanently delete this booking (cannot be undone)">
+                  <i class="bi bi-trash me-1"></i> Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Customer Alert Modal -->
+  <div class="modal fade" id="alertModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Customer Alert</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <textarea class="form-control" id="modal-alert-text" rows="4" placeholder="Enter customer alert message..."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-warning" id="btn-save-alert">Save Alert</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Refund Modal -->
+  <div class="modal fade" id="refundModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Refund / Credit</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Refund Amount $</label>
+            <input type="number" step="0.01" class="form-control" id="refund-amount">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Reason</label>
+            <input type="text" class="form-control" id="refund-reason" placeholder="Reason for refund...">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-warning" id="btn-confirm-refund">Apply Refund</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/invoice.js"></script>
+</body>
+</html>

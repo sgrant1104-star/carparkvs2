@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Banking & Petty Cash - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <h2><i class="bi bi-bank2 me-2"></i>Banking & Petty Cash</h2>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs bg-white rounded-top px-3 pt-2">
+      <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-banking">Banking</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-petty">Petty Cash</a></li>
+    </ul>
+
+    <div class="tab-content bg-white rounded-bottom shadow-sm p-4">
+      <!-- Banking Tab -->
+      <div class="tab-pane fade show active" id="tab-banking">
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <div class="form-card">
+              <div class="form-section-title">Record Daily Banking</div>
+              <div class="row g-2">
+                <div class="col-6">
+                  <label class="form-label">Date</label>
+                  <input type="date" class="form-control" id="banking-date">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Eftpos Total $</label>
+                  <input type="number" step="0.01" class="form-control" id="banking-eftpos" placeholder="0.00">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Cash Total $</label>
+                  <input type="number" step="0.01" class="form-control" id="banking-cash" placeholder="0.00">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Account Total $</label>
+                  <input type="number" step="0.01" class="form-control" id="banking-account" placeholder="0.00">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Other $</label>
+                  <input type="number" step="0.01" class="form-control" id="banking-other" placeholder="0.00">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Notes</label>
+                  <input type="text" class="form-control" id="banking-notes">
+                </div>
+              </div>
+              <button class="btn btn-primary mt-3 w-100" id="btn-save-banking">
+                <i class="bi bi-floppy me-1"></i>Save Banking Record
+              </button>
+              <button class="btn btn-outline-secondary mt-2 btn-sm" id="btn-autofill-banking">
+                <i class="bi bi-calculator me-1"></i>Auto-fill from selected date invoices
+              </button>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="row g-2">
+              <div class="col-6">
+                <div class="stat-card success">
+                  <div class="stat-value" id="sum-eftpos">$0</div>
+                  <div class="stat-label">Eftpos (Period)</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="stat-card info">
+                  <div class="stat-value" id="sum-cash">$0</div>
+                  <div class="stat-label">Cash (Period)</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="stat-card danger">
+                  <div class="stat-value" id="sum-account">$0</div>
+                  <div class="stat-label">Account (Period)</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="stat-card warning">
+                  <div class="stat-value" id="sum-other">$0</div>
+                  <div class="stat-label">Other (Period)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter -->
+        <div class="row g-2 mb-3">
+          <div class="col-md-2">
+            <input type="date" class="form-control" id="bank-from">
+          </div>
+          <div class="col-md-2">
+            <input type="date" class="form-control" id="bank-to">
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-outline-primary" id="btn-load-banking">Load</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead>
+              <tr><th>Date</th><th>Eftpos</th><th>Cash</th><th>Account</th><th>Other</th><th>Total</th><th>Notes</th><th>Staff</th></tr>
+            </thead>
+            <tbody id="banking-tbody">
+              <tr><td colspan="8" class="text-center text-muted"><div class="spinner-border spinner-border-sm"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Petty Cash Tab -->
+      <div class="tab-pane fade" id="tab-petty">
+        <div class="row g-3 mb-4">
+          <div class="col-md-5">
+            <div class="form-card">
+              <div class="form-section-title">Add Petty Cash Entry</div>
+              <div class="row g-2">
+                <div class="col-6">
+                  <label class="form-label">Date</label>
+                  <input type="date" class="form-control" id="pc-date">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Type</label>
+                  <select class="form-select" id="pc-type">
+                    <option value="income">Income</option>
+                    <option value="expense" selected>Expense</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Description</label>
+                  <input type="text" class="form-control" id="pc-description" placeholder="Stationery, fuel, etc.">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Amount $</label>
+                  <input type="number" step="0.01" class="form-control" id="pc-amount" placeholder="0.00">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Category</label>
+                  <input type="text" class="form-control" id="pc-category" placeholder="Office, Maintenance...">
+                </div>
+              </div>
+              <button class="btn btn-success mt-3 w-100" id="btn-save-pc">
+                <i class="bi bi-plus-lg me-1"></i>Add Entry
+              </button>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card success">
+              <div class="stat-value" id="pc-income">$0</div>
+              <div class="stat-label">Income (Period)</div>
+            </div>
+            <div class="stat-card danger mt-3">
+              <div class="stat-value" id="pc-expense">$0</div>
+              <div class="stat-label">Expenses (Period)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter -->
+        <div class="row g-2 mb-3">
+          <div class="col-md-2">
+            <input type="date" class="form-control" id="pc-from">
+          </div>
+          <div class="col-md-2">
+            <input type="date" class="form-control" id="pc-to">
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-outline-primary" id="btn-load-pc">Load</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead>
+              <tr><th>Date</th><th>Description</th><th>Category</th><th>Type</th><th>Amount</th><th>Staff</th><th></th></tr>
+            </thead>
+            <tbody id="pc-tbody">
+              <tr><td colspan="7" class="text-center text-muted"><div class="spinner-border spinner-border-sm"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('banking');
+
+    // Set default dates
+    const now = new Date();
+    const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    const todayStr = localDateStr(now);
+
+    document.getElementById('banking-date').value = todayStr;
+    document.getElementById('bank-from').value = firstOfMonth;
+    document.getElementById('bank-to').value = todayStr;
+    document.getElementById('pc-date').value = todayStr;
+    document.getElementById('pc-from').value = firstOfMonth;
+    document.getElementById('pc-to').value = todayStr;
+
+    async function loadBanking() {
+      const from = document.getElementById('bank-from').value;
+      const to = document.getElementById('bank-to').value;
+      const res = await fetch(`/api/banking?from=${from}&to=${to}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById('sum-eftpos').textContent = formatCurrency(data.summary.eftpos);
+      document.getElementById('sum-cash').textContent = formatCurrency(data.summary.cash);
+      document.getElementById('sum-account').textContent = formatCurrency(data.summary.account);
+      document.getElementById('sum-other').textContent = formatCurrency(data.summary.other);
+
+      document.getElementById('banking-tbody').innerHTML = data.records.map(r => `
+        <tr>
+          <td class="fw-bold">${r.date}</td>
+          <td>${formatCurrency(r.eftpos_total)}</td>
+          <td>${formatCurrency(r.cash_total)}</td>
+          <td>${formatCurrency(r.account_total)}</td>
+          <td>${formatCurrency(r.other_total)}</td>
+          <td class="fw-bold text-success">${formatCurrency(r.eftpos_total + r.cash_total + r.account_total + r.other_total)}</td>
+          <td class="small text-muted">${r.notes||''}</td>
+          <td class="small">${r.staff_name||''}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="8" class="text-center text-muted">No banking records</td></tr>';
+    }
+
+    document.getElementById('btn-save-banking').addEventListener('click', async () => {
+      const payload = {
+        date: document.getElementById('banking-date').value,
+        eftpos_total: document.getElementById('banking-eftpos').value || 0,
+        cash_total: document.getElementById('banking-cash').value || 0,
+        account_total: document.getElementById('banking-account').value || 0,
+        other_total: document.getElementById('banking-other').value || 0,
+        notes: document.getElementById('banking-notes').value
+      };
+      const res = await fetch('/api/banking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        showAlert('Banking record saved', 'success');
+        loadBanking();
+      }
+    });
+
+    // Auto-fill from invoices
+    document.getElementById('btn-autofill-banking').addEventListener('click', async () => {
+      const date = document.getElementById('banking-date').value;
+      const res = await fetch(`/api/banking/autofill?date=${encodeURIComponent(date)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      document.getElementById('banking-eftpos').value = Number(data.eftpos || 0).toFixed(2);
+      document.getElementById('banking-cash').value = Number(data.cash || 0).toFixed(2);
+      document.getElementById('banking-account').value = Number(data.account || 0).toFixed(2);
+      document.getElementById('banking-other').value = Number(data.other || 0).toFixed(2);
+      showAlert(`Banking totals auto-filled from invoices on ${date}`, 'info');
+    });
+
+    document.getElementById('btn-load-banking').addEventListener('click', loadBanking);
+
+    // Petty Cash
+    async function loadPettyCash() {
+      const from = document.getElementById('pc-from').value;
+      const to = document.getElementById('pc-to').value;
+      const res = await fetch(`/api/banking/petty-cash?from=${from}&to=${to}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById('pc-income').textContent = formatCurrency(data.summary.income);
+      document.getElementById('pc-expense').textContent = formatCurrency(data.summary.expense);
+
+      document.getElementById('pc-tbody').innerHTML = data.records.map(r => `
+        <tr class="${r.type === 'income' ? 'row-eftpos' : 'row-topay'}">
+          <td>${r.date}</td>
+          <td>${r.description}</td>
+          <td class="small text-muted">${r.category||''}</td>
+          <td>
+            <span class="badge ${r.type === 'income' ? 'bg-success' : 'bg-danger'}">${r.type}</span>
+          </td>
+          <td class="fw-bold ${r.type === 'income' ? 'text-success' : 'text-danger'}">
+            ${r.type === 'income' ? '+' : '-'}${formatCurrency(r.amount)}
+          </td>
+          <td class="small">${r.staff_name||''}</td>
+          <td>
+            <button class="btn btn-action btn-outline-danger btn-delete-pc" data-id="${r.id}">
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="7" class="text-center text-muted">No petty cash records</td></tr>';
+
+      document.querySelectorAll('.btn-delete-pc').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this entry?')) return;
+          await fetch(`/api/banking/petty-cash/${btn.dataset.id}`, { method: 'DELETE' });
+          loadPettyCash();
+        });
+      });
+    }
+
+    document.getElementById('btn-save-pc').addEventListener('click', async () => {
+      const payload = {
+        date: document.getElementById('pc-date').value,
+        description: document.getElementById('pc-description').value,
+        amount: document.getElementById('pc-amount').value,
+        type: document.getElementById('pc-type').value,
+        category: document.getElementById('pc-category').value
+      };
+      if (!payload.description || !payload.amount) { showAlert('Description and amount required', 'warning'); return; }
+      const res = await fetch('/api/banking/petty-cash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        showAlert('Petty cash entry added', 'success');
+        document.getElementById('pc-description').value = '';
+        document.getElementById('pc-amount').value = '';
+        loadPettyCash();
+      }
+    });
+
+    document.getElementById('btn-load-pc').addEventListener('click', loadPettyCash);
+
+    async function init() {
+      await checkAuth();
+      await loadBanking();
+      await loadPettyCash();
+      updateNavCarsCount();
+    }
+    init();
+  </script>
+</body>
+</html>

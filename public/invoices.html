@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>All Invoices - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <h2><i class="bi bi-journal-text me-2"></i>All Invoices</h2>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="/invoice.html" class="btn btn-success btn-sm"><i class="bi bi-receipt me-1"></i>New Invoice</a>
+        <a href="/menu.html" class="btn btn-outline-primary btn-sm"><i class="bi bi-house me-1"></i>Menu</a>
+      </div>
+    </div>
+
+    <div class="form-card mb-3">
+      <div class="form-section-title">Search &amp; filters</div>
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label small mb-0">Search (inv #, name, rego, phone)</label>
+          <input type="text" class="form-control" id="inv-search" placeholder="e.g. 19719 or Smith or ABC123">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-0">Date in</label>
+          <input type="date" class="form-control" id="inv-date">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small mb-0">Paid status</label>
+          <select class="form-select" id="inv-status">
+            <option value="">Any</option>
+            <option value="To Pay">To Pay</option>
+            <option value="Eftpos">Eftpos</option>
+            <option value="Cash">Cash</option>
+            <option value="Internet Banking">Internet Banking</option>
+            <option value="OnAcc">On Account</option>
+          </select>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="inv-show-void">
+            <label class="form-check-label small" for="inv-show-void">Show voided</label>
+          </div>
+        </div>
+        <div class="col-md-3 text-md-end">
+          <button type="button" class="btn btn-primary" id="inv-btn-search"><i class="bi bi-search me-1"></i>Search</button>
+          <button type="button" class="btn btn-outline-secondary" id="inv-btn-reset">Reset</button>
+        </div>
+      </div>
+      <p class="small text-muted mb-0 mt-2">Shows up to 500 per search; use <strong>Load more</strong> for the next batch.</p>
+    </div>
+
+    <div class="form-card">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover">
+          <thead>
+            <tr>
+              <th>Inv#</th>
+              <th>Name</th>
+              <th>Rego</th>
+              <th>Date in</th>
+              <th>Status</th>
+              <th class="text-end">Total</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="inv-tbody">
+            <tr><td colspan="7" class="text-center text-muted py-4">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <button type="button" class="btn btn-outline-primary d-none mt-2" id="inv-load-more">Load more</button>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('invoices');
+
+    const PAGE = 150;
+    let offset = 0;
+
+    function row(inv) {
+      const voided = inv.void ? ' <span class="badge bg-secondary">VOID</span>' : '';
+      return `<tr class="${inv.void ? 'opacity-50' : ''}">
+        <td class="fw-bold">#${inv.invoice_number}</td>
+        <td>${(inv.first_name || '') + ' ' + (inv.last_name || '')}</td>
+        <td>${inv.rego || '—'}</td>
+        <td class="small">${inv.date_in ? formatDateShort(inv.date_in) : '—'}</td>
+        <td>${statusBadge(inv.paid_status)}${voided}</td>
+        <td class="text-end fw-bold">${formatCurrency(inv.total_price)}</td>
+        <td><a class="btn btn-sm btn-outline-primary" href="/invoice.html?id=${inv.id}">Edit</a></td>
+      </tr>`;
+    }
+
+    async function loadInvoices(append) {
+      const q = new URLSearchParams();
+      const s = document.getElementById('inv-search').value.trim();
+      if (s) q.set('search', s);
+      const d = document.getElementById('inv-date').value;
+      if (d) q.set('date', d);
+      const st = document.getElementById('inv-status').value;
+      if (st) q.set('status', st);
+      if (document.getElementById('inv-show-void').checked) q.set('void', 'true');
+      q.set('limit', String(PAGE));
+      const nextOffset = append ? offset : 0;
+      q.set('offset', String(nextOffset));
+
+      const res = await fetch('/api/invoices?' + q.toString());
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showAlert(err.error || 'Could not load invoices', 'danger');
+        document.getElementById('inv-tbody').innerHTML = '<tr><td colspan="7" class="text-center text-danger">Failed to load</td></tr>';
+        return;
+      }
+      const rows = await res.json();
+      const tb = document.getElementById('inv-tbody');
+      if (!append) {
+        tb.innerHTML = '';
+        offset = 0;
+      }
+      if (!rows.length) {
+        if (!append) tb.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No invoices match</td></tr>';
+        document.getElementById('inv-load-more').classList.add('d-none');
+        return;
+      }
+      tb.insertAdjacentHTML('beforeend', rows.map(row).join(''));
+      offset += rows.length;
+      document.getElementById('inv-load-more').classList.toggle('d-none', rows.length < PAGE);
+    }
+
+    document.getElementById('inv-btn-search').addEventListener('click', () => loadInvoices(false));
+    document.getElementById('inv-btn-reset').addEventListener('click', () => {
+      document.getElementById('inv-search').value = '';
+      document.getElementById('inv-date').value = '';
+      document.getElementById('inv-status').value = '';
+      document.getElementById('inv-show-void').checked = false;
+      loadInvoices(false);
+    });
+    document.getElementById('inv-load-more').addEventListener('click', () => loadInvoices(true));
+
+    async function init() {
+      await checkAuth();
+      await loadInvoices(false);
+      updateNavCarsCount();
+    }
+    init();
+  </script>
+</body>
+</html>

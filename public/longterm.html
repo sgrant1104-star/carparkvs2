@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Long Term Customers - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <h2><i class="bi bi-calendar-week me-2"></i>Long Term Customers</h2>
+      <button class="btn btn-success" id="btn-new-lt">
+        <i class="bi bi-plus-lg me-1"></i>New
+      </button>
+    </div>
+
+    <div id="renewal-summary" class="alert alert-info small mb-3">
+      Checking renewal dates...
+    </div>
+
+    <!-- Column headers (same 8-column grid as .lt-card: renewal + payment match badges) -->
+    <div class="row g-2 mb-2 px-1">
+      <div class="col-12 col-md-6">
+        <div class="lt-card-header-row">
+          <div class="lt-h">LT#</div>
+          <div class="lt-h">Name</div>
+          <div class="lt-h">Renewal</div>
+          <div class="lt-h">Pay</div>
+          <div class="lt-h">Rego 1</div>
+          <div class="lt-h">Rego 2</div>
+          <div class="lt-h">Phone</div>
+          <div class="lt-h">Edit</div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6">
+        <div class="lt-card-header-row">
+          <div class="lt-h">LT#</div>
+          <div class="lt-h">Name</div>
+          <div class="lt-h">Renewal</div>
+          <div class="lt-h">Pay</div>
+          <div class="lt-h">Rego 1</div>
+          <div class="lt-h">Rego 2</div>
+          <div class="lt-h">Phone</div>
+          <div class="lt-h">Edit</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="lt-grid" class="lt-grid">
+      <div class="text-center py-4 text-muted"><div class="spinner-border"></div></div>
+    </div>
+  </div>
+
+  <!-- LT Edit/Add Modal -->
+  <div class="modal fade" id="ltModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="lt-modal-title">Add Long Term Customer</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="lt-id">
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label">LT #</label>
+              <input type="text" class="form-control fw-bold" id="lt-number" placeholder="LT1">
+            </div>
+            <div class="col-md-9">
+              <label class="form-label">Full Name *</label>
+              <input type="text" class="form-control" id="lt-name" placeholder="Full name" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Rego 1</label>
+              <input type="text" class="form-control text-uppercase" id="lt-rego1" placeholder="GUA500">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Rego 2 (optional)</label>
+              <input type="text" class="form-control text-uppercase" id="lt-rego2" placeholder="EUT929">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Phone</label>
+              <input type="text" class="form-control" id="lt-phone" placeholder="021 000 0000">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">LT Key #</label>
+              <select class="form-select" id="lt-key-number">
+                <option value="">-- No LT key assigned --</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">In Yard Status</label>
+              <select class="form-select" id="lt-key-status">
+                <option value="in_yard">Car In Yard (key in use)</option>
+                <option value="released">Picked Up / Released</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Email</label>
+              <input type="email" class="form-control" id="lt-email" placeholder="email@example.com">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Contract Start Date</label>
+              <input type="date" class="form-control" id="lt-start-date">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Expiry Date</label>
+              <input type="date" class="form-control" id="lt-expiry">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Contract Term</label>
+              <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-term-1m">+1 Month / Monthly</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-term-3m">+3 Months</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-term-6m">+6 Months</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-term-12m">+12 Months / Annual</button>
+              </div>
+              <div class="small text-muted mt-1">Prepay for 3/6/12 months is <strong>auto-spread</strong> across the contract for monthly reports.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Contract term total $</label>
+              <input type="number" step="0.01" class="form-control" id="lt-contract-amount" placeholder="e.g. 360.00">
+              <div class="small text-muted mt-1">Enter ex GST amount. LT invoices/emails add 15% GST automatically.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">This term paid?</label>
+              <select class="form-select" id="lt-payment-status">
+                <option value="Unpaid">Unpaid</option>
+                <option value="Paid">Paid</option>
+                <option value="Partial">Partial</option>
+              </select>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Notes</label>
+              <input type="text" class="form-control" id="lt-notes" placeholder="Notes...">
+            </div>
+          </div>
+
+          <!-- LT Payments -->
+          <div class="mt-3">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div>
+                <div class="form-section-title mb-0"><i class="bi bi-cash-coin me-2"></i>Record Payments</div>
+                <div class="small text-muted" id="lt-payment-summary" style="margin-top:2px;">—</div>
+              </div>
+            </div>
+            <div class="row g-2 align-items-end">
+              <div class="col-md-4">
+                <label class="form-label">Amount (ex GST)</label>
+                <input type="number" step="0.01" class="form-control" id="lt-payment-amount" placeholder="e.g. 200.00">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Payment date</label>
+                <input type="date" class="form-control" id="lt-payment-date">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Method</label>
+                <select class="form-select" id="lt-payment-method">
+                  <option value="Internet Bank">Internet Bank</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Eftpos">Eftpos</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">Transaction reference (optional)</label>
+                <input type="text" class="form-control" id="lt-payment-reference" placeholder="e.g. transfer reference">
+              </div>
+              <div class="col-md-4 d-grid">
+                <button type="button" class="btn btn-primary" id="btn-add-lt-payment" disabled>
+                  <i class="bi bi-plus-circle me-1"></i>Add Payment
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <div class="small text-muted mb-2">Payment history</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Amount (ex GST)</th>
+                      <th>Method</th>
+                      <th>Reference</th>
+                    </tr>
+                  </thead>
+                  <tbody id="lt-payments-tbody">
+                    <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-preview-lt-pay" disabled title="Save first to preview email template">
+            <i class="bi bi-eye me-1"></i> Preview payment email
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-preview-lt-rcpt" disabled title="Save first to preview email template">
+            <i class="bi bi-eye me-1"></i> Preview receipt email
+          </button>
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-email-lt-pay" disabled title="Save the customer and add an email first">
+            <i class="bi bi-envelope-exclamation me-1"></i> Email payment request
+          </button>
+          <button type="button" class="btn btn-outline-success btn-sm" id="btn-email-lt-rcpt" disabled title="Save the customer and add an email first">
+            <i class="bi bi-envelope-check me-1"></i> Email receipt / paid
+          </button>
+          <div class="ms-auto d-flex gap-2">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-danger" id="btn-delete-lt" style="display:none;">Delete</button>
+            <button type="button" class="btn btn-success" id="btn-save-lt">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('longterm');
+    // Agreed long-term pricing schedule (ex GST)
+    // Monthly: $200.00
+    // 3 Months: $500.00
+    // 6 Months: $1000.00
+    // Annual: $1650.00
+    const LT_MONTHLY_RATE = 200.00;
+    const LT_TERM_TOTALS = { 1: 200.00, 3: 500.00, 6: 1000.00, 12: 1650.00 };
+
+    function addMonthsYmd(ymd, months) {
+      const base = ymd ? new Date(`${ymd}T00:00:00`) : new Date();
+      const d = new Date(base);
+      d.setMonth(d.getMonth() + months);
+      return localDateStr(d);
+    }
+
+    /** Amount for a multi-month term from agreed LT schedule. */
+    function termTotalAmount(months) {
+      return LT_TERM_TOTALS[months] || 0;
+    }
+
+    function applyTermMonths(months) {
+      document.getElementById('lt-expiry').value = addMonthsYmd(localDateStr(new Date()), months);
+      const total = termTotalAmount(months);
+      const el = document.getElementById('lt-contract-amount');
+      if (el) el.value = total > 0 ? total.toFixed(2) : '';
+    }
+
+    function updateLtEmailButtons() {
+      const id = document.getElementById('lt-id').value;
+      const em = (document.getElementById('lt-email').value || '').trim();
+      const dis = !id || !em;
+      const bp = document.getElementById('btn-email-lt-pay');
+      const br = document.getElementById('btn-email-lt-rcpt');
+      const pp = document.getElementById('btn-preview-lt-pay');
+      const pr = document.getElementById('btn-preview-lt-rcpt');
+      if (bp) { bp.disabled = dis; bp.title = dis ? (id ? 'Add an email address above' : 'Save the customer first') : 'Send payment request email'; }
+      if (br) { br.disabled = dis; br.title = dis ? (id ? 'Add an email address above' : 'Save the customer first') : 'Send paid / receipt confirmation'; }
+      if (pp) { pp.disabled = !id; pp.title = id ? 'Preview payment request template' : 'Save the customer first'; }
+      if (pr) { pr.disabled = !id; pr.title = id ? 'Preview paid/receipt template' : 'Save the customer first'; }
+    }
+
+    function normalizeLtNumber(input) {
+      const raw = String(input || '').trim().toUpperCase();
+      if (!raw) return '';
+      const digits = raw.replace(/[^0-9]/g, '');
+      if (!digits) return '';
+      return `LT${parseInt(digits, 10)}`;
+    }
+
+    function renewalBadge(c) {
+      if (c.renewal_status === 'expired') {
+        return `<span class="badge bg-danger">Expired ${Math.abs(c.days_to_expiry)}d</span>`;
+      }
+      if (c.renewal_status === 'due_soon') {
+        return `<span class="badge bg-warning text-dark">Due in ${c.days_to_expiry}d</span>`;
+      }
+      if (c.renewal_status === 'active') {
+        return `<span class="badge bg-success-subtle text-success-emphasis">Active (${c.days_to_expiry}d)</span>`;
+      }
+      return `<span class="badge bg-secondary-subtle text-secondary-emphasis">No expiry</span>`;
+    }
+
+    function paymentBadgeHtml(c) {
+      if (c.payment_status === 'Paid') return '<span class="badge bg-success">Paid</span>';
+      if (c.payment_status === 'Partial') return '<span class="badge bg-info text-dark">Partial</span>';
+      return '<span class="badge bg-light text-dark border">Unpaid</span>';
+    }
+
+    function escapeAttr(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+
+    function renderRenewalSummary(customers) {
+      const expired = customers.filter(c => c.renewal_status === 'expired').length;
+      const dueSoon = customers.filter(c => c.renewal_status === 'due_soon').length;
+      const noExpiry = customers.filter(c => c.renewal_status === 'no_expiry').length;
+      const el = document.getElementById('renewal-summary');
+      if (!el) return;
+      let cls = 'alert-info';
+      if (expired > 0) cls = 'alert-danger';
+      else if (dueSoon > 0) cls = 'alert-warning';
+      el.className = `alert ${cls} small mb-3`;
+      el.innerHTML = `
+        <strong>Renewals:</strong>
+        ${expired} expired,
+        ${dueSoon} due in 30 days,
+        ${noExpiry} with no expiry date.
+        <span class="ms-2 text-muted">Tip: open customer → set +3 / +6 / +12 months.</span>
+      `;
+    }
+
+    async function loadLongTerm() {
+      const res = await fetch('/api/longterm');
+      if (!res.ok) return;
+      const customers = await res.json();
+      renderRenewalSummary(customers);
+
+      if (customers.length === 0) {
+        document.getElementById('lt-grid').innerHTML = '<div class="col-12 text-center text-muted py-4">No long term customers yet.</div>';
+        return;
+      }
+
+      // Split into two columns
+      const half = Math.ceil(customers.length / 2);
+      const col1 = customers.slice(0, half);
+      const col2 = customers.slice(half);
+
+      function renderCol(items) {
+        return items.map(c => `
+          <div class="lt-card mb-2">
+            <div class="lt-number">${c.lt_number}</div>
+            <div class="lt-name" title="${escapeAttr(c.name)}">${c.name}</div>
+            <div class="lt-cell-renewal">${renewalBadge(c)}</div>
+            <div class="lt-cell-payment">${paymentBadgeHtml(c)}</div>
+            ${c.rego_1 ? `<span class="lt-rego">${c.rego_1}</span>` : '<span class="lt-rego text-muted">—</span>'}
+            ${c.rego_2 ? `<span class="lt-rego">${c.rego_2}</span>` : '<span class="lt-rego text-muted" style="opacity:0.3;">—</span>'}
+            <div class="lt-phone-cell">${c.phone || ''}</div>
+            <button class="btn btn-warning btn-action btn-edit-lt" data-id="${c.id}" 
+              data-lt='${JSON.stringify(c).replace(/'/g, "&#39;")}'>
+              Edit
+            </button>
+          </div>
+        `).join('');
+      }
+
+      document.getElementById('lt-grid').innerHTML = `
+        <div>${renderCol(col1)}</div>
+        <div>${renderCol(col2)}</div>
+      `;
+
+      // Attach edit handlers
+      document.querySelectorAll('.btn-edit-lt').forEach(btn => {
+        btn.addEventListener('click', () => {
+          try {
+            const lt = JSON.parse(btn.dataset.lt.replace(/&#39;/g, "'"));
+            openEditModal(lt);
+          } catch(e) {
+            // Try fetching by id
+            openEditById(btn.dataset.id);
+          }
+        });
+      });
+    }
+
+    async function openEditById(id) {
+      const res = await fetch(`/api/longterm/${id}`);
+      if (res.ok) openEditModal(await res.json());
+    }
+
+    async function populateLtKeyOptions(currentKey) {
+      const sel = document.getElementById('lt-key-number');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">-- No LT key assigned --</option>';
+      const meId = parseInt(document.getElementById('lt-id').value || '0', 10);
+      const [ltRes, slotRes] = await Promise.all([
+        fetch('/api/longterm'),
+        fetch('/api/keybox/lt-slots')
+      ]);
+      if (!ltRes.ok || !slotRes.ok) return;
+      const data = await ltRes.json();
+      const slots = await slotRes.json();
+      const current = currentKey != null && currentKey !== '' ? Number(currentKey) : null;
+      const used = new Set((data || [])
+        .filter(c => c.id !== meId && c.lt_key_slot != null)
+        .map(c => Number(c.lt_key_slot)));
+      const slotNumbers = (slots || []).map(s => Number(s.key_number)).filter(n => Number.isFinite(n) && n > 0);
+      slotNumbers.forEach((i) => {
+        if (used.has(i) && i !== current) return;
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = `LT${i}`;
+        sel.appendChild(opt);
+      });
+      if (current != null) {
+        sel.value = String(current);
+        return;
+      }
+      // Auto-suggest key by LT number (e.g. LT9 -> Key 9) when free.
+      const ltNo = document.getElementById('lt-number').value || '';
+      const suggested = parseInt(String(ltNo).replace(/[^0-9]/g, ''), 10);
+      if (!Number.isNaN(suggested) && Array.from(sel.options).some(o => Number(o.value) === suggested)) {
+        sel.value = String(suggested);
+      } else {
+        // If the suggested slot is not available, auto-pick the first available slot.
+        const firstAvailable = Array.from(sel.options).find(o => o.value && o.value !== '');
+        if (firstAvailable) sel.value = String(firstAvailable.value);
+      }
+      const ks = document.getElementById('lt-key-status');
+      if (ks && sel.value) ks.value = 'in_yard';
+    }
+
+    function setLtPaymentDefaults() {
+      const dateEl = document.getElementById('lt-payment-date');
+      if (dateEl) dateEl.value = localDateStr(new Date());
+
+      const amtEl = document.getElementById('lt-payment-amount');
+      if (amtEl) amtEl.value = LT_MONTHLY_RATE.toFixed(2);
+
+      const methodEl = document.getElementById('lt-payment-method');
+      if (methodEl) methodEl.value = 'Internet Bank';
+
+      const refEl = document.getElementById('lt-payment-reference');
+      if (refEl) refEl.value = '';
+    }
+
+    function updateLtPaymentButtons() {
+      const id = document.getElementById('lt-id').value;
+      const btn = document.getElementById('btn-add-lt-payment');
+      if (btn) btn.disabled = !id;
+    }
+
+    async function loadLtPayments(ltId) {
+      const tbody = document.getElementById('lt-payments-tbody');
+      const summary = document.getElementById('lt-payment-summary');
+      if (!tbody || !summary) return;
+
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>';
+      summary.textContent = '—';
+
+      try {
+        const res = await fetch(`/api/longterm/${ltId}/payments`);
+        if (!res.ok) {
+          tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Failed to load payments</td></tr>';
+          return;
+        }
+        const data = await res.json();
+
+        const contract = Number(data.contractExGst || 0);
+        const paid = Number(data.paidExGst || 0);
+        const remaining = Number(data.remainingExGst || 0);
+
+        summary.textContent =
+          contract > 0
+            ? `Paid: $${paid.toFixed(2)} ex GST · Remaining: $${remaining.toFixed(2)} ex GST`
+            : `Paid: $${paid.toFixed(2)} ex GST`;
+
+        const display = data.displayPayments || data.payments || [];
+        if (display.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No payments recorded</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = display.map(p => {
+          const d = p.payment_date ? String(p.payment_date).slice(0, 10) : '—';
+          const prorated = p.is_prorated && p.months > 1;
+          const allocHint = prorated && p.allocations
+            ? `<div class="text-muted" style="font-size:0.7rem;">Spread: ${p.allocations.map(a => `${String(a.payment_date).slice(0, 7)} $${Number(a.amount_ex_gst).toFixed(2)}`).join(' · ')}</div>`
+            : '';
+          return `
+            <tr class="${prorated ? 'table-info' : ''}">
+              <td class="small">${d}${prorated ? `<br><span class="badge bg-info text-dark">${p.months} mo</span>` : ''}</td>
+              <td class="small fw-bold">$${Number(p.amount_ex_gst || 0).toFixed(2)}${prorated ? ' <span class="text-muted fw-normal">total</span>' : ''}</td>
+              <td class="small">${p.payment_method || ''}</td>
+              <td class="small">${p.transaction_reference || (p.notes ? p.notes.slice(0, 40) : '—')}${allocHint}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Failed to load payments</td></tr>';
+      }
+    }
+
+    function openEditModal(lt) {
+      document.getElementById('lt-id').value = lt.id;
+      document.getElementById('lt-modal-title').textContent = `Edit Long Term - ${lt.lt_number}`;
+      document.getElementById('lt-number').value = lt.lt_number;
+      document.getElementById('lt-name').value = lt.name;
+      document.getElementById('lt-rego1').value = lt.rego_1 || '';
+      document.getElementById('lt-rego2').value = lt.rego_2 || '';
+      document.getElementById('lt-phone').value = lt.phone || '';
+      document.getElementById('lt-email').value = lt.email || '';
+      const sd = document.getElementById('lt-start-date');
+      if (sd) sd.value = lt.contract_start_date ? String(lt.contract_start_date).slice(0, 10) : '';
+      document.getElementById('lt-expiry').value = lt.expiry_date ? lt.expiry_date.split('T')[0] : '';
+      document.getElementById('lt-notes').value = lt.notes || '';
+      const ca = document.getElementById('lt-contract-amount');
+      if (ca) ca.value = lt.contract_amount != null && lt.contract_amount !== '' ? parseFloat(lt.contract_amount).toFixed(2) : '';
+      const ps = document.getElementById('lt-payment-status');
+      if (ps) ps.value = lt.payment_status || 'Unpaid';
+      // openEditModal is used for both:
+      //  - list objects from /api/longterm (fields: lt_key_slot / lt_in_yard)
+      //  - detail objects from /api/longterm/:id (fields: key_number / key_in_yard)
+      const currentKeySlot = (lt.key_number != null ? lt.key_number : lt.lt_key_slot);
+      const currentInYard = (lt.key_in_yard != null ? lt.key_in_yard : lt.lt_in_yard);
+      const ks = document.getElementById('lt-key-status');
+      if (ks) ks.value = Number(currentInYard) === 1 || currentInYard === true ? 'in_yard' : 'released';
+      populateLtKeyOptions(currentKeySlot || null);
+      document.getElementById('btn-delete-lt').style.display = 'inline-block';
+      updateLtEmailButtons();
+      updateLtPaymentButtons();
+      setLtPaymentDefaults();
+      new bootstrap.Modal('#ltModal').show();
+      loadLtPayments(lt.id);
+    }
+
+    document.getElementById('btn-new-lt').addEventListener('click', async () => {
+      // Get next LT number
+      const res = await fetch('/api/longterm/next-number');
+      let ltNum = 'LT1';
+      if (res.ok) {
+        const data = await res.json();
+        ltNum = data.ltNumber;
+      }
+
+      document.getElementById('lt-id').value = '';
+      document.getElementById('lt-modal-title').textContent = 'Add Long Term Customer';
+      document.getElementById('lt-number').value = ltNum;
+      document.getElementById('lt-name').value = '';
+      document.getElementById('lt-rego1').value = '';
+      document.getElementById('lt-rego2').value = '';
+      document.getElementById('lt-phone').value = '';
+      document.getElementById('lt-email').value = '';
+      const sd = document.getElementById('lt-start-date');
+      if (sd) sd.value = localDateStr(new Date());
+      document.getElementById('lt-key-status').value = 'released';
+      // Populate available LT key slots for new customers.
+      // Uses lt-id=0 (not matching any existing id) so it filters out used slots correctly.
+      await populateLtKeyOptions(null);
+      document.getElementById('lt-expiry').value = addMonthsYmd(localDateStr(new Date()), 3);
+      applyTermMonths(3);
+      document.getElementById('lt-notes').value = '';
+      const ps = document.getElementById('lt-payment-status');
+      if (ps) ps.value = 'Unpaid';
+      document.getElementById('btn-delete-lt').style.display = 'none';
+      updateLtEmailButtons();
+      updateLtPaymentButtons();
+      setLtPaymentDefaults();
+      const tbody = document.getElementById('lt-payments-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No payments recorded</td></tr>';
+      const summary = document.getElementById('lt-payment-summary');
+      if (summary) summary.textContent = '—';
+      new bootstrap.Modal('#ltModal').show();
+    });
+
+    document.getElementById('btn-term-3m').addEventListener('click', () => applyTermMonths(3));
+    document.getElementById('btn-term-1m').addEventListener('click', () => applyTermMonths(1));
+    document.getElementById('btn-term-6m').addEventListener('click', () => applyTermMonths(6));
+    document.getElementById('btn-term-12m').addEventListener('click', () => applyTermMonths(12));
+
+    document.getElementById('lt-email').addEventListener('input', updateLtEmailButtons);
+
+    async function postLtEmail(path) {
+      const id = document.getElementById('lt-id').value;
+      if (!id) { showAlert('Save the customer first', 'warning'); return; }
+      const em = (document.getElementById('lt-email').value || '').trim();
+      if (!em) { showAlert('Add an email address first', 'warning'); return; }
+      const btn = path.includes('payment') ? document.getElementById('btn-email-lt-pay') : document.getElementById('btn-email-lt-rcpt');
+      if (btn) { btn.disabled = true; }
+      try {
+        const res = await fetch(`/api/email/longterm/${id}/${path}`, { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) showAlert(data.message || 'Email sent', 'success');
+        else showAlert(data.error || 'Send failed', 'danger');
+      } catch (e) {
+        showAlert(e.message || 'Send failed', 'danger');
+      } finally {
+        updateLtEmailButtons();
+      }
+    }
+    async function previewLtEmail(kind) {
+      const id = document.getElementById('lt-id').value;
+      if (!id) { showAlert('Save the customer first', 'warning'); return; }
+      const res = await fetch(`/api/email/longterm/${id}/preview?type=${encodeURIComponent(kind)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showAlert(err.error || 'Preview failed', 'danger');
+        return;
+      }
+      const html = await res.text();
+      const w = window.open('', '_blank');
+      if (!w) { showAlert('Popup blocked - allow popups to preview email', 'warning'); return; }
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    }
+    document.getElementById('btn-preview-lt-pay').addEventListener('click', () => previewLtEmail('payment'));
+    document.getElementById('btn-preview-lt-rcpt').addEventListener('click', () => previewLtEmail('receipt'));
+    document.getElementById('btn-email-lt-pay').addEventListener('click', () => postLtEmail('payment-request'));
+    document.getElementById('btn-email-lt-rcpt').addEventListener('click', () => postLtEmail('receipt'));
+
+    document.getElementById('btn-add-lt-payment').addEventListener('click', async () => {
+      const id = document.getElementById('lt-id').value;
+      if (!id) { showAlert('Save the customer first', 'warning'); return; }
+
+      const amt = parseFloat(document.getElementById('lt-payment-amount').value);
+      if (!Number.isFinite(amt) || amt <= 0) { showAlert('Enter a valid payment amount (ex GST)', 'danger'); return; }
+
+      const paymentDate = document.getElementById('lt-payment-date').value || localDateStr(new Date());
+      const paymentMethod = (document.getElementById('lt-payment-method').value || 'Other').trim();
+      const transactionReference = (document.getElementById('lt-payment-reference').value || '').trim();
+
+      const res = await fetch(`/api/longterm/${id}/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          payment_date: paymentDate,
+          amount_ex_gst: amt,
+          payment_method: paymentMethod,
+          transaction_reference: transactionReference || null
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showAlert(data.error || 'Failed to record payment', 'danger', 7000);
+        return;
+      }
+
+      const ps = document.getElementById('lt-payment-status');
+      if (ps && data.payment_status) ps.value = data.payment_status;
+
+      showAlert(
+        data.prorated
+          ? `Payment recorded — $${amt.toFixed(2)} spread over ${data.months} months for reporting`
+          : 'Payment recorded',
+        'success',
+        data.prorated ? 8000 : 4000
+      );
+      await loadLtPayments(id);
+    });
+
+    document.getElementById('btn-save-lt').addEventListener('click', async () => {
+      const id = document.getElementById('lt-id').value;
+      const normalizedLt = normalizeLtNumber(document.getElementById('lt-number').value);
+      const payload = {
+        lt_number: normalizedLt,
+        name: document.getElementById('lt-name').value,
+        rego_1: document.getElementById('lt-rego1').value,
+        rego_2: document.getElementById('lt-rego2').value,
+        phone: document.getElementById('lt-phone').value,
+        email: document.getElementById('lt-email').value,
+        contract_start_date: (document.getElementById('lt-start-date')?.value || null),
+        expiry_date: document.getElementById('lt-expiry').value || null,
+        notes: document.getElementById('lt-notes').value,
+        contract_amount: document.getElementById('lt-contract-amount').value || null,
+        payment_status: document.getElementById('lt-payment-status').value || 'Unpaid'
+      };
+
+      if (!payload.name) { showAlert('Name is required', 'danger'); return; }
+      if (!payload.lt_number) { showAlert('LT # is required (example: LT9)', 'danger'); return; }
+
+      let res;
+      if (id) {
+        res = await fetch(`/api/longterm/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        res = await fetch('/api/longterm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      if (res.ok) {
+        const saved = await res.json();
+        if (saved && saved.id) {
+          document.getElementById('lt-id').value = saved.id;
+        }
+        if (saved && saved.id) {
+          const keyAction = document.getElementById('lt-key-status').value === 'in_yard' ? 'assign' : 'release';
+          const keyPayload = {
+            action: keyAction,
+            key_number: keyAction === 'assign' ? (document.getElementById('lt-key-number').value || null) : null
+          };
+          const keyRes = await fetch(`/api/longterm/${saved.id}/keybox`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(keyPayload)
+          });
+          if (!keyRes.ok) {
+            const err = await keyRes.json().catch(() => ({}));
+            showAlert(err.error || 'LT key update failed', 'danger');
+            return;
+          }
+        }
+        showAlert(id ? 'Long term customer updated' : 'Long term customer added', 'success');
+        updateLtEmailButtons();
+        bootstrap.Modal.getInstance('#ltModal').hide();
+        loadLongTerm();
+      } else {
+        const err = await res.json();
+        showAlert(err.error || 'Error saving', 'danger');
+      }
+    });
+
+    document.getElementById('btn-delete-lt').addEventListener('click', async () => {
+      const id = document.getElementById('lt-id').value;
+      if (!id || !confirm('Remove this long term customer?')) return;
+      const res = await fetch(`/api/longterm/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showAlert('Long term customer removed', 'warning');
+        bootstrap.Modal.getInstance('#ltModal').hide();
+        loadLongTerm();
+      }
+    });
+
+    async function init() {
+      await checkAuth();
+      await loadLongTerm();
+      const params = new URLSearchParams(window.location.search);
+      const ltId = params.get('lt_id');
+      if (ltId) {
+        await openEditById(ltId);
+      }
+      updateNavCarsCount();
+    }
+    init();
+  </script>
+</body>
+</html>

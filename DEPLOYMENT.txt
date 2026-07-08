@@ -1,0 +1,186 @@
+====================================================================
+  BOI Car Storage - Web Carpark Management System
+  Deployment Notes
+====================================================================
+
+SYSTEM REQUIREMENTS
+-------------------
+- Node.js v18 or higher (tested on v22.17.0)
+- Windows 10/11 or Windows Server 2019+
+- No additional software required (pure JavaScript dependencies)
+
+QUICK START (LOCAL)
+-------------------
+1. Install Node.js from https://nodejs.org (LTS version recommended)
+
+2. Open a terminal (Command Prompt or PowerShell) in the project folder:
+     cd "path\to\Web Carpark Management App"
+
+3. Install dependencies:
+     npm install
+
+4. (Optional) Edit config.env to set your SMTP email details:
+     SMTP_HOST=smtp.gmail.com
+     SMTP_PORT=587
+     SMTP_USER=your_email@gmail.com
+     SMTP_PASS=your_gmail_app_password
+     EMAIL_FROM=BOI Car Storage <your_email@gmail.com>
+
+5. Start the server:
+     npm start
+
+6. Open your browser and go to:
+     http://localhost:3000
+
+LOGINS & PASSWORDS
+------------------
+  There are no default usernames or passwords in the application code.
+
+  • Existing database: sign in with the username and password stored in the users table.
+
+  • Brand-new database (empty users table): set these environment variables before the first
+    start, then restart once so the first admin account is created:
+      INITIAL_ADMIN_USERNAME=your_username
+      INITIAL_ADMIN_PASSWORD=your_secure_password   (minimum 6 characters)
+      INITIAL_ADMIN_NAME=Administrator              (optional display name)
+
+  • After login: Admin → Login & password tab to change username and/or password (or add staff
+    users under Staff Users).
+
+PROJECT STRUCTURE
+-----------------
+  server.js           - Main server entry point
+  config.env          - Environment variables (SMTP, port, etc.)
+  carpark.db          - SQLite database (auto-created on first run)
+  package.json        - Node.js dependencies
+  src/
+    database.js       - Database schema & seed data
+    middleware/
+      auth.js         - Authentication middleware
+    routes/
+      auth.js         - Login/logout/session
+      dashboard.js    - Live dashboard stats
+      invoices.js     - Invoice CRUD + PDF receipt
+      returns.js      - Car returns / pickup tracking
+      customers.js    - Short-term customer management
+      longterm.js     - Long-term customer management
+      accounts.js     - Annual/on-account management
+      keybox.js       - Key box tracking
+      reports.js      - Revenue/occupancy/customer reports + CSV/PDF
+      email.js        - Monthly account email (preview + send)
+      banking.js      - Banking records & petty cash
+      endday.js       - End-of-day summaries
+      admin.js        - User management, pricing rules
+  public/
+    login.html        - Login page
+    menu.html         - Main menu with live dashboard
+    invoice.html      - Invoice creation/editing
+    returns.html      - Car returns view
+    longterm.html     - Long-term customers
+    accounts.html     - Annual account customers
+    keybox.html       - Key box management
+    reports.html      - Reports & analytics (Chart.js)
+    email.html        - Monthly email preview & send
+    banking.html      - Banking & petty cash
+    endday.html       - End of day summary
+    admin.html        - Admin settings
+    css/style.css     - Global styles
+    js/
+      common.js       - Shared utilities
+      invoice.js      - Invoice page logic
+
+DATABASE SCHEMA
+---------------
+  carparks            - Carpark locations (multi-site ready)
+  users               - Staff accounts with role-based access
+  customers           - Short-term customers
+  longterm_customers  - Long-term contract customers (LT1-LTn)
+  account_customers   - Annual/on-account companies
+  pricing_rules       - Flexible pricing tiers per night range
+  invoices            - All bookings/invoices
+  key_box             - Key tracking (1-50 keys)
+  petty_cash          - Petty cash income/expenses
+  banking             - Daily banking summaries
+  end_day             - End-of-day records
+  email_logs          - Monthly email send history
+
+THREE CUSTOMER TYPES
+---------------------
+1. SHORT-TERM (individual):
+   - Created via Invoice page (name, rego, dates)
+   - Pricing calculated from pricing_rules table
+   - Payment: Eftpos / Cash / To Pay / On Account
+   - Split payments supported
+
+2. LONG-TERM (contract, LT1-LTn):
+   - Managed via Long Term page
+   - Fixed monthly/weekly rate
+   - Up to 2 vehicles per customer
+   - Optional expiry date
+
+3. ANNUAL/ON-ACCOUNT (company):
+   - Managed via Accounts page
+   - Auto-invoiced monthly via email on the 20th
+   - Optional discount percentage
+   - Payment link in email
+
+MONTHLY EMAIL AUTOMATION
+-------------------------
+  The system automatically sends account statements on the 20th
+  of each month at 8:00 AM (server time).
+
+  Requirements:
+  - SMTP settings must be configured in config.env
+  - For Gmail: enable 2FA and use an App Password (not your regular password)
+    https://support.google.com/accounts/answer/185833
+
+  Manual send: Email page → select month/year → Send Emails
+
+  Test email: Email page → Test Email tab
+
+PRODUCTION DEPLOYMENT (Windows Server / VPS)
+---------------------------------------------
+Option A - PM2 Process Manager (recommended):
+  npm install -g pm2
+  pm2 start server.js --name carpark
+  pm2 startup
+  pm2 save
+
+Option B - Windows Service:
+  npm install -g node-windows
+  node-windows install server.js
+
+Option C - Run as scheduled task:
+  Create a Windows Task Scheduler entry pointing to:
+  node "C:\path\to\server.js"
+
+RUNNING ON A DIFFERENT PORT
+-----------------------------
+  Edit config.env:
+    PORT=8080
+
+  Then access at: http://yourserver:8080
+
+BACKUP
+------
+  The SQLite database is stored in: carpark.db
+  Back this file up regularly (it contains all your data).
+  The server also auto-saves every 10 seconds.
+
+SECURITY NOTES
+--------------
+  - Change default passwords before going live
+  - Set a strong SESSION_SECRET in config.env
+  - Run behind a reverse proxy (nginx/IIS) for HTTPS in production
+  - The system uses session-based authentication (8-hour timeout)
+  - Admin routes are protected by role checks
+
+SUPPORT / CUSTOMISATION
+-----------------------
+  - Carpark name/address: Admin → Carpark Settings tab
+  - Pricing tiers: Admin → Pricing Rules tab
+  - Number of keys: Key Box page → Add Key button
+  - Staff users: Admin → Staff Users tab
+  - SMTP settings: config.env file
+
+====================================================================

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Key Box - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <h2><i class="bi bi-key-fill me-2"></i>Key Box</h2>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-success" id="btn-add-key"><i class="bi bi-plus-lg me-1"></i>Add Key</button>
+        <span class="badge bg-success fs-6 align-self-center" id="available-count">-- Available</span>
+        <span class="badge bg-danger fs-6 align-self-center" id="inuse-count">-- In Use</span>
+        <span class="badge bg-warning text-dark fs-6 align-self-center" id="lt-inyard-count">-- LT In Yard</span>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="d-flex gap-3 mb-3 p-3 bg-white rounded shadow-sm">
+      <div class="d-flex align-items-center gap-2">
+        <div class="key-item available" style="width:40px; height:30px; display:flex; align-items:center; justify-content:center;">K</div>
+        <span class="small">Available</span>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <div class="key-item in-use" style="width:40px; height:30px; display:flex; align-items:center; justify-content:center;">K</div>
+        <span class="small">In Use</span>
+      </div>
+      <div class="small text-muted ms-auto"><i class="bi bi-cursor-fill me-1"></i>Click an in-use key to open the booking</div>
+    </div>
+
+    <div id="key-grid" class="key-grid">
+      <div class="text-center py-4 text-muted col-span-all"><div class="spinner-border"></div></div>
+    </div>
+    <div class="mt-4 mb-2 d-flex align-items-center justify-content-between">
+      <div class="fw-bold text-muted">Long Term Locker (LT1, LT2...)</div>
+      <button class="btn btn-sm btn-outline-success" id="btn-add-lt-box"><i class="bi bi-plus-lg me-1"></i>Add LT Box</button>
+    </div>
+    <div class="small text-muted mb-3">LT lockers appear here when a Long Term customer is created/edited in <a href="/longterm.html">Long Term</a> and saved with a key slot.</div>
+    <div id="lt-key-grid" class="key-grid">
+      <div class="text-center py-3 text-muted col-span-all">No LT keys assigned.</div>
+    </div>
+  </div>
+
+  <!-- Key Detail Modal -->
+  <div class="modal fade" id="keyModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="key-modal-title">Key Details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="key-modal-body">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <a href="#" class="btn btn-primary" id="key-invoice-link">View Invoice</a>
+          <a href="#" class="btn btn-outline-primary" id="key-longterm-link">Open Long Term</a>
+          <button type="button" class="btn btn-outline-success" id="btn-release-key">Release Key</button>
+          <button type="button" class="btn btn-outline-danger" id="btn-remove-key">Remove Key</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Key Modal -->
+  <div class="modal fade" id="addKeyModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Add New Key</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label">Key Number</label>
+          <input type="number" class="form-control" id="new-key-number" placeholder="51">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success" id="btn-save-new-key">Add Key</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add LT Box Modal -->
+  <div class="modal fade" id="addLtBoxModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Add LT Box</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label">LT Box Number</label>
+          <input type="number" class="form-control" id="new-lt-box-number" placeholder="61">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success" id="btn-save-new-lt-box">Add LT Box</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('keybox');
+
+    let currentKey = null;
+
+    async function loadKeyBox() {
+      const res = await fetch('/api/keybox');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById('available-count').textContent = `${data.available} Available`;
+      document.getElementById('inuse-count').textContent = `${data.inUse} In Use`;
+      document.getElementById('lt-inyard-count').textContent = `${data.ltInYard || 0} LT In Yard`;
+
+      const grid = document.getElementById('key-grid');
+      grid.innerHTML = data.keys.map(k => {
+        const inUse    = k.status === 'in_use';
+        const cssClass = inUse ? 'in-use' : 'available';
+        const invIdAttr = k.invoice_id ? `data-invoice-id="${k.invoice_id}"` : '';
+        const cursorStyle = 'cursor:pointer;';
+        const titleTxt = inUse
+          ? `Open booking: ${k.first_name||''} ${k.last_name||''} (${k.rego||''})`
+          : 'Available';
+        const nameTxt = inUse
+          ? `<span class="key-name">${(k.last_name||'').substring(0,8) || 'In Use'}</span>`
+          : `<span class="key-name text-muted">Free</span>`;
+        return `<div class="key-item ${cssClass}" data-status="${k.status}" data-key-number="${k.key_number}" ${invIdAttr} style="${cursorStyle}" title="${titleTxt}">
+          <span class="key-num" style="pointer-events:none">${k.key_number}</span>
+          <span style="pointer-events:none">${nameTxt}</span>
+        </div>`;
+      }).join('');
+
+      const ltGrid = document.getElementById('lt-key-grid');
+      const ltKeys = data.ltKeys || [];
+      if (ltKeys.length === 0) {
+        ltGrid.innerHTML = '<div class="text-center py-3 text-muted col-span-all">No LT keys assigned.</div>';
+      } else {
+        ltGrid.innerHTML = ltKeys.map(k => {
+          const hasHolder = !!k.longterm_customer_id;
+          const inYard = hasHolder && Number(k.in_yard) === 1;
+          const title = hasHolder ? `${k.lt_number} ${k.name}` : `Spare LT${k.key_number}`;
+          const name = hasHolder ? ((k.name || '').substring(0,10) || k.lt_number) : 'Spare';
+          const topLabel = hasHolder ? (k.lt_number || `LT${k.key_number}`) : `LT${k.key_number}`;
+          return `<div class="key-item ${inYard ? 'in-use' : 'available'}" data-lt-id="${k.longterm_customer_id || ''}" data-lt-slot="${k.key_number}" data-lt-number="${k.lt_number || ''}" data-lt-name="${k.name || ''}" data-lt-inyard="${inYard ? 1 : 0}" style="cursor:pointer;" title="${title}">
+            <span class="key-num" style="pointer-events:none">${topLabel}</span>
+            <span style="pointer-events:none"><span class="key-name">${name}</span></span>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    function showKeyDetail(k) {
+      currentKey = k;
+      const isLt = !!k.longterm_customer_id;
+      const isLtSlot = !!k.lt_slot || isLt;
+      const isInUse = (k.status === 'in_use') || !!k.lt_in_yard;
+      document.getElementById('key-modal-title').textContent = isLt
+        ? `${k.lt_number || ''} (Slot LT${k.key_number})`
+        : (isLtSlot ? `LT Slot ${k.key_number}` : `Key #${k.key_number}`);
+      document.getElementById('key-modal-body').innerHTML = (!isLt && k.invoice_number) ? `
+        <table class="table table-sm">
+          <tr><th>Invoice #</th><td><strong>${k.invoice_number}</strong></td></tr>
+          <tr><th>Customer</th><td>${k.first_name||''} ${k.last_name||''}</td></tr>
+          <tr><th>Rego</th><td><strong>${k.rego||''}</strong></td></tr>
+          <tr><th>Return Date</th><td>${k.return_date ? formatDateShort(k.return_date) : 'Unknown'}</td></tr>
+          <tr><th>Status</th><td><span class="badge bg-danger">In Use</span></td></tr>
+        </table>
+      ` : (isLt ? `
+        <table class="table table-sm">
+          <tr><th>Holder</th><td><strong>${k.lt_number || ''} - ${k.lt_name || ''}</strong></td></tr>
+          <tr><th>Slot</th><td><strong>LT${k.key_number}</strong></td></tr>
+          <tr><th>Rego</th><td><strong>${k.lt_rego_1 || k.lt_rego_2 || '—'}</strong></td></tr>
+          <tr><th>Status</th><td>${isInUse ? '<span class="badge bg-warning text-dark">Long Term In Yard</span>' : '<span class="badge bg-secondary">Released</span>'}</td></tr>
+        </table>
+      ` : (isLtSlot
+        ? `<p class="text-muted mb-0">This LT slot is currently <strong>Spare</strong> (not assigned).</p>`
+        : `<p class="text-muted">${isInUse ? 'Key in use but no linked holder found.' : 'This key slot is currently available.'}</p>`));
+
+      const invLink = document.getElementById('key-invoice-link');
+      const ltLink = document.getElementById('key-longterm-link');
+      const relBtn = document.getElementById('btn-release-key');
+      const rmBtn = document.getElementById('btn-remove-key');
+      if (!isLt && !isLtSlot && k.invoice_id) {
+        invLink.href = `/invoice.html?id=${k.invoice_id}`;
+        invLink.style.display = 'inline-block';
+        ltLink.style.display = 'none';
+        relBtn.style.display = 'inline-block';
+        rmBtn.style.display = 'none';
+      } else if (isLt && k.longterm_customer_id) {
+        ltLink.href = '/longterm.html';
+        ltLink.style.display = 'inline-block';
+        invLink.style.display = 'none';
+        relBtn.style.display = isInUse ? 'inline-block' : 'none';
+        rmBtn.style.display = 'none';
+      } else if (isLtSlot) {
+        invLink.style.display = 'none';
+        ltLink.style.display = 'none';
+        relBtn.style.display = 'none';
+        rmBtn.style.display = isInUse ? 'none' : 'inline-block';
+      } else {
+        invLink.style.display = 'none';
+        ltLink.style.display = 'none';
+        relBtn.style.display = 'none';
+        rmBtn.style.display = isInUse ? 'none' : 'inline-block';
+      }
+
+      new bootstrap.Modal('#keyModal').show();
+    }
+
+    // ── Event delegation: one listener handles all key clicks, even after grid refresh ──
+    document.getElementById('key-grid').addEventListener('click', async (e) => {
+      const keyEl = e.target.closest('.key-item');
+      if (!keyEl) return;
+      const invoiceId = keyEl.getAttribute('data-invoice-id');
+      if (invoiceId) {
+        window.location.href = `/invoice.html?id=${invoiceId}`;
+      } else {
+        showKeyDetail({
+          key_number: Number(keyEl.getAttribute('data-key-number')),
+          status: keyEl.getAttribute('data-status') || 'available'
+        });
+      }
+    });
+
+    // LT locker grid is separate from standard key grid.
+    // Clicking an LT tile opens that exact customer in Long Term modal.
+    document.getElementById('lt-key-grid').addEventListener('click', (e) => {
+      const keyEl = e.target.closest('.key-item');
+      if (!keyEl) return;
+      const ltId = keyEl.getAttribute('data-lt-id');
+      if (!ltId) {
+        showKeyDetail({
+          lt_slot: true,
+          key_number: Number(keyEl.getAttribute('data-lt-slot')),
+          status: 'available',
+          lt_in_yard: false
+        });
+        return;
+      }
+      window.location.href = `/longterm.html?lt_id=${encodeURIComponent(ltId)}`;
+    });
+
+    document.getElementById('btn-release-key').addEventListener('click', async () => {
+      if (!currentKey) return;
+      const isLt = !!currentKey.longterm_customer_id;
+      if (!confirm(`Release ${isLt ? `LT${currentKey.key_number}` : `Key #${currentKey.key_number}`}?`)) return;
+      const res = isLt
+        ? await fetch(`/api/longterm/${currentKey.longterm_customer_id}/keybox`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'release' })
+          })
+        : await fetch(`/api/keybox/${currentKey.key_number}/release`, { method: 'POST' });
+      if (res.ok) {
+        showAlert(`${isLt ? `LT${currentKey.key_number}` : `Key #${currentKey.key_number}`} released`, 'success');
+        bootstrap.Modal.getInstance('#keyModal').hide();
+        loadKeyBox();
+      }
+    });
+
+    document.getElementById('btn-remove-key').addEventListener('click', async () => {
+      if (!currentKey || currentKey.status === 'in_use') return;
+      const isLtSlot = !!currentKey.lt_slot;
+      if (!confirm(`Remove ${isLtSlot ? `LT${currentKey.key_number}` : `Key #${currentKey.key_number}`}?`)) return;
+      const res = await fetch(
+        isLtSlot ? `/api/keybox/lt-slots/${currentKey.key_number}` : `/api/keybox/${currentKey.key_number}`,
+        { method: 'DELETE' }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        showAlert(`${isLtSlot ? `LT${currentKey.key_number}` : `Key #${currentKey.key_number}`} removed`, 'success');
+        bootstrap.Modal.getInstance('#keyModal').hide();
+        loadKeyBox();
+      } else {
+        showAlert(data.error || 'Failed to remove key', 'danger');
+      }
+    });
+
+    document.getElementById('btn-add-key').addEventListener('click', () => {
+      new bootstrap.Modal('#addKeyModal').show();
+    });
+
+    document.getElementById('btn-add-lt-box').addEventListener('click', () => {
+      new bootstrap.Modal('#addLtBoxModal').show();
+    });
+
+    document.getElementById('btn-save-new-key').addEventListener('click', async () => {
+      const num = document.getElementById('new-key-number').value;
+      if (!num) { showAlert('Enter a key number', 'warning'); return; }
+      const res = await fetch('/api/keybox/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key_number: parseInt(num) })
+      });
+      if (res.ok) {
+        showAlert(`Key #${num} added`, 'success');
+        bootstrap.Modal.getInstance('#addKeyModal').hide();
+        document.getElementById('new-key-number').value = '';
+        loadKeyBox();
+      } else {
+        const err = await res.json();
+        showAlert((err.error || 'Error') + ` — Key #${num} may already exist.`, 'warning');
+      }
+    });
+
+    document.getElementById('btn-save-new-lt-box').addEventListener('click', async () => {
+      const num = document.getElementById('new-lt-box-number').value;
+      if (!num) { showAlert('Enter an LT box number', 'warning'); return; }
+      const res = await fetch('/api/keybox/lt-slots/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key_number: parseInt(num, 10) })
+      });
+      if (res.ok) {
+        showAlert(`LT${num} added`, 'success');
+        bootstrap.Modal.getInstance('#addLtBoxModal').hide();
+        document.getElementById('new-lt-box-number').value = '';
+        loadKeyBox();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showAlert(err.error || 'Failed to add LT box', 'warning');
+      }
+    });
+
+    async function init() {
+      await checkAuth();
+      await loadKeyBox();
+      updateNavCarsCount();
+    }
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>End of Day - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <h2><i class="bi bi-calendar-check-fill me-2"></i>End of Day</h2>
+      <div class="d-flex align-items-center gap-3">
+        <input type="date" class="form-control" id="endday-date" style="width:160px;">
+        <button class="btn btn-primary" id="btn-load-endday"><i class="bi bi-arrow-clockwise me-1"></i>Load</button>
+      </div>
+    </div>
+
+    <!-- Key totals -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-3 col-6">
+        <div class="stat-card success">
+          <div class="stat-value" id="ed-eftpos-hero">$0</div>
+          <div class="stat-label"><i class="bi bi-credit-card me-1"></i>Eftpos <span class="badge bg-light text-dark small ms-1">terminal ✓</span></div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="stat-card info">
+          <div class="stat-value" id="ed-revenue">$0</div>
+          <div class="stat-label"><i class="bi bi-cash me-1"></i>Total Banked <span class="small text-muted">(all methods)</span></div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="stat-card warning">
+          <div class="stat-value" id="ed-cars-in-yard">0</div>
+          <div class="stat-label"><i class="bi bi-p-square me-1"></i>Cars in Yard</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="stat-card">
+          <div class="stat-value" id="ed-cars-in">0</div>
+          <div class="stat-label"><i class="bi bi-car-front me-1"></i>Cars In &nbsp;|&nbsp; <span id="ed-cars-out">0</span> Out</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Eftpos Terminal Reconciliation -->
+    <div class="form-card mb-3" id="eftpos-recon-card">
+      <div class="form-section-title d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-credit-card-2-front me-2"></i>Eftpos Terminal Check</span>
+        <small class="text-muted">Compare against your terminal's Z-report / batch total</small>
+      </div>
+      <div class="row g-3 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">System expects</label>
+          <div class="fs-5 fw-bold" id="ep-expected">$0.00</div>
+          <div class="small text-muted" id="ep-count">0 transactions</div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Terminal / Z-report total</label>
+          <input type="number" step="0.01" class="form-control" id="ep-machine-total" placeholder="Enter amount">
+        </div>
+        <div class="col-md-3">
+          <button class="btn btn-outline-primary" id="btn-check-eftpos"><i class="bi bi-check2-circle me-1"></i>Check</button>
+        </div>
+        <div class="col-md-3">
+          <div id="ep-status"></div>
+        </div>
+      </div>
+      <div id="ep-warning" class="alert alert-warning mt-3 d-none"></div>
+      <div class="table-responsive mt-3 d-none" id="ep-items-wrap">
+        <div class="small text-muted mb-1">Everything the system counted as Eftpos today — use this to trace a mismatch:</div>
+        <table class="table table-sm">
+          <thead><tr><th>Source</th><th>Reference</th><th>Description</th><th>Time</th><th class="text-end">Amount</th></tr></thead>
+          <tbody id="ep-items-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Payment Breakdown -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="form-card">
+          <div class="form-section-title">Payment Breakdown</div>
+          <div class="alert alert-info small py-1 mb-2">Compare <strong>Eftpos</strong> line to your terminal report.</div>
+          <table class="table table-sm">
+            <tbody>
+              <tr class="table-success"><td><i class="bi bi-credit-card me-1"></i><strong>Eftpos (short-stay only)</strong></td><td class="fw-bold text-success text-end fs-6" id="ed-eftpos">$0</td></tr>
+              <tr><td>Cash</td><td class="fw-bold text-primary text-end" id="ed-cash">$0</td></tr>
+              <tr><td><i class="bi bi-bank me-1"></i>Internet Banking</td><td class="fw-bold text-end" style="color:#6f42c1;" id="ed-internet">$0</td></tr>
+              <tr><td>On Account</td><td class="fw-bold text-danger text-end" id="ed-account">$0</td></tr>
+              <tr class="table-light"><td><small class="text-muted">Total banked</small></td><td class="text-muted text-end small" id="ed-total-inline">$0</td></tr>
+            </tbody>
+          </table>
+          <div class="small text-muted mt-2">The "Eftpos Terminal Check" panel above includes long-term and account Eftpos payments too — use that figure against the actual terminal, not this line alone.</div>
+        </div>
+      </div>
+      <div class="col-md-8">
+        <div class="form-card">
+          <div class="form-section-title">End of Day Notes</div>
+          <textarea class="form-control" id="ed-notes" rows="3" placeholder="Any notes for end of day..."></textarea>
+          <button class="btn btn-success mt-3" id="btn-save-endday">
+            <i class="bi bi-floppy me-2"></i>Save End of Day Record
+          </button>
+          <div id="ed-saved-status" class="d-inline-block ms-2"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Today's Invoices with payment detail -->
+    <div class="form-card mb-3">
+      <div class="form-section-title d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-receipt me-2"></i>Today's Invoices</span>
+        <small class="text-muted">Payment amounts shown contribute to the breakdown above</small>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover">
+          <thead>
+            <tr><th>Inv#</th><th>Name</th><th>Rego</th><th>Time In</th><th>Return</th><th>Total</th><th>Paid</th><th>Method</th><th>Staff</th></tr>
+          </thead>
+          <tbody id="ed-invoices-tbody">
+            <tr><td colspan="9" class="text-center text-muted"><div class="spinner-border spinner-border-sm"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Historical Records -->
+    <div class="form-card">
+      <div class="form-section-title"><i class="bi bi-clock-history me-2"></i>Recent End of Day History</div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover">
+          <thead>
+            <tr><th>Date</th><th>Revenue</th><th>Cars In</th><th>Cars Yard</th><th>Eftpos (system)</th><th>Terminal</th><th>Variance</th><th>Cash</th><th>IB</th><th>Account</th><th>Notes</th></tr>
+          </thead>
+          <tbody id="ed-history-tbody">
+            <tr><td colspan="11" class="text-center text-muted"><div class="spinner-border spinner-border-sm"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('endday');
+
+    const dateInput = document.getElementById('endday-date');
+    dateInput.value = today();
+
+    async function loadEndDay() {
+      const date = dateInput.value;
+      const res = await fetch(`/api/endday?date=${encodeURIComponent(date)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showAlert(err.error || 'Could not load End of Day', 'danger');
+        return;
+      }
+      const data = await res.json();
+
+      const s = data.stats;
+      document.getElementById('ed-revenue').textContent = formatCurrency(s.total_revenue);
+      document.getElementById('ed-eftpos-hero').textContent = formatCurrency(s.eftpos);
+      document.getElementById('ed-eftpos').textContent = formatCurrency(s.eftpos);
+      document.getElementById('ed-cash').textContent = formatCurrency(s.cash);
+      document.getElementById('ed-internet').textContent = formatCurrency(s.internet_banking || 0);
+      document.getElementById('ed-account').textContent = formatCurrency(s.on_account);
+      document.getElementById('ed-total-inline').textContent = formatCurrency(s.total_revenue);
+      document.getElementById('ed-cars-in').textContent = s.cars_in || 0;
+      document.getElementById('ed-cars-in-yard').textContent = s.cars_in_yard || 0;
+      document.getElementById('ed-cars-out').textContent = s.cars_out || 0;
+
+      if (data.record) {
+        document.getElementById('ed-notes').value = data.record.notes || '';
+      } else {
+        document.getElementById('ed-notes').value = '';
+      }
+
+      renderEftposReconciliation(data.eftposReconciliation);
+      if (data.record && data.record.eftpos_machine_total != null) {
+        document.getElementById('ep-machine-total').value = data.record.eftpos_machine_total;
+      } else {
+        document.getElementById('ep-machine-total').value = '';
+      }
+
+      // Today's invoices
+      document.getElementById('ed-invoices-tbody').innerHTML = data.invoices.map(inv => {
+        const paidAmt1 = (inv.paid_status && inv.paid_status !== 'To Pay' && inv.payment_amount > 0) ? inv.payment_amount : 0;
+        const paidAmt2 = (inv.paid_status_2 && inv.paid_status_2 !== 'To Pay' && inv.payment_amount_2 > 0) ? inv.payment_amount_2 : 0;
+        const methodStr = [
+          paidAmt1 > 0 ? `${inv.paid_status} ${formatCurrency(paidAmt1)}` : '',
+          paidAmt2 > 0 ? `${inv.paid_status_2} ${formatCurrency(paidAmt2)}` : ''
+        ].filter(Boolean).join(' + ') || statusBadge(inv.paid_status);
+        const paidTotal = paidAmt1 + paidAmt2;
+        return `
+        <tr class="${rowClass(inv.paid_status)}">
+          <td><a href="/invoice.html?id=${inv.id}">#${inv.invoice_number}</a></td>
+          <td>${inv.first_name||''} ${inv.last_name||''}</td>
+          <td class="fw-bold">${inv.rego||''}</td>
+          <td>${inv.time_in||''}</td>
+          <td>${inv.return_date ? formatDateShort(inv.return_date) : ''}</td>
+          <td class="fw-bold">${formatCurrency(inv.total_price)}</td>
+          <td class="fw-bold ${paidTotal > 0 ? 'text-success' : 'text-warning'}">${paidTotal > 0 ? formatCurrency(paidTotal) : '—'}</td>
+          <td class="small">${methodStr}</td>
+          <td class="small">${inv.staff_name||''}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="9" class="text-center text-muted">No invoices today</td></tr>';
+
+      // Saved status
+      if (data.record) {
+        document.getElementById('ed-saved-status').innerHTML = '<span class="badge bg-success">Record saved</span>';
+      } else {
+        document.getElementById('ed-saved-status').innerHTML = '<span class="badge bg-warning text-dark">Not saved yet</span>';
+      }
+    }
+
+    function renderEftposReconciliation(rec) {
+      if (!rec) return;
+      document.getElementById('ep-expected').textContent = formatCurrency(rec.expectedTotal ?? rec.expected ?? 0);
+      document.getElementById('ep-count').textContent = `${rec.count ?? (rec.items || []).length} transaction(s)`;
+
+      const statusEl = document.getElementById('ep-status');
+      const warnEl = document.getElementById('ep-warning');
+      if (rec.machine == null) {
+        statusEl.innerHTML = '<span class="badge bg-secondary">Not checked yet</span>';
+        warnEl.classList.add('d-none');
+      } else if (rec.matched) {
+        statusEl.innerHTML = '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Matches terminal</span>';
+        warnEl.classList.add('d-none');
+      } else {
+        const diff = rec.variance > 0 ? `+${formatCurrency(rec.variance)}` : formatCurrency(rec.variance);
+        statusEl.innerHTML = `<span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Mismatch: ${diff}</span>`;
+        warnEl.classList.remove('d-none');
+        warnEl.innerHTML = (rec.warnings || []).map(w => `<div>${w}</div>`).join('');
+      }
+
+      const items = rec.items || [];
+      const wrap = document.getElementById('ep-items-wrap');
+      const tbody = document.getElementById('ep-items-tbody');
+      if (items.length === 0) {
+        wrap.classList.add('d-none');
+        return;
+      }
+      wrap.classList.remove('d-none');
+      tbody.innerHTML = items.map(it => `
+        <tr>
+          <td><span class="badge bg-light text-dark">${it.source}</span></td>
+          <td>${it.link ? `<a href="${it.link}">${it.ref}</a>` : it.ref}</td>
+          <td class="small">${it.description || ''}</td>
+          <td class="small">${it.time || ''}</td>
+          <td class="text-end fw-bold">${formatCurrency(it.amount)}</td>
+        </tr>
+      `).join('');
+    }
+
+    document.getElementById('btn-check-eftpos').addEventListener('click', async () => {
+      const date = dateInput.value;
+      const machineTotal = document.getElementById('ep-machine-total').value;
+      const qs = new URLSearchParams({ date });
+      if (machineTotal !== '') qs.set('machine_total', machineTotal);
+      const res = await fetch(`/api/endday/eftpos-reconciliation?${qs.toString()}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showAlert(err.error || 'Could not check Eftpos total', 'danger');
+        return;
+      }
+      const rec = await res.json();
+      renderEftposReconciliation(rec);
+    });
+
+    async function loadHistory() {
+      const res = await fetch('/api/endday/history');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showAlert(err.error || 'Could not load history', 'danger');
+        return;
+      }
+      const records = await res.json();
+      document.getElementById('ed-history-tbody').innerHTML = records.map(r => {
+        const hasCheck = r.eftpos_machine_total != null;
+        const varOk = hasCheck && Math.abs(r.eftpos_variance || 0) < 0.01;
+        const varBadge = !hasCheck
+          ? '<span class="text-muted small">—</span>'
+          : varOk
+            ? '<span class="badge bg-success">Match</span>'
+            : `<span class="badge bg-danger" title="${(r.eftpos_variance_notes||'').replace(/"/g,'&quot;')}">${r.eftpos_variance > 0 ? '+' : ''}${formatCurrency(r.eftpos_variance)}</span>`;
+        return `
+        <tr>
+          <td class="fw-bold">${r.date}</td>
+          <td class="text-success fw-bold">${formatCurrency(r.total_revenue)}</td>
+          <td>${r.cars_in||0}</td>
+          <td>${r.cars_in_yard||0}</td>
+          <td>${formatCurrency(r.eftpos_total)}</td>
+          <td>${hasCheck ? formatCurrency(r.eftpos_machine_total) : '<span class="text-muted small">not checked</span>'}</td>
+          <td>${varBadge}</td>
+          <td>${formatCurrency(r.cash_total)}</td>
+          <td>${formatCurrency(r.internet_banking_total || 0)}</td>
+          <td>${formatCurrency(r.account_total)}</td>
+          <td class="small text-muted">${r.notes||''}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="11" class="text-center text-muted">No history yet</td></tr>';
+    }
+
+    document.getElementById('btn-load-endday').addEventListener('click', loadEndDay);
+    dateInput.addEventListener('change', loadEndDay);
+
+    document.getElementById('btn-save-endday').addEventListener('click', async () => {
+      const machineTotalRaw = document.getElementById('ep-machine-total').value;
+      const res = await fetch('/api/endday', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          date: dateInput.value,
+          notes: document.getElementById('ed-notes').value,
+          eftpos_machine_total: machineTotalRaw !== '' ? machineTotalRaw : null
+        })
+      });
+      if (res.ok) {
+        const result = await res.json().catch(() => ({}));
+        if (result.eftposReconciliation) renderEftposReconciliation(result.eftposReconciliation);
+        if (result.eftposReconciliation && result.eftposReconciliation.matched === false) {
+          showAlert('End of day saved — but the Eftpos total does not match the terminal. See the panel above.', 'warning');
+        } else {
+          showAlert('End of day record saved!', 'success');
+        }
+        document.getElementById('ed-saved-status').innerHTML = '<span class="badge bg-success">Record saved</span>';
+        await loadHistory();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showAlert(err.error || ('Save failed (' + res.status + ')'), 'danger');
+      }
+    });
+
+    async function init() {
+      await checkAuth();
+      await loadEndDay();
+      await loadHistory();
+      updateNavCarsCount();
+    }
+    init();
+  </script>
+</body>
+</html>
