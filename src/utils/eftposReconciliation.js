@@ -80,7 +80,10 @@ async function getEftposReconciliation(db, { carparkId, date }) {
   `).all(carparkId, date);
   const ltRefByBatch = new Map();
   for (const r of ltRows) {
-    const key = r.payment_batch_id || `single-${r.id}`;
+    // Must match the same key collapsePaymentsForDisplay() uses: batch_id when
+    // present, otherwise the raw row id (NOT a prefixed string) — legacy rows
+    // predating payment_batch_id fall into the second case.
+    const key = r.payment_batch_id || r.id;
     if (!ltRefByBatch.has(key)) ltRefByBatch.set(key, `${r.lt_number} — ${r.name}`);
   }
   const ltCollapsed = collapsePaymentsForDisplay(ltRows);

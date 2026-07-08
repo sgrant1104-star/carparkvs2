@@ -460,4 +460,50 @@ router.delete('/:id', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-module.exports = router;
+// DELETE /api/longterm/:id/payments/batch/:batchId
+// Removes an ENTIRE prorated spread (all months of a single lump-sum swipe)
+// in one action — the single-row DELETE above can't touch these since a
+// batch's display "id" is the batch string, not a real row id.
+router.delete('/:id/payments/batch/:batchId', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const ltId = parseInt(req.params.id, 10);
+    const batchId = req.params.batchId;
+    if (!Number.isFinite(ltId) || !batchId) return res.status(400).json({ error: 'Invalid id' });
+
+    const rows = await db.prepare(`
+      SELECT * FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ? AND payment_batch_id = ?
+    `).all(carparkId, ltId, batchId);
+    if (rows.length === 0) return res.status(404).json({ error: 'Payment batch not found' });
+
+    await db.prepare(`DELETE FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ? AND payment_batch_id = ?`)
+      .run(carparkId, ltId, batchId);
+
+    const paidRow = await db.prepare(`
+      SELECT COALESCE(SUM(amount_ex_gst), 0) AS paid_ex_gst
+      FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ?
+    `).get(carparkId, ltId);
+    const lt = await db.prepare(`SELECT contract_amount FROM longterm_customers WHERE id = ? AND carpark_id = ?`).get(ltId, carparkId);
+    const paidExGst = parseFloat(paidRow?.paid_ex_gst || 0);
+    const contractExGst = lt && lt.contract_amount != null && lt.contract_amount !== '' ? parseFloat(lt.contract_amount) : 0;
+    let nextStatus = 'Unpaid';
+    if (contractExGst > 0) {
+      nextStatus = paidExGst <= 0 ? 'Unpaid' : (paidExGst >= contractExGst ? 'Paid' : 'Partial');
+    } else {
+      nextStatus = paidExGst > 0 ? 'Partial' : 'Unpaid';
+    }
+    await db.prepare(`UPDATE longterm_customers SET payment_status = ? WHERE id = ? AND carpark_id = ?`).run(nextStatus, ltId, carparkId);
+
+    const { userId, userName } = actorFromReq(req);
+    await logActivity(db, {
+      carparkId, tableName: 'longterm_payments', recordId: ltId, action: 'delete_batch',
+      before: { batchId, rows }, after: null,
+      notes: `Deleted entire ${rows.length}-month prepay spread (batch ${batchId})`,
+      userId, userName,
+    });
+
+    res.json({ success: true, payment_status: nextStatus, paidExGst, deletedCount: rows.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});

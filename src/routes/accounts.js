@@ -71,13 +71,29 @@ router.get('/:id/statement', requireAuth, async (req, res) => {
     const y = parseInt(year || today.slice(0, 4), 10);
     const startDate = `${y}-${m}-01`;
     const endDate = `${y}-${m}-${String(new Date(y, parseInt(m, 10), 0).getDate()).padStart(2, '0')}`;
-    const invoices = await db.prepare(`
+    const invoicesRaw = await db.prepare(`
       SELECT * FROM invoices
       WHERE account_customer_id = ? AND void = 0
         AND substr(trim(COALESCE(date_in,'')),1,10) >= ?
         AND substr(trim(COALESCE(date_in,'')),1,10) <= ?
       ORDER BY date_in ASC
     `).all(req.params.id, startDate, endDate);
+
+    // Merge in real per-invoice allocated/outstanding amounts (across the invoice's
+    // whole life, not just this month) so the statement shows what's actually owed
+    // on each booking, not just a whole-period bucket total.
+    const allInvoicesWithOutstanding = await getAccountInvoicesWithOutstanding(db, { carparkId, accountCustomerId: req.params.id });
+    const outstandingById = new Map(allInvoicesWithOutstanding.map(i => [i.id, i]));
+    const invoices = invoicesRaw.map(inv => {
+      const withOutstanding = outstandingById.get(inv.id);
+      return {
+        ...inv,
+        allocated_amount: withOutstanding ? withOutstanding.allocated_amount : 0,
+        outstanding_amount: withOutstanding ? withOutstanding.outstanding_amount : (parseFloat(inv.total_price) || 0),
+        invoice_payment_status: withOutstanding ? withOutstanding.invoice_payment_status : 'Outstanding',
+      };
+    });
+
     const total = invoices.reduce((sum, inv) => sum + (parseFloat(inv.total_price || 0) || 0), 0);
     const payments = await db.prepare(`
       SELECT * FROM account_payments
@@ -88,7 +104,15 @@ router.get('/:id/statement', requireAuth, async (req, res) => {
     `).all(carparkId, req.params.id, startDate, endDate);
     const paid = payments.reduce((s, p) => s + (p.amount || 0), 0);
     const outstanding = Math.max(0, (total || 0) - paid);
-    res.json({ account, invoices, total, month: m, year: y, startDate, endDate, payments, paid, outstanding });
+
+    // Outstanding invoices across ALL periods (not just this month) — used to
+    // populate the "apply payment to" picker so a payment can settle an older
+    // unpaid invoice, not just ones in the currently-viewed month.
+    const outstandingInvoicesForPicker = allInvoicesWithOutstanding
+      .filter(i => i.outstanding_amount > 0.001)
+      .map(i => ({ id: i.id, invoice_number: i.invoice_number, date_in: i.date_in, rego: i.rego, outstanding_amount: i.outstanding_amount }));
+
+    res.json({ account, invoices, total, month: m, year: y, startDate, endDate, payments, paid, outstanding, outstandingInvoicesForPicker });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -125,7 +149,7 @@ router.get('/:id/payments', requireAuth, async (req, res) => {
 router.post('/:id/payments', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
-    const { payment_date, amount, payment_method, transaction_reference, notes } = req.body || {};
+    const { payment_date, amount, payment_method, transaction_reference, notes, invoice_id } = req.body || {};
     const amt = parseFloat(amount);
     if (!payment_date) return res.status(400).json({ error: 'payment_date is required' });
     if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'amount must be > 0' });
@@ -137,6 +161,7 @@ router.post('/:id/payments', requireAuth, async (req, res) => {
     const paymentId = result.lastInsertRowid;
     const allocation = await allocateAccountPayment(db, {
       carparkId, accountCustomerId: req.params.id, paymentId, amount: amt,
+      targetInvoiceId: invoice_id || null,
     });
 
     const { userId, userName } = actorFromReq(req);

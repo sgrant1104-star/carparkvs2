@@ -188,10 +188,11 @@
                       <th>Amount (ex GST)</th>
                       <th>Method</th>
                       <th>Reference</th>
+                      <th class="text-end"></th>
                     </tr>
                   </thead>
                   <tbody id="lt-payments-tbody">
-                    <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+                    <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -443,13 +444,13 @@
       const summary = document.getElementById('lt-payment-summary');
       if (!tbody || !summary) return;
 
-      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>';
       summary.textContent = '—';
 
       try {
         const res = await fetch(`/api/longterm/${ltId}/payments`);
         if (!res.ok) {
-          tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Failed to load payments</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Failed to load payments</td></tr>';
           return;
         }
         const data = await res.json();
@@ -465,7 +466,7 @@
 
         const display = data.displayPayments || data.payments || [];
         if (display.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No payments recorded</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No payments recorded</td></tr>';
           return;
         }
 
@@ -481,11 +482,37 @@
               <td class="small fw-bold">$${Number(p.amount_ex_gst || 0).toFixed(2)}${prorated ? ' <span class="text-muted fw-normal">total</span>' : ''}</td>
               <td class="small">${p.payment_method || ''}</td>
               <td class="small">${p.transaction_reference || (p.notes ? p.notes.slice(0, 40) : '—')}${allocHint}</td>
+              <td class="text-end">
+                <button type="button" class="btn btn-sm btn-outline-danger btn-delete-lt-payment"
+                  data-id="${p.id}" data-prorated="${prorated ? '1' : '0'}"
+                  title="${prorated ? 'Delete this entire prepay spread' : 'Delete this payment'}">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </td>
             </tr>
           `;
         }).join('');
+
+        tbody.querySelectorAll('.btn-delete-lt-payment').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const isProrated = btn.dataset.prorated === '1';
+            const id = btn.dataset.id;
+            const confirmMsg = isProrated
+              ? 'Delete this ENTIRE prepay spread (all months of this swipe)? This cannot be undone — to correct a mistake, delete then re-add the payment.'
+              : 'Delete this payment? This cannot be undone — to correct a mistake, delete then re-add the payment.';
+            if (!confirm(confirmMsg)) return;
+            const url = isProrated
+              ? `/api/longterm/${ltId}/payments/batch/${encodeURIComponent(id)}`
+              : `/api/longterm/${ltId}/payments/${id}`;
+            const res = await fetch(url, { method: 'DELETE' });
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok) { showAlert(result.error || 'Could not delete payment', 'danger'); return; }
+            showAlert('Payment removed', 'success');
+            await loadLtPayments(ltId);
+          });
+        });
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Failed to load payments</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Failed to load payments</td></tr>';
       }
     }
 
@@ -555,7 +582,7 @@
       updateLtPaymentButtons();
       setLtPaymentDefaults();
       const tbody = document.getElementById('lt-payments-tbody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No payments recorded</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No payments recorded</td></tr>';
       const summary = document.getElementById('lt-payment-summary');
       if (summary) summary.textContent = '—';
       new bootstrap.Modal('#ltModal').show();

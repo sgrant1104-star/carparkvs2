@@ -70,18 +70,30 @@ async function getAccountInvoicesWithOutstanding(db, { carparkId, accountCustome
 
 /**
  * Allocate `amount` (from a newly-created account_payments row) across the
- * account's outstanding invoices, oldest first, and persist the split.
- * Any leftover after all outstanding invoices are covered is left
+ * account's outstanding invoices. If `targetInvoiceId` is given, that
+ * invoice is settled first (up to what it needs); any leftover spills into
+ * the next-oldest outstanding invoices, oldest first. Without a target, the
+ * whole payment is applied oldest-first from the start.
+ *
+ * Any amount left over after all outstanding invoices are covered is left
  * unallocated (shows up as a credit — the account paid ahead).
  *
- * Returns the list of { invoice_id, invoice_number, amount_allocated } splits.
+ * Returns { splits: [{invoice_id, invoice_number, amount_allocated}], unallocated }.
  */
-async function allocateAccountPayment(db, { carparkId, accountCustomerId, paymentId, amount }) {
+async function allocateAccountPayment(db, { carparkId, accountCustomerId, paymentId, amount, targetInvoiceId = null }) {
   let remaining = round2(amount);
-  if (remaining <= 0) return [];
+  if (remaining <= 0) return { splits: [], unallocated: 0 };
 
-  const outstandingInvoices = (await getAccountInvoicesWithOutstanding(db, { carparkId, accountCustomerId }))
+  let outstandingInvoices = (await getAccountInvoicesWithOutstanding(db, { carparkId, accountCustomerId }))
     .filter(inv => inv.outstanding_amount > 0.001);
+
+  if (targetInvoiceId != null) {
+    const idx = outstandingInvoices.findIndex(inv => String(inv.id) === String(targetInvoiceId));
+    if (idx > 0) {
+      const [target] = outstandingInvoices.splice(idx, 1);
+      outstandingInvoices.unshift(target);
+    }
+  }
 
   const splits = [];
   const insert = db.prepare(`

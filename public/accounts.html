@@ -105,6 +105,12 @@
               <label class="form-label">Reference</label>
               <input type="text" class="form-control form-control-sm" id="acct-pay-ref" placeholder="optional">
             </div>
+            <div class="col-md-6">
+              <label class="form-label">Apply to invoice <span class="text-muted small">(optional — defaults to oldest outstanding first)</span></label>
+              <select class="form-select form-select-sm" id="acct-pay-invoice">
+                <option value="">Auto — apply to oldest outstanding invoice(s) first</option>
+              </select>
+            </div>
             <div class="col-12 d-flex gap-2 align-items-center">
               <button class="btn btn-sm btn-success" id="btn-add-acct-payment"><i class="bi bi-plus-circle me-1"></i>Add Payment</button>
               <div class="small text-muted" id="acct-pay-summary"></div>
@@ -312,25 +318,30 @@
         <div class="table-responsive">
           <table class="table table-sm table-hover table-bordered statement-table">
             <thead class="table-light">
-              <tr><th>Stay</th><th>Name</th><th>Rego</th><th class="text-end">Amount</th><th>Status</th><th>Invoice</th></tr>
+              <tr><th>Stay</th><th>Name</th><th>Rego</th><th class="text-end">Amount</th><th class="text-end">Outstanding</th><th>Status</th><th>Invoice</th></tr>
             </thead>
             <tbody>
-              ${data.invoices.map(inv => `
+              ${data.invoices.map(inv => {
+                const out = Number(inv.outstanding_amount ?? inv.total_price ?? 0);
+                const payStatus = inv.invoice_payment_status || (out <= 0.01 ? 'Paid' : 'Outstanding');
+                const badgeClass = payStatus === 'Paid' ? 'bg-success' : payStatus === 'Partial' ? 'bg-warning text-dark' : 'bg-danger';
+                return `
                 <tr>
                   <td class="small text-nowrap">${formatDateShort(inv.date_in)} – ${formatDateShort(inv.return_date)}</td>
                   <td>${inv.first_name||''} ${inv.last_name||''}</td>
                   <td class="fw-bold">${inv.rego||''}</td>
                   <td class="text-end fw-bold text-success">${formatCurrency(inv.total_price || 0)}</td>
-                  <td>${statusBadge(inv.paid_status)}</td>
+                  <td class="text-end fw-bold ${out > 0.01 ? 'text-danger' : 'text-muted'}">${out > 0.01 ? formatCurrency(out) : '—'}</td>
+                  <td><span class="badge ${badgeClass}">${payStatus}</span> <span class="small text-muted">(${statusBadge(inv.paid_status)})</span></td>
                   <td><a href="/invoice.html?id=${inv.id}" class="btn btn-sm btn-outline-primary py-0">#${inv.invoice_number}</a></td>
-                </tr>
-              `).join('')}
+                </tr>`;
+              }).join('')}
             </tbody>
             <tfoot>
               <tr class="table-success">
                 <td colspan="3" class="fw-bold">Total — ${monthLabel}</td>
                 <td class="fw-bold text-end fs-6">${formatCurrency(total)}</td>
-                <td colspan="2"></td>
+                <td colspan="3"></td>
               </tr>
             </tfoot>
           </table>
@@ -374,6 +385,16 @@
       });
 
       applyStatementPaymentDateDefault();
+
+      // Populate the "apply to invoice" picker with ALL outstanding invoices for
+      // this account (not just this month's) — a payment might be settling an
+      // older unpaid booking.
+      const invoicePicker = document.getElementById('acct-pay-invoice');
+      const pickerOptions = (data.outstandingInvoicesForPicker || []);
+      invoicePicker.innerHTML = '<option value="">Auto — apply to oldest outstanding invoice(s) first</option>' +
+        pickerOptions.map(inv => `
+          <option value="${inv.id}">#${inv.invoice_number} — ${inv.rego || ''} — ${formatDateShort(inv.date_in)} — ${formatCurrency(inv.outstanding_amount)} owing</option>
+        `).join('');
     }
 
     document.getElementById('btn-load-statement').addEventListener('click', loadStatement);
@@ -384,18 +405,31 @@
       const payment_date = document.getElementById('acct-pay-date').value;
       const payment_method = document.getElementById('acct-pay-method').value;
       const transaction_reference = document.getElementById('acct-pay-ref').value;
+      const invoice_id = document.getElementById('acct-pay-invoice').value || null;
       if (!Number.isFinite(amount) || amount <= 0) { showAlert('Enter a valid payment amount', 'danger'); return; }
       if (!payment_date) { showAlert('Select a payment date', 'danger'); return; }
       const res = await fetch(`/api/accounts/${currentAccountId}/payments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_date, amount, payment_method, transaction_reference })
+        body: JSON.stringify({ payment_date, amount, payment_method, transaction_reference, invoice_id })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { showAlert(data.error || 'Failed to add payment', 'danger'); return; }
-      showAlert('Payment recorded', 'success');
+
+      const splits = data.allocation || [];
+      let msg = 'Payment recorded.';
+      if (splits.length === 1) {
+        msg += ` Applied ${formatCurrency(splits[0].amount_allocated)} to invoice #${splits[0].invoice_number}.`;
+      } else if (splits.length > 1) {
+        msg += ' Applied across invoices: ' + splits.map(s => `#${s.invoice_number} (${formatCurrency(s.amount_allocated)})`).join(', ') + '.';
+      }
+      if (data.unallocated > 0.01) {
+        msg += ` $${data.unallocated.toFixed(2)} left over as a credit (no outstanding invoices to apply it to).`;
+      }
+      showAlert(msg, 'success');
       document.getElementById('acct-pay-amount').value = '';
       document.getElementById('acct-pay-ref').value = '';
+      document.getElementById('acct-pay-invoice').value = '';
       await loadStatement();
       await loadAccounts();
     });
