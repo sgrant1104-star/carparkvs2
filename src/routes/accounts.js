@@ -10,43 +10,40 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
     const today = businessDateYmd();
-    const y = parseInt(today.slice(0, 4), 10);
-    const mo = parseInt(today.slice(5, 7), 10);
     const monthStart = `${today.slice(0, 7)}-01`;
-    const last = new Date(y, mo, 0);
-    const monthEnd = `${y}-${String(mo).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`;
 
     const accounts = await db.prepare(`
       SELECT a.*,
         (SELECT COALESCE(SUM(COALESCE(i.total_price,0)),0) FROM invoices i
          WHERE i.account_customer_id = a.id AND i.carpark_id = a.carpark_id AND i.void = 0
-         AND substr(trim(COALESCE(i.date_in,'')),1,10) >= ? AND substr(trim(COALESCE(i.date_in,'')),1,10) <= ?) AS month_billed,
-        (SELECT COALESCE(SUM(p.amount),0) FROM account_payments p
-         WHERE p.account_customer_id = a.id AND p.carpark_id = a.carpark_id
-         AND substr(trim(COALESCE(p.payment_date,'')),1,10) >= ? AND substr(trim(COALESCE(p.payment_date,'')),1,10) <= ?) AS month_paid,
-        (SELECT COALESCE(SUM(COALESCE(i.total_price,0)),0) FROM invoices i
-         WHERE i.account_customer_id = a.id AND i.carpark_id = a.carpark_id AND i.void = 0) AS lifetime_billed,
-        (SELECT COALESCE(SUM(p.amount),0) FROM account_payments p
-         WHERE p.account_customer_id = a.id AND p.carpark_id = a.carpark_id) AS lifetime_paid
+         AND substr(trim(COALESCE(i.date_in,'')),1,10) >= ?) AS month_billed
       FROM account_customers a
       WHERE a.carpark_id = ? AND a.active = 1 ORDER BY a.company_name
-    `).all(monthStart, monthEnd, monthStart, monthEnd, carparkId);
+    `).all(monthStart, carparkId);
 
-    const rows = accounts.map((a) => {
+    // Outstanding must come from real per-invoice allocation (same source the
+    // statement view and invoice table use) — not a raw "billed this month
+    // minus paid this month" subtraction, which can contradict the per-invoice
+    // breakdown whenever a payment settles an invoice from a different month
+    // than the one it was dated in.
+    const rows = [];
+    for (const a of accounts) {
+      const invoicesWithOutstanding = await getAccountInvoicesWithOutstanding(db, { carparkId: a.carpark_id || carparkId, accountCustomerId: a.id });
+      const balanceOut = Math.round(invoicesWithOutstanding.reduce((s, i) => s + i.outstanding_amount, 0) * 100) / 100;
+      const lifeBilled = Math.round(invoicesWithOutstanding.reduce((s, i) => s + (parseFloat(i.total_price) || 0), 0) * 100) / 100;
+
+      const monthInvoices = invoicesWithOutstanding.filter(i => String(i.date_in || '').slice(0, 10) >= monthStart);
+      const monthOut = Math.round(monthInvoices.reduce((s, i) => s + i.outstanding_amount, 0) * 100) / 100;
       const billed = parseFloat(a.month_billed) || 0;
-      const paid = parseFloat(a.month_paid) || 0;
-      const out = Math.round((billed - paid) * 100) / 100;
-      const lifeBilled = parseFloat(a.lifetime_billed) || 0;
-      const lifePaid = parseFloat(a.lifetime_paid) || 0;
-      const balanceOut = Math.round((lifeBilled - lifePaid) * 100) / 100;
-      return {
+
+      rows.push({
         ...a,
-        month_outstanding: out,
-        month_payment_status: billed <= 0 ? '—' : (out <= 0.01 ? 'Paid' : 'Outstanding'),
+        month_outstanding: monthOut,
+        month_payment_status: billed <= 0 ? '—' : (monthOut <= 0.01 ? 'Paid' : 'Outstanding'),
         balance_outstanding: balanceOut,
         balance_payment_status: lifeBilled <= 0 ? '—' : (balanceOut <= 0.01 ? 'Paid' : 'Outstanding'),
-      };
-    });
+      });
+    }
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -95,6 +92,18 @@ router.get('/:id/statement', requireAuth, async (req, res) => {
     });
 
     const total = invoices.reduce((sum, inv) => sum + (parseFloat(inv.total_price || 0) || 0), 0);
+    // "Paid" and "Outstanding" for the summary boxes must be based on the SAME
+    // allocation data as the per-invoice table below, or the two contradict
+    // each other on screen (e.g. boxes say $0 outstanding while a specific
+    // invoice in the table clearly still owes money). A payment dated THIS
+    // month may have actually settled an OLDER invoice — so summing "payments
+    // dated this month" and comparing to "invoiced this month" is a mismatched
+    // question. Sum what's actually allocated against May's invoices instead.
+    const paid = Math.round(invoices.reduce((s, inv) => s + (inv.allocated_amount || 0), 0) * 100) / 100;
+    const outstanding = Math.round(invoices.reduce((s, inv) => s + (inv.outstanding_amount || 0), 0) * 100) / 100;
+
+    // Still show actual cash received this month as its own figure — useful
+    // for bank reconciliation — but it no longer drives the Outstanding box.
     const payments = await db.prepare(`
       SELECT * FROM account_payments
       WHERE carpark_id = ? AND account_customer_id = ?
@@ -102,8 +111,7 @@ router.get('/:id/statement', requireAuth, async (req, res) => {
         AND substr(trim(COALESCE(payment_date,'')),1,10) <= ?
       ORDER BY payment_date DESC, id DESC
     `).all(carparkId, req.params.id, startDate, endDate);
-    const paid = payments.reduce((s, p) => s + (p.amount || 0), 0);
-    const outstanding = Math.max(0, (total || 0) - paid);
+    const cashReceivedThisMonth = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100;
 
     // Outstanding invoices across ALL periods (not just this month) — used to
     // populate the "apply payment to" picker so a payment can settle an older
@@ -112,7 +120,7 @@ router.get('/:id/statement', requireAuth, async (req, res) => {
       .filter(i => i.outstanding_amount > 0.001)
       .map(i => ({ id: i.id, invoice_number: i.invoice_number, date_in: i.date_in, rego: i.rego, outstanding_amount: i.outstanding_amount }));
 
-    res.json({ account, invoices, total, month: m, year: y, startDate, endDate, payments, paid, outstanding, outstandingInvoicesForPicker });
+    res.json({ account, invoices, total, month: m, year: y, startDate, endDate, payments, paid, outstanding, cashReceivedThisMonth, outstandingInvoicesForPicker });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
