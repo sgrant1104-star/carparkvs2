@@ -75,4 +75,35 @@ async function syncKeyBoxForPickedUp(db, carparkId, invoiceId, invoiceRow, picke
   }
 }
 
-module.exports = { parseKeyNumber, releaseKey, assignKeyToInvoice, assignKeyToLongTerm, syncKeyBoxForPickedUp };
+/**
+ * Checks whether a key is currently claimed by someone OTHER than the
+ * booking trying to take it. Unlike invoice_number (which has a real
+ * database UNIQUE constraint making duplicates structurally impossible),
+ * key_box only guarantees "one row per key" — nothing previously stopped
+ * that row's ownership from being silently overwritten by a second booking.
+ * Call this before assigning a key and reject the save if it returns a
+ * conflict, instead of silently letting the second booking steal the key.
+ */
+async function checkKeyConflict(db, carparkId, keyNumber, { excludeInvoiceId = null } = {}) {
+  const kn = parseKeyNumber(keyNumber);
+  if (kn == null) return null;
+  const row = await db.prepare(`
+    SELECT k.*, i.invoice_number, i.first_name, i.last_name, lt.lt_number, lt.name as lt_name
+    FROM key_box k
+    LEFT JOIN invoices i ON k.invoice_id = i.id AND i.void = 0
+    LEFT JOIN longterm_customers lt ON k.longterm_customer_id = lt.id AND lt.active = 1
+    WHERE k.carpark_id = ? AND k.key_number = ? AND k.status = 'in_use'
+  `).get(carparkId, kn);
+  if (!row) return null;
+
+  if (row.holder_type === 'invoice' && row.invoice_id != null) {
+    if (excludeInvoiceId != null && Number(row.invoice_id) === Number(excludeInvoiceId)) return null; // same booking, not a conflict
+    return { holderType: 'invoice', description: `Invoice #${row.invoice_number} (${row.first_name || ''} ${row.last_name || ''})`.trim() };
+  }
+  if (row.holder_type === 'longterm' && row.longterm_customer_id != null) {
+    return { holderType: 'longterm', description: `Long-term ${row.lt_number || ''} (${row.lt_name || ''})`.trim() };
+  }
+  return null;
+}
+
+module.exports = { parseKeyNumber, releaseKey, assignKeyToInvoice, assignKeyToLongTerm, syncKeyBoxForPickedUp, checkKeyConflict };

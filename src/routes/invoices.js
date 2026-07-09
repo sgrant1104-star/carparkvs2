@@ -1,10 +1,11 @@
 const express = require('express');
 const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
-const { releaseKey, syncKeyBoxForPickedUp } = require('../utils/keyBoxSync');
+const { releaseKey, syncKeyBoxForPickedUp, checkKeyConflict } = require('../utils/keyBoxSync');
 const { businessDateYmd } = require('../utils/businessDate');
 const { logActivity, actorFromReq } = require('../utils/audit');
-const { checkAndCreateEarlyReturnCredit, findAvailableCredit, applyCreditToInvoice } = require('../utils/customerCredit');
+const { checkAndCreateEarlyReturnCredit, findAvailableCredit, applyCreditToInvoice, releaseCreditForInvoice } = require('../utils/customerCredit');
+const { deallocateInvoice } = require('../utils/paymentAllocation');
 const { streamInvoicePdf } = require('../utils/invoicePdf');
 const router = express.Router();
 
@@ -328,6 +329,16 @@ router.post('/', requireAuth, async (req, res) => {
     if (existing) return res.status(400).json({ error: 'Invoice number already exists' });
 
     const finalPickedUp = picked_up || 'Car In Yard';
+
+    // A key can't physically be in two cars at once — block the save instead
+    // of silently letting this booking steal a key that's already out.
+    if (!no_key && key_number && finalPickedUp === 'Car In Yard') {
+      const conflict = await checkKeyConflict(db, carparkId, key_number);
+      if (conflict) {
+        return res.status(409).json({ error: `Key ${key_number} is already in use by ${conflict.description}. Pick a different key or release that one first.` });
+      }
+    }
+
     const computedStayNights = deriveStayNights24h(date_in, time_in, return_date, return_time, stay_nights);
     const today = businessDateYmd();
     const { pd1: paymentDate1, pd2: paymentDate2 } = resolvePaymentDates(
@@ -390,6 +401,18 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
 
     const finalPickedUp = picked_up || 'Car In Yard';
+
+    // A key can't physically be in two cars at once — block the save instead
+    // of silently letting this booking steal a key that's already out.
+    // excludeInvoiceId covers the case where this invoice already legitimately
+    // holds the key (re-saving without changing it).
+    if (!no_key && key_number && finalPickedUp === 'Car In Yard') {
+      const conflict = await checkKeyConflict(db, carparkId, key_number, { excludeInvoiceId: id });
+      if (conflict) {
+        return res.status(409).json({ error: `Key ${key_number} is already in use by ${conflict.description}. Pick a different key or release that one first.` });
+      }
+    }
+
     const computedStayNights = deriveStayNights24h(date_in, time_in, return_date, return_time, stay_nights);
     const today = businessDateYmd();
     const { pd1: nextPaymentDate1, pd2: nextPaymentDate2 } = resolvePaymentDates(
@@ -469,9 +492,23 @@ router.delete('/:id', requireAuth, async (req, res) => {
     if (invoice.key_number && !invoice.no_key) {
       await releaseKey(db, carparkId, invoice.key_number);
     }
+    // Must free allocations BEFORE deleting the invoice row — afterward
+    // there'd be nothing left to join against to find them.
+    const freedAllocations = await deallocateInvoice(db, { carparkId, invoiceId: id });
     await db.prepare('DELETE FROM invoices WHERE id = ?').run(id);
     const { userId, userName } = actorFromReq(req);
+    if (invoice.credit_applied > 0) {
+      await releaseCreditForInvoice(db, { carparkId, invoiceId: id, userId, userName });
+    }
     await logActivity(db, { carparkId, tableName: 'invoices', recordId: id, action: 'delete', before: invoice, after: null, userId, userName });
+    if (freedAllocations.length > 0) {
+      await logActivity(db, {
+        carparkId, tableName: 'payment_allocations', recordId: id, action: 'freed_on_delete',
+        before: freedAllocations, after: null,
+        notes: `Freed ${freedAllocations.length} allocation(s) totalling $${freedAllocations.reduce((s, a) => s + a.amount_allocated, 0).toFixed(2)} when invoice #${invoice.invoice_number} was deleted`,
+        userId, userName,
+      });
+    }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -487,8 +524,23 @@ router.post('/:id/void', requireAuth, async (req, res) => {
     if (invoice.key_number) {
       await releaseKey(db, carparkId, invoice.key_number);
     }
+    // Free up any payment that was allocated to this invoice — it's no
+    // longer owed, so that money becomes available credit again instead of
+    // silently vanishing from every "paid" total.
+    const freedAllocations = await deallocateInvoice(db, { carparkId, invoiceId: id });
     const { userId, userName } = actorFromReq(req);
+    if (invoice.credit_applied > 0) {
+      await releaseCreditForInvoice(db, { carparkId, invoiceId: id, userId, userName });
+    }
     await logActivity(db, { carparkId, tableName: 'invoices', recordId: id, action: 'void', before: invoice, after: { ...invoice, void: 1, picked_up: 'Voided' }, userId, userName });
+    if (freedAllocations.length > 0) {
+      await logActivity(db, {
+        carparkId, tableName: 'payment_allocations', recordId: id, action: 'freed_on_void',
+        before: freedAllocations, after: null,
+        notes: `Freed ${freedAllocations.length} allocation(s) totalling $${freedAllocations.reduce((s, a) => s + a.amount_allocated, 0).toFixed(2)} when invoice #${invoice.invoice_number} was voided`,
+        userId, userName,
+      });
+    }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

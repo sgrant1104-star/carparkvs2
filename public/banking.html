@@ -61,6 +61,7 @@
               <button class="btn btn-outline-secondary mt-2 btn-sm" id="btn-autofill-banking">
                 <i class="bi bi-calculator me-1"></i>Auto-fill from selected date invoices
               </button>
+              <div class="small text-muted mt-2 d-none" id="banking-credit-note"></div>
             </div>
           </div>
           <div class="col-md-6">
@@ -268,6 +269,14 @@
       document.getElementById('banking-cash').value = Number(data.cash || 0).toFixed(2);
       document.getElementById('banking-account').value = Number(data.account || 0).toFixed(2);
       document.getElementById('banking-other').value = Number(data.other || 0).toFixed(2);
+      const creditNote = document.getElementById('banking-credit-note');
+      const creditAmt = Number(data.creditRedeemed || 0);
+      if (creditAmt > 0) {
+        creditNote.classList.remove('d-none');
+        creditNote.innerHTML = `<i class="bi bi-info-circle me-1"></i>$${creditAmt.toFixed(2)} customer credit redeemed today — not physical money, so it's deliberately excluded from the totals above.`;
+      } else {
+        creditNote.classList.add('d-none');
+      }
       showAlert(`Banking totals auto-filled from invoices on ${date}`, 'info');
     });
 

@@ -1076,6 +1076,11 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
     if (!res.ok) {
       const err = await res.json();
       showAlert(err.error || 'Failed to save invoice', 'danger');
+      if (res.status === 409 && String(err.error || '').toLowerCase().includes('key')) {
+        // The key list they were looking at was stale — refresh it so they
+        // see accurate availability instead of hitting the same conflict again.
+        populateKeySelectFromAvailable();
+      }
     } else {
       const inv = await res.json();
       currentInvoiceId = inv.id;

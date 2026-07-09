@@ -167,9 +167,39 @@ async function applyCreditToInvoice(db, { carparkId, invoiceId, amount, phone, f
   return { applied: appliedTotal, creditsUsed };
 }
 
+/**
+ * Restores whatever credit was consumed by a specific invoice — used when
+ * that invoice is voided or deleted, so the customer doesn't lose real
+ * credit just because the booking it was applied to got cancelled. Each
+ * credit record is only ever consumed by one booking at a time in the
+ * current flow, so a full reset back to available is correct here (not a
+ * partial adjustment).
+ */
+async function releaseCreditForInvoice(db, { carparkId, invoiceId, userId = null, userName = null }) {
+  const rows = await db.prepare(`
+    SELECT * FROM customer_credits WHERE carpark_id = ? AND used_invoice_id = ?
+  `).all(carparkId, invoiceId);
+  if (rows.length === 0) return rows;
+
+  await db.prepare(`
+    UPDATE customer_credits SET amount_used = 0, status = 'available', used_invoice_id = NULL, used_at = NULL
+    WHERE carpark_id = ? AND used_invoice_id = ?
+  `).run(carparkId, invoiceId);
+
+  await logActivity(db, {
+    carparkId, tableName: 'customer_credits', recordId: invoiceId, action: 'released_on_cancel',
+    before: rows, after: null,
+    notes: `Restored ${rows.length} credit record(s) totalling $${rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0).toFixed(2)} — source invoice was voided/deleted`,
+    userId, userName,
+  });
+
+  return rows;
+}
+
 module.exports = {
   checkAndCreateEarlyReturnCredit,
   findAvailableCredit,
   applyCreditToInvoice,
+  releaseCreditForInvoice,
   normalizePhone,
 };

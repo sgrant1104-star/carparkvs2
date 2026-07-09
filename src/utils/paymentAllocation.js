@@ -163,10 +163,28 @@ async function getAccountStatementData(db, { carparkId, accountIds, startDate, e
   return { allInvoices, outstandingInvoices, grossInvoiced, totalPaid, totalOutstanding };
 }
 
+/**
+ * Frees up whatever's allocated to a specific invoice — used when an invoice
+ * is voided or deleted, so any money that was allocated to it becomes
+ * available credit again instead of silently vanishing. Without this, a
+ * voided/deleted invoice would leave its payment_allocations rows pointing
+ * at a gone/cancelled invoice, and that money would drop out of every
+ * "paid" total without ever coming back as usable credit.
+ */
+async function deallocateInvoice(db, { carparkId, invoiceId }) {
+  const rows = await db.prepare(`
+    SELECT * FROM payment_allocations WHERE carpark_id = ? AND invoice_id = ?
+  `).all(carparkId, invoiceId);
+  if (rows.length === 0) return rows;
+  await db.prepare(`DELETE FROM payment_allocations WHERE carpark_id = ? AND invoice_id = ?`).run(carparkId, invoiceId);
+  return rows;
+}
+
 module.exports = {
   getInvoiceOutstanding,
   getAccountInvoicesWithOutstanding,
   allocateAccountPayment,
   deallocatePayment,
+  deallocateInvoice,
   getAccountStatementData,
 };

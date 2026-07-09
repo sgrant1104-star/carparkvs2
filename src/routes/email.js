@@ -42,13 +42,34 @@ function smtpErrorMessage(err) {
   return msg || 'Email send failed';
 }
 
-function longTermGstAmounts(lt) {
+function longTermGstAmounts(lt, overrideBaseExGst = null) {
   const GST_RATE = 0.15;
-  const baseRaw = lt.contract_amount != null && lt.contract_amount !== '' ? lt.contract_amount : (lt.rate || LONGTERM_MONTHLY_DEFAULT);
-  const base = parseFloat(baseRaw) || LONGTERM_MONTHLY_DEFAULT;
+  const baseRaw = overrideBaseExGst != null
+    ? overrideBaseExGst
+    : (lt.contract_amount != null && lt.contract_amount !== '' ? lt.contract_amount : (lt.rate || LONGTERM_MONTHLY_DEFAULT));
+  const base = parseFloat(baseRaw) || 0;
   const gst = Math.round((base * GST_RATE) * 100) / 100;
   const total = Math.round((base + gst) * 100) / 100;
   return { base, gst, total, rate: GST_RATE };
+}
+
+/**
+ * Real remaining balance for a long-term customer — contract total minus
+ * whatever's actually been paid so far, for a fixed-term contract; their
+ * standard monthly rate for an ongoing month-to-month customer (there's no
+ * fixed total to measure against). Used for "payment request" emails so
+ * they ask for what's actually still owed, not the full contract amount
+ * every time regardless of payments already made.
+ */
+async function longTermAmountDueExGst(db, carparkId, lt) {
+  const paidRow = await db.prepare(`
+    SELECT COALESCE(SUM(amount_ex_gst), 0) AS paid FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ?
+  `).get(carparkId, lt.id);
+  const paidExGst = parseFloat(paidRow?.paid || 0);
+  const contractExGst = lt.contract_amount != null && lt.contract_amount !== '' ? parseFloat(lt.contract_amount) : null;
+  if (contractExGst != null) return Math.max(0, Math.round((contractExGst - paidExGst) * 100) / 100);
+  const monthlyRate = lt.rate && parseFloat(lt.rate) > 0 ? parseFloat(lt.rate) : LONGTERM_MONTHLY_DEFAULT;
+  return monthlyRate;
 }
 
 function dueDate20thNextMonth(month, year) {
@@ -607,9 +628,9 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
   }
 });
 
-function longTermEmailHTML(carpark, lt, kind) {
+function longTermEmailHTML(carpark, lt, kind, amountDueExGst = null) {
   const currency = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
-  const gst = longTermGstAmounts(lt);
+  const gst = longTermGstAmounts(lt, kind === 'payment' ? amountDueExGst : null);
   const startDate = lt?.contract_start_date ? fmtYmd(lt.contract_start_date) : (lt?.created_at ? fmtYmd(lt.created_at) : '');
   const expiryDate = lt?.expiry_date ? fmtYmd(lt.expiry_date) : '';
   const bank = [
@@ -669,11 +690,12 @@ router.post('/longterm/:id/payment-request', requireAuth, async (req, res) => {
     const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
     const transporter = getTransporter();
     if (!transporter) return res.status(503).json({ error: SMTP_MISSING_MSG });
+    const amountDueExGst = await longTermAmountDueExGst(db, carparkId, lt);
     await transporter.sendMail({
       from: emailFrom(),
       to: emailTo,
       subject: `${carpark ? carpark.name : 'Car Storage'} – Payment due (${lt.lt_number})`,
-      html: longTermEmailHTML(carpark || {}, lt, 'payment'),
+      html: longTermEmailHTML(carpark || {}, lt, 'payment', amountDueExGst),
     });
     res.json({ success: true, message: `Payment request sent to ${emailTo}` });
   } catch (err) {
@@ -692,8 +714,9 @@ router.get('/longterm/:id/preview', requireAuth, async (req, res) => {
     const lt = await db.prepare('SELECT * FROM longterm_customers WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
     if (!lt) return res.status(404).json({ error: 'Long-term customer not found' });
     const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
+    const amountDueExGst = kind === 'payment' ? await longTermAmountDueExGst(db, carparkId, lt) : null;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(longTermEmailHTML(carpark || {}, lt, kind));
+    res.send(longTermEmailHTML(carpark || {}, lt, kind, amountDueExGst));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
