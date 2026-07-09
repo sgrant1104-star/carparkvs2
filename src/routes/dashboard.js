@@ -3,6 +3,7 @@ const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { businessDateYmd, addCalendarDaysYmd } = require('../utils/businessDate');
 const { sumBothLinesInRange, L1_PAID_TOTAL, L2_PAID_TOTAL } = require('../utils/invoicePaymentDates');
+const { getAccountInvoicesWithOutstanding } = require('../utils/paymentAllocation');
 const router = express.Router();
 
 // GET /api/dashboard/stats
@@ -73,20 +74,17 @@ router.get('/stats', requireAuth, async (req, res) => {
     }
     const recentInvoices = await db.prepare(`SELECT i.*, u.name as staff_name FROM invoices i LEFT JOIN users u ON i.staff_id = u.id WHERE i.carpark_id = ? AND i.void = 0 ORDER BY i.created_at DESC LIMIT 10`).all(carparkId);
     // Real outstanding = total invoiced to accounts minus what's actually been
-    // allocated against those invoices — NOT a lifetime sum of everything ever
-    // marked "OnAcc" (that figure never decreases as accounts pay it down).
-    const onAccountRow = await db.prepare(`
-      SELECT
-        COALESCE((SELECT SUM(total_price) FROM invoices WHERE carpark_id = ? AND account_customer_id IS NOT NULL AND void = 0), 0)
-        -
-        COALESCE((
-          SELECT SUM(pa.amount_allocated) FROM payment_allocations pa
-          JOIN invoices i ON i.id = pa.invoice_id
-          WHERE i.carpark_id = ? AND i.account_customer_id IS NOT NULL AND i.void = 0 AND pa.payment_source = 'account'
-        ), 0)
-      AS outstanding
-    `).get(carparkId, carparkId);
-    const onAccountBalance = { total: Math.max(0, onAccountRow.outstanding || 0) };
+    // paid off — whether that payment came in directly on the invoice itself
+    // (Eftpos/Cash at pickup) or via the account's bulk monthly payment
+    // process (payment_allocations). Reuses the same function the Accounts
+    // page uses, so this figure can never contradict what staff see there.
+    const accountCustomers = await db.prepare('SELECT id, carpark_id FROM account_customers WHERE carpark_id = ? AND active = 1').all(carparkId);
+    let onAccountTotal = 0;
+    for (const a of accountCustomers) {
+      const invoicesWithOutstanding = await getAccountInvoicesWithOutstanding(db, { carparkId: a.carpark_id || carparkId, accountCustomerId: a.id });
+      onAccountTotal += invoicesWithOutstanding.reduce((s, i) => s + i.outstanding_amount, 0);
+    }
+    const onAccountBalance = { total: Math.max(0, Math.round(onAccountTotal * 100) / 100) };
     const availableKeys  = await db.prepare(`SELECT COUNT(*) as count FROM key_box WHERE carpark_id = ? AND status = 'available'`).get(carparkId);
 
     const last7Days = [];

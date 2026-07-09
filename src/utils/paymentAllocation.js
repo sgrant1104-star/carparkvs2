@@ -19,19 +19,37 @@
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 /**
- * Outstanding balance for a single invoice = total_price - SUM(allocations).
- * Void invoices are always treated as zero outstanding (nothing owed on a
- * cancelled booking).
+ * How much of an invoice was settled DIRECTLY on the invoice itself — e.g.
+ * the customer paid by card at pickup — as opposed to via the account's
+ * bulk monthly payment process (which shows up in payment_allocations
+ * instead). 'OnAcc' and 'To Pay' don't count here; those mean "relies on
+ * the account being paid later," not "already settled."
+ */
+function directlyPaidAmount(inv) {
+  let paid = 0;
+  const DIRECT_METHODS = new Set(['Eftpos', 'Cash', 'Internet Banking', 'Customer Credit']);
+  const s1 = String(inv.paid_status || '').trim();
+  if (DIRECT_METHODS.has(s1)) paid += parseFloat(inv.payment_amount) || 0;
+  const s2 = String(inv.paid_status_2 || '').trim();
+  if (DIRECT_METHODS.has(s2)) paid += parseFloat(inv.payment_amount_2) || 0;
+  return round2(paid);
+}
+
+/**
+ * Outstanding balance for a single invoice = total_price - (direct payment
+ * on the invoice + account-level allocations). Void invoices are always
+ * treated as zero outstanding (nothing owed on a cancelled booking).
  */
 async function getInvoiceOutstanding(db, invoiceId) {
-  const inv = await db.prepare('SELECT id, total_price, void FROM invoices WHERE id = ?').get(invoiceId);
+  const inv = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
   if (!inv || inv.void) return 0;
   const allocRow = await db.prepare(`
     SELECT COALESCE(SUM(amount_allocated), 0) AS allocated
     FROM payment_allocations WHERE invoice_id = ?
   `).get(invoiceId);
   const allocated = parseFloat(allocRow?.allocated || 0) || 0;
-  return Math.max(0, round2((parseFloat(inv.total_price) || 0) - allocated));
+  const totalPaid = round2(allocated + directlyPaidAmount(inv));
+  return Math.max(0, round2((parseFloat(inv.total_price) || 0) - totalPaid));
 }
 
 /**
@@ -58,10 +76,12 @@ async function getAccountInvoicesWithOutstanding(db, { carparkId, accountCustome
   return invoices.map((inv) => {
     const total = parseFloat(inv.total_price) || 0;
     const allocated = round2(allocatedByInvoice.get(inv.id) || 0);
-    const outstanding = Math.max(0, round2(total - allocated));
+    const directPaid = directlyPaidAmount(inv);
+    const totalPaidAllSources = round2(allocated + directPaid);
+    const outstanding = Math.max(0, round2(total - totalPaidAllSources));
     return {
       ...inv,
-      allocated_amount: allocated,
+      allocated_amount: totalPaidAllSources,
       outstanding_amount: outstanding,
       invoice_payment_status: total <= 0 ? '—' : (outstanding <= 0.01 ? 'Paid' : (allocated > 0 ? 'Partial' : 'Outstanding')),
     };

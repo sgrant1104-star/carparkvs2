@@ -53,7 +53,7 @@
       totalInvoiced += parseFloat(inv.total_price) || 0;
       totalAllocated += inv.allocated_amount;
       totalOutstanding += inv.outstanding_amount;
-      const flag = inv.allocated_amount > 0 ? '  <- has allocation' : '';
+      const flag = inv.allocated_amount > 0 ? '  <- has payment (direct or allocated)' : '';
       console.log(
         `  ${String(inv.date_in).slice(0, 10)}  #${inv.invoice_number}  total $${Number(inv.total_price).toFixed(2).padStart(8)}  ` +
         `allocated $${inv.allocated_amount.toFixed(2).padStart(8)}  outstanding $${inv.outstanding_amount.toFixed(2).padStart(8)}  ` +
