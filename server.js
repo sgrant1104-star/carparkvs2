@@ -7,7 +7,9 @@ const cron = require('node-cron');
 
 const { db, initializeDatabase } = require('./src/database');
 const { getSessionSecret } = require('./src/utils/config');
-const { getAccountInvoicesWithOutstanding } = require('./src/utils/paymentAllocation');
+const { getAccountStatementData } = require('./src/utils/paymentAllocation');
+const { buildInvoicePdfBuffer } = require('./src/utils/invoicePdf');
+const { buildAccountEmailHTML } = require('./src/routes/email');
 
 const app = express();
 
@@ -167,22 +169,12 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
 
       if (includeAccounts) {
         for (const account of accounts) {
-          const invoices = await db.prepare(`
-            SELECT * FROM invoices WHERE account_customer_id = ? AND void = 0
-            AND DATE(date_in) >= ? AND DATE(date_in) <= ?
-            ORDER BY date_in ASC
-          `).all(account.id, startDate, endDate);
+          const statementData = await getAccountStatementData(db, {
+            carparkId: carpark.id, accountIds: [account.id], startDate, endDate,
+          });
 
-          if (invoices.length === 0) continue;
-
-          // Skip if everything being billed this month is already paid — no
-          // point re-sending a statement for a balance that's already $0.
-          const invoiceIds = new Set(invoices.map(i => i.id));
-          const allWithOutstanding = await getAccountInvoicesWithOutstanding(db, { carparkId: carpark.id, accountCustomerId: account.id });
-          const outstandingThisBatch = Math.round(
-            allWithOutstanding.filter(i => invoiceIds.has(i.id)).reduce((s, i) => s + i.outstanding_amount, 0) * 100
-          ) / 100;
-          if (outstandingThisBatch <= 0.01) {
+          if (statementData.allInvoices.length === 0) continue;
+          if (statementData.outstandingInvoices.length === 0) {
             console.log(`[month-end email] Skipping ${account.company_name} — already paid in full for ${monthName} ${year}.`);
             continue;
           }
@@ -190,49 +182,26 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
           const emailTo = account.billing_email || account.email;
           if (!emailTo) continue;
 
-          const total = invoices.reduce((s, inv) => s + (inv.payment_amount || 0), 0);
-          const rows  = invoices.map(inv => {
-            const dIn  = inv.date_in     ? new Date(inv.date_in).toLocaleDateString('en-NZ',     { day:'numeric', month:'short', year:'2-digit' }) : '';
-            const dOut = inv.return_date ? new Date(inv.return_date).toLocaleDateString('en-NZ', { day:'numeric', month:'short', year:'2-digit' }) : '';
-            return `<tr><td>${dIn} - ${dOut}</td><td>${inv.first_name||''} ${inv.last_name||''}</td><td>${inv.rego||''}</td><td>$${parseFloat(inv.payment_amount||0).toFixed(2)}</td></tr>`;
-          }).join('');
+          const invNo = `ACC-${year}${m}-${account.id}`;
+          const html = buildAccountEmailHTML(carpark, account, statementData, monthName, year, m, dueDateYmd);
 
-          const paymentLink = account.payment_link
-            ? `<p><a href="${account.payment_link}" style="background:#27ae60;color:#fff;padding:10px 20px;border-radius:5px;text-decoration:none;">Pay Online</a></p>`
-            : '';
-
-        const invNo = `ACC-${year}${m}-${account.id}`;
-        const ref = invNo;
-        const bank = [
-            carpark.bank_name ? `<p><strong>Bank:</strong> ${carpark.bank_name}</p>` : '',
-            carpark.bank_account_name ? `<p><strong>Account name:</strong> ${carpark.bank_account_name}</p>` : '',
-            carpark.bank_account_number ? `<p><strong>Account number:</strong> ${carpark.bank_account_number}</p>` : '',
-          `<p><strong>Invoice #:</strong> ${invNo}</p>`,
-          `<p><strong>Reference:</strong> ${ref}</p>`,
-          ].join('');
-
-          const html = `<!DOCTYPE html><html><body style="font-family:Arial;max-width:700px;margin:0 auto;padding:20px;">
-            <h2 style="color:#2c3e50;font-style:italic;">${carpark.name} - GST - ${monthName} ${year} Account Invoice</h2><hr>
-            <h3 style="color:#e74c3c;">${account.company_name}</h3>
-            <table border="1" cellpadding="8" cellspacing="0" width="100%">
-              <tr><th>Stay</th><th>Name</th><th>Car Rego</th><th>Cost</th></tr>${rows}
-            </table>
-            <p><strong>Total: <span style="color:#27ae60;">$${parseFloat(total).toFixed(2)}</span></strong></p>
-            ${outstandingThisBatch < total - 0.01
-              ? `<p><strong>Already paid: <span style="color:#27ae60;">$${(total - outstandingThisBatch).toFixed(2)}</span></strong></p>
-                 <p><strong>Amount still outstanding: <span style="color:#e74c3c;">$${outstandingThisBatch.toFixed(2)}</span></strong></p>`
-              : ''}
-            <p><strong>Payment due date:</strong> 20th of next month (${dueDateYmd})</p>
-            ${paymentLink}
-            ${bank ? `<hr><h3 style="color:#2c3e50;font-size:15px;">Payment details</h3>${bank}` : ''}
-          </body></html>`;
+          const attachments = [];
+          for (const inv of statementData.outstandingInvoices) {
+            try {
+              const buf = await buildInvoicePdfBuffer(inv, carpark);
+              attachments.push({ filename: `Invoice-${inv.invoice_number}.pdf`, content: buf });
+            } catch (pdfErr) {
+              console.error(`[month-end email] Failed to build PDF for invoice #${inv.invoice_number}:`, pdfErr.message);
+            }
+          }
 
           try {
             await transporter.sendMail({
               from: process.env.EMAIL_FROM || `BOI Car Storage <boicarparkkerikeri@gmail.com>`,
               to:   emailTo,
-            subject: `${carpark.name} - GST - ${monthName} ${year} Account Invoice (${invNo})`,
-              html
+              subject: `${carpark.name} - GST - ${monthName} ${year} Account Invoice (${invNo})`,
+              html,
+              attachments,
             });
             await db.prepare(`INSERT INTO email_logs
               (carpark_id, account_customer_id, account_name, month, year, sent_at, status, recipient_email)
