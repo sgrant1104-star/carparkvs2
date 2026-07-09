@@ -263,7 +263,7 @@ router.post('/backfill/account-allocations', requireAuth, requireAdmin, async (r
 
 router.get('/backfill/lt-proration-preview', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { inferContractMonths, buildProratedPayments } = require('../utils/longtermProration');
+    const { inferMonthsFromAmountOnly, isPlausibleDate, buildProratedPayments } = require('../utils/longtermProration');
     const candidates = await db.prepare(`
       SELECT lp.*, lc.name, lc.lt_number, lc.contract_start_date, lc.expiry_date, lc.contract_amount, lc.carpark_id as lt_carpark_id
       FROM longterm_payments lp
@@ -274,13 +274,24 @@ router.get('/backfill/lt-proration-preview', requireAuth, requireAdmin, async (r
 
     const preview = [];
     let leftAlone = 0;
+    let badDate = 0;
     for (const row of candidates) {
-      const months = inferContractMonths({ contract_start_date: row.contract_start_date, expiry_date: row.expiry_date, contract_amount: row.contract_amount }, row.amount_ex_gst);
+      const months = inferMonthsFromAmountOnly(row.amount_ex_gst);
       if (months <= 1) { leftAlone++; continue; }
       const cashReceivedDate = row.cash_received_date || row.payment_date;
+      if (!isPlausibleDate(cashReceivedDate)) {
+        badDate++;
+        preview.push({
+          payment_id: row.id, lt_number: row.lt_number, name: row.name,
+          original_amount: row.amount_ex_gst, original_date: String(row.payment_date).slice(0, 10),
+          months, spread: null, warning: 'SKIPPED — this payment has an invalid/corrupted date in the source data. Fix the date on this payment manually first, then re-run preview.',
+        });
+        continue;
+      }
       const proration = buildProratedPayments({
         totalAmountExGst: row.amount_ex_gst, cashReceivedDate,
-        contractStartDate: row.contract_start_date || cashReceivedDate, months,
+        // backfill: always anchor to when cash was actually received, never a possibly-since-updated contract_start_date
+        contractStartDate: cashReceivedDate, months,
         transactionReference: row.transaction_reference, baseNotes: row.notes,
       });
       preview.push({
@@ -290,13 +301,13 @@ router.get('/backfill/lt-proration-preview', requireAuth, requireAdmin, async (r
       });
     }
 
-    res.json({ candidateCount: candidates.length, leftAlone, toSpread: preview.length, preview });
+    res.json({ candidateCount: candidates.length, leftAlone, badDate, toSpread: preview.length - badDate, preview });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.post('/backfill/lt-proration-apply', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { inferContractMonths, buildProratedPayments } = require('../utils/longtermProration');
+    const { inferMonthsFromAmountOnly, isPlausibleDate, buildProratedPayments } = require('../utils/longtermProration');
     const { logActivity, actorFromReq } = require('../utils/audit');
     const { userId, userName } = actorFromReq(req);
 
@@ -308,17 +319,24 @@ router.post('/backfill/lt-proration-apply', requireAuth, requireAdmin, async (re
       ORDER BY lp.longterm_customer_id, lp.payment_date
     `).all();
 
-    let spread = 0, leftAlone = 0, errors = 0;
+    let spread = 0, leftAlone = 0, errors = 0, badDate = 0;
     const errorDetails = [];
+    const badDateDetails = [];
 
     for (const row of candidates) {
-      const months = inferContractMonths({ contract_start_date: row.contract_start_date, expiry_date: row.expiry_date, contract_amount: row.contract_amount }, row.amount_ex_gst);
+      const months = inferMonthsFromAmountOnly(row.amount_ex_gst);
       if (months <= 1) { leftAlone++; continue; }
 
       const cashReceivedDate = row.cash_received_date || row.payment_date;
+      if (!isPlausibleDate(cashReceivedDate)) {
+        badDate++;
+        badDateDetails.push({ payment_id: row.id, lt_number: row.lt_number, date: cashReceivedDate });
+        continue;
+      }
       const proration = buildProratedPayments({
         totalAmountExGst: row.amount_ex_gst, cashReceivedDate,
-        contractStartDate: row.contract_start_date || cashReceivedDate, months,
+        // backfill: always anchor to when cash was actually received, never a possibly-since-updated contract_start_date
+        contractStartDate: cashReceivedDate, months,
         transactionReference: row.transaction_reference, baseNotes: row.notes,
       });
 
@@ -344,7 +362,7 @@ router.post('/backfill/lt-proration-apply', requireAuth, requireAdmin, async (re
       }
     }
 
-    res.json({ success: true, spread, leftAlone, errors, errorDetails });
+    res.json({ success: true, spread, leftAlone, badDate, badDateDetails, errors, errorDetails });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

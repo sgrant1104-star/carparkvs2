@@ -39,7 +39,7 @@
 (async () => {
   const { db, initializeDatabase } = require('../src/database');
   await initializeDatabase();
-  const { inferContractMonths, buildProratedPayments } = require('../src/utils/longtermProration');
+  const { inferMonthsFromAmountOnly, isPlausibleDate, buildProratedPayments } = require('../src/utils/longtermProration');
   const { logActivity } = require('../src/utils/audit');
 
   const APPLY = process.argv.includes('--apply');
@@ -58,22 +58,24 @@
   let toSpread = 0;
   let leftAlone = 0;
   let errors = 0;
+  let badDate = 0;
 
   for (const row of candidates) {
-    const customer = {
-      contract_start_date: row.contract_start_date,
-      expiry_date: row.expiry_date,
-      contract_amount: row.contract_amount,
-    };
-    const months = inferContractMonths(customer, row.amount_ex_gst);
+    const months = inferMonthsFromAmountOnly(row.amount_ex_gst);
 
     if (months <= 1) {
       leftAlone++;
       continue; // looks like a normal single-month payment — leave it exactly as-is
     }
 
-    toSpread++;
     const cashReceivedDate = row.cash_received_date || row.payment_date;
+    if (!isPlausibleDate(cashReceivedDate)) {
+      badDate++;
+      console.log(`${row.lt_number} — ${row.name}: payment #${row.id} of $${Number(row.amount_ex_gst).toFixed(2)} has an INVALID date "${cashReceivedDate}" — SKIPPED. Fix this payment's date manually first.\n`);
+      continue;
+    }
+
+    toSpread++;
     const proration = buildProratedPayments({
       totalAmountExGst: row.amount_ex_gst,
       cashReceivedDate,
@@ -120,6 +122,7 @@
 
   console.log('\n--- Summary ---');
   console.log(`Left alone (single-month, no change needed): ${leftAlone}`);
+  console.log(`Skipped (invalid/corrupted date — fix manually first): ${badDate}`);
   console.log(`${APPLY ? 'Spread' : 'Would spread'}: ${toSpread}`);
   if (APPLY) console.log(`Errors: ${errors}`);
   if (!APPLY && toSpread > 0) {

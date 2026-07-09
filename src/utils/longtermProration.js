@@ -48,6 +48,41 @@ function nearEqual(a, b, eps = 0.02) {
 }
 
 /**
+ * Amount-ONLY month inference — deliberately does NOT look at the customer's
+ * contract_start_date/expiry_date, unlike inferContractMonths() above.
+ *
+ * Use this (not inferContractMonths) when backfilling OLD historical
+ * payments. Here's why: a customer's contract_start_date/expiry_date on
+ * file reflects their CURRENT/latest contract term — it says nothing about
+ * what was true when an old payment was made. Using it to judge historical
+ * payments causes exactly the bug this function avoids: every past payment
+ * for a customer gets stamped with whatever their current contract span
+ * happens to be, regardless of that payment's own actual amount, silently
+ * merging distinct payments into the same wrong months.
+ *
+ * Deliberately conservative: only classifies a payment as multi-month if
+ * its amount closely matches one of the known term totals. Anything
+ * ambiguous returns 1 (leave alone, don't guess) rather than risk
+ * misattributing historical revenue to the wrong month.
+ */
+function inferMonthsFromAmountOnly(amountExGst) {
+  const amt = Number(amountExGst);
+  if (!Number.isFinite(amt) || amt <= 0) return 1;
+  for (const [m, total] of Object.entries(LT_TERM_TOTALS)) {
+    if (parseInt(m, 10) > 1 && nearEqual(amt, total)) return parseInt(m, 10);
+  }
+  return 1;
+}
+
+/** True if a YYYY-MM-DD string parses to a real, plausible date (year 2000-2100). */
+function isPlausibleDate(ymd) {
+  const d = parseYmd(ymd);
+  if (!d || isNaN(d.getTime())) return false;
+  const year = d.getFullYear();
+  return year >= 2000 && year <= 2100;
+}
+
+/**
  * Infer how many months a payment covers.
  * Priority: contract dates → known term totals → contract_amount match → single month.
  */
@@ -201,6 +236,8 @@ module.exports = {
   addMonthsYmd,
   monthsBetweenYmd,
   inferContractMonths,
+  inferMonthsFromAmountOnly,
+  isPlausibleDate,
   splitAmount,
   buildProratedPayments,
   collapsePaymentsForDisplay,
