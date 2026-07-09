@@ -123,9 +123,50 @@ async function deallocatePayment(db, { carparkId, paymentSource, paymentId }) {
   return rows;
 }
 
+/**
+ * Builds the data for an account statement — filtered to only the invoices
+ * that still have a real outstanding balance, with accurate paid/outstanding
+ * amounts from the allocation system. Shared by the PDF download, the manual
+ * "send accounts" email, and the automated month-end cron, so all three
+ * always agree with each other and with the Accounts page itself.
+ */
+async function getAccountStatementData(db, { carparkId, accountIds, startDate, endDate }) {
+  const ph = accountIds.map(() => '?').join(',');
+  const invoicesRaw = await db.prepare(`
+    SELECT * FROM invoices
+    WHERE account_customer_id IN (${ph}) AND void = 0
+      AND substr(trim(COALESCE(date_in,'')),1,10) >= ? AND substr(trim(COALESCE(date_in,'')),1,10) <= ?
+    ORDER BY date_in ASC
+  `).all(...accountIds, startDate, endDate);
+
+  const outstandingByInvoiceId = new Map();
+  for (const accountId of accountIds) {
+    const list = await getAccountInvoicesWithOutstanding(db, { carparkId, accountCustomerId: accountId });
+    for (const inv of list) outstandingByInvoiceId.set(inv.id, inv);
+  }
+
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const allInvoices = invoicesRaw.map(inv => {
+    const info = outstandingByInvoiceId.get(inv.id);
+    return {
+      ...inv,
+      allocated_amount: info ? info.allocated_amount : 0,
+      outstanding_amount: info ? info.outstanding_amount : round2(inv.total_price),
+    };
+  });
+
+  const outstandingInvoices = allInvoices.filter(i => i.outstanding_amount > 0.01);
+  const grossInvoiced = round2(allInvoices.reduce((s, i) => s + (parseFloat(i.total_price) || 0), 0));
+  const totalPaid = round2(allInvoices.reduce((s, i) => s + i.allocated_amount, 0));
+  const totalOutstanding = round2(outstandingInvoices.reduce((s, i) => s + i.outstanding_amount, 0));
+
+  return { allInvoices, outstandingInvoices, grossInvoiced, totalPaid, totalOutstanding };
+}
+
 module.exports = {
   getInvoiceOutstanding,
   getAccountInvoicesWithOutstanding,
   allocateAccountPayment,
   deallocatePayment,
+  getAccountStatementData,
 };

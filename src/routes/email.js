@@ -3,6 +3,8 @@ const nodemailer = require('nodemailer');
 const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
+const { getAccountStatementData } = require('../utils/paymentAllocation');
+const { buildInvoicePdfBuffer } = require('../utils/invoicePdf');
 const router = express.Router();
 
 const SMTP_MISSING_MSG =
@@ -79,15 +81,18 @@ function referenceForAccountInvoice(carpark, account, invoiceNo) {
   return invoiceNo;
 }
 
-function buildAccountEmailHTML(carpark, account, invoices, total, monthName, year, month2, dueDateYmd) {
-  const rows = invoices.map(inv => {
+function buildAccountEmailHTML(carpark, account, statementData, monthName, year, month2, dueDateYmd) {
+  const { outstandingInvoices, grossInvoiced, totalPaid, totalOutstanding } = statementData;
+  const rows = outstandingInvoices.map(inv => {
     const dIn  = inv.date_in     ? new Date(inv.date_in).toLocaleDateString('en-NZ',     { day: 'numeric', month: 'short', year: '2-digit' }) : '';
     const dOut = inv.return_date ? new Date(inv.return_date).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' }) : '';
     return `<tr>
       <td style="padding:6px 10px;border-bottom:1px solid #eee;">${dIn} – ${dOut}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eee;">${inv.first_name || ''} ${inv.last_name || ''}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #eee;">${inv.rego || ''}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eee;color:#27ae60;font-weight:bold;">$${parseFloat(inv.payment_amount || 0).toFixed(2)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">$${parseFloat(inv.total_price || 0).toFixed(2)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;color:#27ae60;">$${inv.allocated_amount.toFixed(2)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;color:#c0392b;font-weight:bold;">$${inv.outstanding_amount.toFixed(2)}</td>
     </tr>`;
   }).join('');
 
@@ -108,19 +113,23 @@ function buildAccountEmailHTML(carpark, account, invoices, total, monthName, yea
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
   <body style="font-family:Arial,sans-serif;max-width:700px;margin:0 auto;padding:20px;color:#333;">
-    <h2 style="color:#2c3e50;font-style:italic;">${carpark.name} – GST – ${monthName} ${year} Account Invoice</h2>
+    <h2 style="color:#2c3e50;font-style:italic;">${carpark.name} – GST – ${monthName} ${year} Account Statement</h2>
     <hr style="border:2px solid #3498db;">
     <h3 style="color:#e74c3c;">${account.company_name}</h3>
+    <p style="color:#555;font-size:13px;">Showing bookings with an outstanding balance. Fully paid bookings from this period aren't listed below.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:10px;">
       <thead><tr style="background:#f8f9fa;">
         <th style="padding:8px 10px;text-align:left;border-bottom:2px solid #dee2e6;">Stay</th>
         <th style="padding:8px 10px;text-align:left;border-bottom:2px solid #dee2e6;">Name</th>
         <th style="padding:8px 10px;text-align:left;border-bottom:2px solid #dee2e6;">Car Rego</th>
-        <th style="padding:8px 10px;text-align:left;border-bottom:2px solid #dee2e6;">Cost</th>
+        <th style="padding:8px 10px;text-align:right;border-bottom:2px solid #dee2e6;">Cost</th>
+        <th style="padding:8px 10px;text-align:right;border-bottom:2px solid #dee2e6;">Paid</th>
+        <th style="padding:8px 10px;text-align:right;border-bottom:2px solid #dee2e6;">Outstanding</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <p style="margin-top:10px;"><strong>Total: <span style="color:#27ae60;">$${parseFloat(total).toFixed(2)}</span></strong></p>
+    <p style="margin-top:10px;color:#666;">Total invoiced this period: $${grossInvoiced.toFixed(2)} · Paid: $${totalPaid.toFixed(2)}</p>
+    <p style="margin-top:4px;"><strong>Amount Outstanding: <span style="color:#c0392b;font-size:18px;">$${totalOutstanding.toFixed(2)}</span></strong></p>
     <p style="margin-top:4px;"><strong>Payment due date:</strong> 20th of next month (${dueDateYmd})</p>
     ${payLink}
     ${bank ? `<hr style="margin-top:22px;"><h3 style="color:#2c3e50;font-size:15px;">Payment details</h3>${bank}` : ''}
@@ -137,7 +146,8 @@ function sanitizeFilename(s) {
     .slice(0, 80) || 'account';
 }
 
-function buildAccountInvoicePDF({ res, carpark, account, invoices, total, monthName, year, month2, dueDateYmd }) {
+function buildAccountInvoicePDF({ res, carpark, account, statementData, monthName, year, month2, dueDateYmd }) {
+  const { outstandingInvoices, grossInvoiced, totalPaid, totalOutstanding } = statementData;
   const doc = new PDFDocument({ size: 'A4', margin: 40 });
   doc.pipe(res);
 
@@ -162,31 +172,37 @@ function buildAccountInvoicePDF({ res, carpark, account, invoices, total, monthN
   line();
 
   doc.fontSize(14).fillColor('#c0392b').font('Helvetica-Bold').text(account.company_name || '');
-  doc.font('Helvetica').moveDown(0.5);
+  doc.font('Helvetica').fontSize(9).fillColor('#666').text('Showing bookings with an outstanding balance. Fully paid bookings from this period are not listed.');
+  doc.moveDown(0.5);
 
   // Table header
   const startX = doc.page.margins.left;
   let y = doc.y;
-  const col = { stay: startX, name: startX + 150, rego: startX + 330, cost: startX + 430 };
-  doc.fontSize(10).fillColor('#000').text('Stay', col.stay, y, { width: 140 });
-  doc.text('Name', col.name, y, { width: 170 });
-  doc.text('Car Rego', col.rego, y, { width: 90 });
-  doc.text('Cost', col.cost, y, { width: 90, align: 'right' });
+  const col = { stay: startX, name: startX + 120, rego: startX + 250, cost: startX + 320, paid: startX + 390, out: startX + 460 };
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#000').text('Stay', col.stay, y, { width: 110 });
+  doc.text('Name', col.name, y, { width: 125 });
+  doc.text('Rego', col.rego, y, { width: 65 });
+  doc.text('Cost', col.cost, y, { width: 65, align: 'right' });
+  doc.text('Paid', col.paid, y, { width: 65, align: 'right' });
+  doc.text('Outstanding', col.out, y, { width: 75, align: 'right' });
+  doc.font('Helvetica');
   y += 14;
   doc.moveTo(startX, y).lineTo(doc.page.width - doc.page.margins.right, y).strokeColor('#e0e0e0').stroke();
   y += 8;
 
   const fmtShort = (d) => d ? new Date(d).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' }) : '';
-  for (const inv of invoices) {
+  for (const inv of outstandingInvoices) {
     const stay = `${fmtShort(inv.date_in)} – ${fmtShort(inv.return_date)}`.trim();
     const name = `${inv.first_name || ''} ${inv.last_name || ''}`.trim();
     const rego = inv.rego || '';
-    const cost = currency(inv.payment_amount || 0);
 
-    doc.fontSize(9).fillColor('#111').text(stay, col.stay, y, { width: 140 });
-    doc.text(name, col.name, y, { width: 170 });
-    doc.text(rego, col.rego, y, { width: 90 });
-    doc.text(cost, col.cost, y, { width: 90, align: 'right' });
+    doc.fontSize(8).fillColor('#111').text(stay, col.stay, y, { width: 110 });
+    doc.text(name, col.name, y, { width: 125 });
+    doc.text(rego, col.rego, y, { width: 65 });
+    doc.text(currency(inv.total_price), col.cost, y, { width: 65, align: 'right' });
+    doc.fillColor('#27ae60').text(currency(inv.allocated_amount), col.paid, y, { width: 65, align: 'right' });
+    doc.fillColor('#c0392b').font('Helvetica-Bold').text(currency(inv.outstanding_amount), col.out, y, { width: 75, align: 'right' });
+    doc.font('Helvetica').fillColor('#111');
     y += 14;
 
     if (y > doc.page.height - doc.page.margins.bottom - 140) {
@@ -195,9 +211,12 @@ function buildAccountInvoicePDF({ res, carpark, account, invoices, total, monthN
     }
   }
 
-  doc.moveDown(1.2);
-  doc.fontSize(12).fillColor('#1a5276').font('Helvetica-Bold').text(`Statement total: ${currency(total)}`, { align: 'right' });
-  doc.font('Helvetica').moveDown(0.8);
+  doc.y = y;
+  doc.moveDown(1);
+  doc.fontSize(9).fillColor('#666').text(`Total invoiced this period: ${currency(grossInvoiced)}   ·   Paid: ${currency(totalPaid)}`, { align: 'right' });
+  doc.moveDown(0.3);
+  doc.fontSize(14).fillColor('#c0392b').font('Helvetica-Bold').text(`Amount Outstanding: ${currency(totalOutstanding)}`, { align: 'right' });
+  doc.font('Helvetica').fillColor('#1a5276').moveDown(0.8);
   line();
 
   // Payment details
@@ -314,24 +333,15 @@ router.get('/account-invoice.pdf', requireAuth, async (req, res) => {
       if (!billingEmail(account) && billingEmail(a)) account = a;
     }
 
-    const invoices = await db.prepare(`
-      SELECT * FROM invoices
-      WHERE account_customer_id IN (${ph})
-        AND void = 0
-        AND DATE(date_in) >= ?
-        AND DATE(date_in) <= ?
-      ORDER BY date_in ASC
-    `).all(...normalizedIds, startDate, endDate);
-    if (!invoices || invoices.length === 0) return res.status(404).json({ error: 'No invoices for this month' });
-
-    const total = invoices.reduce((s, inv) => s + (inv.payment_amount || 0), 0);
+    const statementData = await getAccountStatementData(db, { carparkId, accountIds: normalizedIds, startDate, endDate });
+    if (!statementData.allInvoices || statementData.allInvoices.length === 0) return res.status(404).json({ error: 'No invoices for this month' });
 
     const invNo = accountInvoiceNumber(y, m, account.id);
     const filename = `${sanitizeFilename(carpark?.name)}_${sanitizeFilename(account?.company_name)}_${invNo}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
 
-    buildAccountInvoicePDF({ res, carpark: carpark || {}, account, invoices, total, monthName, year: y, month2: m, dueDateYmd });
+    buildAccountInvoicePDF({ res, carpark: carpark || {}, account, statementData, monthName, year: y, month2: m, dueDateYmd });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -381,22 +391,17 @@ router.post('/send-accounts', requireAuth, async (req, res) => {
 
     for (const g of Array.from(byKey.values())) {
       const accountIds = g.account_ids;
-      const ph = accountIds.map(() => '?').join(',');
-      const invoices = await db.prepare(`
-        SELECT * FROM invoices
-        WHERE account_customer_id IN (${ph})
-          AND void = 0
-          AND DATE(date_in) >= ?
-          AND DATE(date_in) <= ?
-        ORDER BY date_in ASC
-      `).all(...accountIds, startDate, endDate);
+      const statementData = await getAccountStatementData(db, { carparkId, accountIds, startDate, endDate });
 
-      if (invoices.length === 0) {
+      if (statementData.allInvoices.length === 0) {
         results.push({ account: g.account.company_name, status: 'skipped', reason: 'No invoices this month' });
         continue;
       }
+      if (statementData.outstandingInvoices.length === 0) {
+        results.push({ account: g.account.company_name, status: 'skipped', reason: 'Already paid in full' });
+        continue;
+      }
 
-      const total = invoices.reduce((s, inv) => s + (inv.payment_amount || 0), 0);
       const emailTo = billingEmail(g.account);
       if (!emailTo) {
         results.push({ account: g.account.company_name, status: 'failed', reason: 'No billing email' });
@@ -405,14 +410,31 @@ router.post('/send-accounts', requireAuth, async (req, res) => {
         continue;
       }
 
-      const html = buildAccountEmailHTML(carpark, g.account, invoices, total, monthName, y, m, dueDateYmd);
+      const html = buildAccountEmailHTML(carpark, g.account, statementData, monthName, y, m, dueDateYmd);
+      const total = statementData.totalOutstanding;
       try {
         const invNo = accountInvoiceNumber(y, m, g.account.id);
+
+        // Attach each outstanding booking's own invoice PDF alongside the
+        // statement, so the customer has a full paper trail per booking —
+        // not just the summary. A failure generating one attachment doesn't
+        // block the email — the statement itself is the essential part.
+        const attachments = [];
+        for (const inv of statementData.outstandingInvoices) {
+          try {
+            const buf = await buildInvoicePdfBuffer(inv, carpark);
+            attachments.push({ filename: `Invoice-${inv.invoice_number}.pdf`, content: buf });
+          } catch (pdfErr) {
+            console.error(`[send-accounts] Failed to build PDF for invoice #${inv.invoice_number}:`, pdfErr.message);
+          }
+        }
+
         await transporter.sendMail({
           from: emailFrom(),
           to: emailTo,
           subject: `${carpark.name} – GST – ${monthName} ${y} Account Invoice (${invNo})`,
           html,
+          attachments,
         });
         results.push({ account: g.account.company_name, status: 'sent', email: emailTo, total });
         await db.prepare(`INSERT INTO email_logs (carpark_id, account_customer_id, account_name, month, year, sent_at, status, recipient_email) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`)
@@ -499,6 +521,19 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
           <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">${currency(invoice.payment_amount_2)}</td></tr>` : ''}
     `;
 
+    // Clear paid/owing status — the same "at a glance" banner used on the PDF.
+    const amountPaid = Math.round((
+      (parseFloat(invoice.payment_amount) || 0) +
+      (parseFloat(invoice.payment_amount_2) || 0) +
+      (parseFloat(invoice.credit_applied) || 0)
+    ) * 100) / 100;
+    const amountOwing = Math.max(0, Math.round(((parseFloat(invoice.total_price) || 0) - amountPaid) * 100) / 100);
+    const isPaidInFull = amountOwing <= 0.01 && (invoice.paid_status && invoice.paid_status !== 'To Pay');
+    const statusBannerHtml = `
+      <div style="background:${isPaidInFull ? '#1e8449' : '#c0392b'};color:#fff;text-align:center;padding:12px;border-radius:6px;margin:16px 0;font-size:16px;font-weight:bold;">
+        ${isPaidInFull ? 'PAID IN FULL' : `AMOUNT DUE: ${currency(amountOwing)}`}
+      </div>`;
+
     const transporterEarly = getTransporter();
     if (!transporterEarly) return res.status(503).json({ error: SMTP_MISSING_MSG });
 
@@ -539,6 +574,8 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
       <tr style="background:#f8f9fa;"><td style="padding:10px;font-size:16px;font-weight:bold;" colspan="2">TOTAL</td>
           <td style="padding:10px;font-size:18px;font-weight:bold;color:#27ae60;text-align:right;">${currency(invoice.total_price)}</td></tr>
     </table>
+
+    ${statusBannerHtml}
 
     <table style="width:100%;border-collapse:collapse;">
       ${paymentRows}
@@ -705,3 +742,4 @@ router.post('/test', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.buildAccountEmailHTML = buildAccountEmailHTML;
