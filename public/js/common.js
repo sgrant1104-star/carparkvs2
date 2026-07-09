@@ -235,8 +235,8 @@ function debounce(fn, delay) {
 function renderNavbar(activePage) {
   const navItems = [
     { href: '/menu.html', label: 'Menu', icon: 'bi-house-fill', key: 'menu' },
-    { href: '/invoice.html', label: 'Invoice', icon: 'bi-receipt', key: 'invoice' },
-    { href: '/invoices.html', label: 'Invoices', icon: 'bi-journal-text', key: 'invoices' },
+    { href: '/invoice.html', label: 'Bookings', icon: 'bi-receipt', key: 'invoice' },
+    { href: '/invoices.html', label: 'All Invoices', icon: 'bi-journal-text', key: 'invoices' },
     { href: '/returns.html', label: 'Returns', icon: 'bi-car-front', key: 'returns' },
     { href: '/longterm.html', label: 'Long Term', icon: 'bi-calendar-check', key: 'longterm' },
     { href: '/accounts.html', label: 'Accounts', icon: 'bi-building', key: 'accounts' },
