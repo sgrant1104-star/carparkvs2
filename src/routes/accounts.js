@@ -16,10 +16,10 @@ router.get('/', requireAuth, async (req, res) => {
       SELECT a.*,
         (SELECT COALESCE(SUM(COALESCE(i.total_price,0)),0) FROM invoices i
          WHERE i.account_customer_id = a.id AND i.carpark_id = a.carpark_id AND i.void = 0
-         AND substr(trim(COALESCE(i.date_in,'')),1,10) >= ?) AS month_billed
+         AND substr(trim(COALESCE(i.date_in,'')),1,10) >= ? AND substr(trim(COALESCE(i.date_in,'')),1,10) <= ?) AS month_billed
       FROM account_customers a
       WHERE a.carpark_id = ? AND a.active = 1 ORDER BY a.company_name
-    `).all(monthStart, carparkId);
+    `).all(monthStart, today, carparkId);
 
     // Outstanding must come from real per-invoice allocation (same source the
     // statement view and invoice table use) — not a raw "billed this month
@@ -32,7 +32,10 @@ router.get('/', requireAuth, async (req, res) => {
       const balanceOut = Math.round(invoicesWithOutstanding.reduce((s, i) => s + i.outstanding_amount, 0) * 100) / 100;
       const lifeBilled = Math.round(invoicesWithOutstanding.reduce((s, i) => s + (parseFloat(i.total_price) || 0), 0) * 100) / 100;
 
-      const monthInvoices = invoicesWithOutstanding.filter(i => String(i.date_in || '').slice(0, 10) >= monthStart);
+      const monthInvoices = invoicesWithOutstanding.filter(i => {
+        const d = String(i.date_in || '').slice(0, 10);
+        return d >= monthStart && d <= today;
+      });
       const monthOut = Math.round(monthInvoices.reduce((s, i) => s + i.outstanding_amount, 0) * 100) / 100;
       const billed = parseFloat(a.month_billed) || 0;
 

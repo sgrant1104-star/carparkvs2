@@ -26,7 +26,7 @@ router.get('/stats', requireAuth, async (req, res) => {
     // Long-term payments are stored ex GST; dashboard revenue is shown inc GST (same as invoice totals).
     const ltDay = `substr(trim(COALESCE(payment_date,'')), 1, 10)`;
     const ltRevenueToday  = await db.prepare(`SELECT COALESCE(SUM(amount_ex_gst * 1.15), 0) as total FROM longterm_payments WHERE carpark_id = ? AND ${ltDay} = ?`).get(carparkId, today);
-    const ltRevenueMonth  = await db.prepare(`SELECT COALESCE(SUM(amount_ex_gst * 1.15), 0) as total FROM longterm_payments WHERE carpark_id = ? AND ${ltDay} >= ?`).get(carparkId, firstOfMonth);
+    const ltRevenueMonth  = await db.prepare(`SELECT COALESCE(SUM(amount_ex_gst * 1.15), 0) as total FROM longterm_payments WHERE carpark_id = ? AND ${ltDay} >= ? AND ${ltDay} <= ?`).get(carparkId, firstOfMonth, today);
     const revenueTodayTotal = (invRevenueToday.total || 0) + (ltRevenueToday.total || 0);
     const revenueMonthTotal = (invRevenueMonth.total || 0) + (ltRevenueMonth.total || 0);
     const carpark        = await db.prepare('SELECT capacity FROM carparks WHERE id = ?').get(carparkId);
@@ -48,7 +48,7 @@ router.get('/stats', requireAuth, async (req, res) => {
       WHERE carpark_id = ? AND DATE(return_date) = ? AND void = 0
         AND (picked_up IS NULL OR picked_up = '' OR picked_up = 'Car In Yard')
     `).get(carparkId, today);
-    const revenueByMethod= await db.prepare(`SELECT paid_status, COALESCE(SUM(payment_amount), 0) as total FROM invoices WHERE carpark_id = ? AND ${invDay} >= ? AND void = 0 GROUP BY paid_status`).all(carparkId, firstOfMonth);
+    const revenueByMethod= await db.prepare(`SELECT paid_status, COALESCE(SUM(payment_amount), 0) as total FROM invoices WHERE carpark_id = ? AND ${invDay} >= ? AND ${invDay} <= ? AND void = 0 GROUP BY paid_status`).all(carparkId, firstOfMonth, today);
     // Add long-term revenue into the breakdown so the chart matches the month total.
     if ((ltRevenueMonth.total || 0) > 0) {
       revenueByMethod.push({ paid_status: 'LongTerm', total: ltRevenueMonth.total });
