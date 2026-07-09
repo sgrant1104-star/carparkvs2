@@ -297,6 +297,39 @@
     </div>
   </div>
 
+  <!-- Data Backfills (run in-process, safe against the live database) -->
+  <div class="page-container mt-4">
+    <div class="form-card">
+      <div class="form-section-title"><i class="bi bi-database-gear me-2"></i>Data Backfills</div>
+      <p class="small text-muted">These run inside the live server itself — safe to use directly against production data, unlike a separate console script.</p>
+
+      <div class="border rounded p-3 mb-3">
+        <div class="fw-bold mb-1">Account payment allocation</div>
+        <p class="small text-muted mb-2">Retroactively links existing account payments to the specific invoices they paid off (oldest invoice first). Safe to re-run — already-linked payments are skipped automatically.</p>
+        <button class="btn btn-sm btn-primary" id="btn-run-account-backfill">Run Account Allocation Backfill</button>
+      </div>
+
+      <div class="border rounded p-3 mb-3">
+        <div class="fw-bold mb-1">Check an account's allocation</div>
+        <p class="small text-muted mb-2">Read-only — shows every invoice and payment for an account, and exactly where each payment landed.</p>
+        <div class="input-group input-group-sm mb-2" style="max-width:400px;">
+          <input type="text" class="form-control" id="check-account-query" placeholder="Company name or account ID">
+          <button class="btn btn-outline-secondary" id="btn-check-account">Check</button>
+        </div>
+      </div>
+
+      <div class="border rounded p-3 mb-3">
+        <div class="fw-bold mb-1">Long-term prepay proration backfill</div>
+        <p class="small text-muted mb-2">Spreads old lump-sum long-term prepayments across months. <strong>Preview first</strong> — this changes which month old revenue is recognised in.</p>
+        <button class="btn btn-sm btn-outline-primary me-2" id="btn-lt-preview">Preview (no changes)</button>
+        <button class="btn btn-sm btn-danger d-none" id="btn-lt-apply">Apply Changes</button>
+      </div>
+
+      <div class="small text-muted mb-1">Result:</div>
+      <pre id="backfill-result" class="p-2 bg-light border rounded small" style="max-height:500px; overflow:auto; white-space:pre-wrap;">Nothing run yet.</pre>
+    </div>
+  </div>
+
   <div id="alert-container" class="alert-banner"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -602,6 +635,65 @@
         btn.disabled = false;
         btn.innerHTML = old;
       }
+    });
+
+    function showBackfillResult(obj) {
+      document.getElementById('backfill-result').textContent =
+        typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    }
+
+    document.getElementById('btn-run-account-backfill').addEventListener('click', async () => {
+      if (!confirm('Run the account payment allocation backfill now? This writes data (safe/additive, but real).')) return;
+      showBackfillResult('Running...');
+      try {
+        const res = await fetch('/api/admin/backfill/account-allocations', { method: 'POST' });
+        const data = await res.json();
+        showBackfillResult(data);
+        if (res.ok) showAlert(`Done — ${data.totalProcessed} payment(s) processed, $${data.totalAllocated.toFixed(2)} allocated.`, 'success');
+        else showAlert(data.error || 'Failed', 'danger');
+      } catch (e) { showBackfillResult('Error: ' + e.message); }
+    });
+
+    document.getElementById('btn-check-account').addEventListener('click', async () => {
+      const q = document.getElementById('check-account-query').value.trim();
+      if (!q) return;
+      showBackfillResult('Checking...');
+      try {
+        const res = await fetch(`/api/admin/backfill/check-account?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        showBackfillResult(data);
+      } catch (e) { showBackfillResult('Error: ' + e.message); }
+    });
+
+    let ltPreviewLoaded = false;
+    document.getElementById('btn-lt-preview').addEventListener('click', async () => {
+      showBackfillResult('Loading preview...');
+      try {
+        const res = await fetch('/api/admin/backfill/lt-proration-preview');
+        const data = await res.json();
+        showBackfillResult(data);
+        if (res.ok) {
+          ltPreviewLoaded = true;
+          document.getElementById('btn-lt-apply').classList.toggle('d-none', data.toSpread === 0);
+          showAlert(`Preview: ${data.toSpread} payment(s) would be spread, ${data.leftAlone} left alone (already single-month).`, 'info');
+        }
+      } catch (e) { showBackfillResult('Error: ' + e.message); }
+    });
+
+    document.getElementById('btn-lt-apply').addEventListener('click', async () => {
+      if (!ltPreviewLoaded) { showAlert('Run Preview first', 'warning'); return; }
+      if (!confirm('Apply these long-term proration changes now? This rewrites which month old revenue is recognised in and cannot be undone automatically.')) return;
+      showBackfillResult('Applying...');
+      try {
+        const res = await fetch('/api/admin/backfill/lt-proration-apply', { method: 'POST' });
+        const data = await res.json();
+        showBackfillResult(data);
+        if (res.ok) {
+          showAlert(`Applied — ${data.spread} payment(s) spread, ${data.errors} error(s).`, data.errors > 0 ? 'warning' : 'success');
+          document.getElementById('btn-lt-apply').classList.add('d-none');
+          ltPreviewLoaded = false;
+        }
+      } catch (e) { showBackfillResult('Error: ' + e.message); }
     });
 
     async function init() {

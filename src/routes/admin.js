@@ -211,4 +211,170 @@ router.put('/me', requireAuth, async (req, res) => {
   }
 });
 
+// ─── Backfills (run IN-PROCESS, not as standalone scripts) ─────────────────
+// IMPORTANT: these must run inside the live server process, not a separate
+// `node scripts/...` console session. This app keeps its database fully in
+// memory and periodically flushes the whole thing to disk; a separate
+// one-off script process has its OWN independent in-memory copy, and
+// whichever process saves LAST wins — the live server's next ordinary write
+// (anyone editing anything) can silently overwrite and erase a script's
+// changes. Running the same logic here, inside the already-running server,
+// eliminates that race entirely — there's only ever one copy of the data.
+
+router.post('/backfill/account-allocations', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { allocateAccountPayment } = require('../utils/paymentAllocation');
+    const accounts = await db.prepare('SELECT * FROM account_customers').all();
+    const results = [];
+    let totalAllocated = 0, totalProcessed = 0, totalSkipped = 0;
+
+    for (const account of accounts) {
+      const carparkId = account.carpark_id || 1;
+      const payments = await db.prepare(`
+        SELECT * FROM account_payments WHERE carpark_id = ? AND account_customer_id = ? ORDER BY payment_date ASC, id ASC
+      `).all(carparkId, account.id);
+      if (payments.length === 0) continue;
+
+      let accountAllocatedCount = 0, accountAllocatedAmount = 0;
+      for (const payment of payments) {
+        const existingAlloc = await db.prepare(`
+          SELECT COUNT(*) as n FROM payment_allocations WHERE carpark_id = ? AND payment_source = 'account' AND payment_id = ?
+        `).get(carparkId, payment.id);
+        if (existingAlloc.n > 0) { totalSkipped++; continue; }
+
+        const result = await allocateAccountPayment(db, {
+          carparkId, accountCustomerId: account.id, paymentId: payment.id, amount: payment.amount,
+        });
+        totalProcessed++;
+        if (result.splits.length > 0) {
+          accountAllocatedCount++;
+          accountAllocatedAmount += result.splits.reduce((s, x) => s + x.amount_allocated, 0);
+        }
+      }
+      if (accountAllocatedCount > 0) {
+        totalAllocated += accountAllocatedAmount;
+        results.push({ company_name: account.company_name, payments_allocated: accountAllocatedCount, amount: Math.round(accountAllocatedAmount * 100) / 100 });
+      }
+    }
+
+    res.json({ success: true, results, totalProcessed, totalSkipped, totalAllocated: Math.round(totalAllocated * 100) / 100 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/backfill/lt-proration-preview', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { inferContractMonths, buildProratedPayments } = require('../utils/longtermProration');
+    const candidates = await db.prepare(`
+      SELECT lp.*, lc.name, lc.lt_number, lc.contract_start_date, lc.expiry_date, lc.contract_amount, lc.carpark_id as lt_carpark_id
+      FROM longterm_payments lp
+      JOIN longterm_customers lc ON lc.id = lp.longterm_customer_id
+      WHERE lp.payment_batch_id IS NULL
+      ORDER BY lp.longterm_customer_id, lp.payment_date
+    `).all();
+
+    const preview = [];
+    let leftAlone = 0;
+    for (const row of candidates) {
+      const months = inferContractMonths({ contract_start_date: row.contract_start_date, expiry_date: row.expiry_date, contract_amount: row.contract_amount }, row.amount_ex_gst);
+      if (months <= 1) { leftAlone++; continue; }
+      const cashReceivedDate = row.cash_received_date || row.payment_date;
+      const proration = buildProratedPayments({
+        totalAmountExGst: row.amount_ex_gst, cashReceivedDate,
+        contractStartDate: row.contract_start_date || cashReceivedDate, months,
+        transactionReference: row.transaction_reference, baseNotes: row.notes,
+      });
+      preview.push({
+        payment_id: row.id, lt_number: row.lt_number, name: row.name,
+        original_amount: row.amount_ex_gst, original_date: String(row.payment_date).slice(0, 10),
+        months, spread: proration.rows.map(r => ({ date: r.payment_date, amount: r.amount_ex_gst })),
+      });
+    }
+
+    res.json({ candidateCount: candidates.length, leftAlone, toSpread: preview.length, preview });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/backfill/lt-proration-apply', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { inferContractMonths, buildProratedPayments } = require('../utils/longtermProration');
+    const { logActivity, actorFromReq } = require('../utils/audit');
+    const { userId, userName } = actorFromReq(req);
+
+    const candidates = await db.prepare(`
+      SELECT lp.*, lc.name, lc.lt_number, lc.contract_start_date, lc.expiry_date, lc.contract_amount, lc.carpark_id as lt_carpark_id
+      FROM longterm_payments lp
+      JOIN longterm_customers lc ON lc.id = lp.longterm_customer_id
+      WHERE lp.payment_batch_id IS NULL
+      ORDER BY lp.longterm_customer_id, lp.payment_date
+    `).all();
+
+    let spread = 0, leftAlone = 0, errors = 0;
+    const errorDetails = [];
+
+    for (const row of candidates) {
+      const months = inferContractMonths({ contract_start_date: row.contract_start_date, expiry_date: row.expiry_date, contract_amount: row.contract_amount }, row.amount_ex_gst);
+      if (months <= 1) { leftAlone++; continue; }
+
+      const cashReceivedDate = row.cash_received_date || row.payment_date;
+      const proration = buildProratedPayments({
+        totalAmountExGst: row.amount_ex_gst, cashReceivedDate,
+        contractStartDate: row.contract_start_date || cashReceivedDate, months,
+        transactionReference: row.transaction_reference, baseNotes: row.notes,
+      });
+
+      try {
+        for (const r of proration.rows) {
+          await db.prepare(`
+            INSERT INTO longterm_payments
+              (carpark_id, longterm_customer_id, payment_date, amount_ex_gst, payment_method, transaction_reference, payment_batch_id, cash_received_date, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(row.lt_carpark_id, row.longterm_customer_id, r.payment_date, r.amount_ex_gst, row.payment_method, row.transaction_reference, r.payment_batch_id, r.cash_received_date, r.notes);
+        }
+        await db.prepare('DELETE FROM longterm_payments WHERE id = ?').run(row.id);
+        await logActivity(db, {
+          carparkId: row.lt_carpark_id, tableName: 'longterm_payments', recordId: row.longterm_customer_id, action: 'backfill_proration',
+          before: { old_payment_id: row.id, amount_ex_gst: row.amount_ex_gst, payment_date: row.payment_date },
+          after: { months, rows: proration.rows },
+          notes: `Backfill: spread old payment #${row.id} across ${months} months`, userId, userName,
+        });
+        spread++;
+      } catch (err) {
+        errors++;
+        errorDetails.push({ payment_id: row.id, lt_number: row.lt_number, error: err.message });
+      }
+    }
+
+    res.json({ success: true, spread, leftAlone, errors, errorDetails });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/backfill/check-account', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { getAccountInvoicesWithOutstanding } = require('../utils/paymentAllocation');
+    const query = String(req.query.q || '').trim();
+    if (!query) return res.status(400).json({ error: 'Provide ?q=<company name or id>' });
+
+    const isId = /^\d+$/.test(query);
+    const accounts = isId
+      ? await db.prepare('SELECT * FROM account_customers WHERE id = ?').all(query)
+      : await db.prepare('SELECT * FROM account_customers WHERE company_name LIKE ?').all(`%${query}%`);
+
+    const out = [];
+    for (const account of accounts) {
+      const invoices = await getAccountInvoicesWithOutstanding(db, { carparkId: account.carpark_id || 1, accountCustomerId: account.id });
+      const payments = await db.prepare(`SELECT * FROM account_payments WHERE carpark_id = ? AND account_customer_id = ? ORDER BY payment_date ASC`).all(account.carpark_id || 1, account.id);
+      const paymentsWithAlloc = [];
+      for (const p of payments) {
+        const allocRows = await db.prepare(`
+          SELECT pa.amount_allocated, i.invoice_number FROM payment_allocations pa JOIN invoices i ON i.id = pa.invoice_id
+          WHERE pa.payment_source = 'account' AND pa.payment_id = ?
+        `).all(p.id);
+        paymentsWithAlloc.push({ ...p, allocations: allocRows });
+      }
+      out.push({ account: { id: account.id, company_name: account.company_name, carpark_id: account.carpark_id }, invoices, payments: paymentsWithAlloc });
+    }
+    res.json(out);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

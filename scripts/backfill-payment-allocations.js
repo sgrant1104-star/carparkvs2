@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 /**
+ * ⚠️  DO NOT run this against a live/production deployment via a separate
+ * console session — the app keeps its database in memory and periodically
+ * flushes it to disk; a standalone script has its OWN independent copy, and
+ * whichever process saves last silently overwrites the other's changes.
+ * On production, use the Admin page's "Data Backfills" panel instead (runs
+ * safely inside the live server process). This script is fine for local
+ * development against a database file the live server isn't also using.
+ *
  * One-time backfill: allocates existing account_payments rows that predate
  * the payment_allocations feature (i.e. every payment recorded before this
  * deploy). Without this, the new "outstanding" figures (Dashboard, Accounts

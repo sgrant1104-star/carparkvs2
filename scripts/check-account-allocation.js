@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 /**
- * READ-ONLY diagnostic — makes no changes. Shows exactly where a given
+ * READ-ONLY diagnostic — makes no changes. On a live/production deployment,
+ * prefer the Admin page's "Check an account's allocation" panel instead
+ * (same query, but reads the live server's actual in-memory data directly
+ * rather than a separate snapshot loaded by this script).
+ *
+ * Shows exactly where a given
  * account's payments have been allocated, across their FULL invoice
  * history (not filtered to any one month), so you can see the truth
  * instead of guessing from a month-filtered statement view.
