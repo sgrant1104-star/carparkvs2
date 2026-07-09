@@ -212,10 +212,13 @@ function buildAccountInvoicePDF({ res, carpark, account, statementData, monthNam
   }
 
   doc.y = y;
+  doc.x = left;
   doc.moveDown(1);
-  doc.fontSize(9).fillColor('#666').text(`Total invoiced this period: ${currency(grossInvoiced)}   ·   Paid: ${currency(totalPaid)}`, { align: 'right' });
+  doc.fontSize(9).fillColor('#666').text(`Total invoiced this period: ${currency(grossInvoiced)}   ·   Paid: ${currency(totalPaid)}`, left, doc.y, { width: fullWidth, align: 'right' });
   doc.moveDown(0.3);
-  doc.fontSize(14).fillColor('#c0392b').font('Helvetica-Bold').text(`Amount Outstanding: ${currency(totalOutstanding)}`, { align: 'right' });
+  doc.x = left;
+  doc.fontSize(14).fillColor('#c0392b').font('Helvetica-Bold').text(`Amount Outstanding: ${currency(totalOutstanding)}`, left, doc.y, { width: fullWidth, align: 'right' });
+  doc.x = left;
   doc.font('Helvetica').fillColor('#1a5276').moveDown(0.8);
   line();
 
