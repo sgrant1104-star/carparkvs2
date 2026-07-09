@@ -77,7 +77,7 @@
     const proration = buildProratedPayments({
       totalAmountExGst: row.amount_ex_gst,
       cashReceivedDate,
-      contractStartDate: row.contract_start_date || cashReceivedDate,
+      contractStartDate: cashReceivedDate, // backfill: always anchor to when cash was actually received, never a possibly-since-updated contract_start_date
       months,
       transactionReference: row.transaction_reference,
       baseNotes: row.notes,
