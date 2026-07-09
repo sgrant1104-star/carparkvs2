@@ -39,7 +39,7 @@
 (async () => {
   const { db, initializeDatabase } = require('../src/database');
   await initializeDatabase();
-  const { inferMonthsFromAmountOnly, isPlausibleDate, buildProratedPayments } = require('../src/utils/longtermProration');
+  const { inferMonthsForBackfill, isPlausibleDate, buildProratedPayments } = require('../src/utils/longtermProration');
   const { logActivity } = require('../src/utils/audit');
 
   const APPLY = process.argv.includes('--apply');
@@ -55,13 +55,20 @@
 
   console.log(`Found ${candidates.length} payment(s) with no batch id (candidates for review).\n`);
 
+  const countByCustomer = new Map();
+  for (const row of candidates) countByCustomer.set(row.longterm_customer_id, (countByCustomer.get(row.longterm_customer_id) || 0) + 1);
+
   let toSpread = 0;
   let leftAlone = 0;
   let errors = 0;
   let badDate = 0;
 
   for (const row of candidates) {
-    const months = inferMonthsFromAmountOnly(row.amount_ex_gst);
+    const isSolePayment = countByCustomer.get(row.longterm_customer_id) === 1;
+    const months = inferMonthsForBackfill(
+      { contract_start_date: row.contract_start_date, expiry_date: row.expiry_date, contract_amount: row.contract_amount },
+      row.amount_ex_gst, isSolePayment
+    );
 
     if (months <= 1) {
       leftAlone++;

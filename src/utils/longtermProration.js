@@ -38,7 +38,11 @@ function monthsBetweenYmd(startYmd, endYmd) {
   const b = parseYmd(endYmd);
   if (!a || !b) return 0;
   let months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
-  if (b.getDate() >= a.getDate()) months += 1;
+  // An EXACT N-month span (same day-of-month on both ends — e.g. the "+3
+  // Months" button setting expiry = start + exactly 3 calendar months) must
+  // count as exactly N, not N+1. Only round up for a genuine partial month
+  // beyond N (end day strictly later than start day).
+  if (b.getDate() > a.getDate()) months += 1;
   else months += 0;
   return Math.max(0, months);
 }
@@ -80,6 +84,43 @@ function isPlausibleDate(ymd) {
   if (!d || isNaN(d.getTime())) return false;
   const year = d.getFullYear();
   return year >= 2000 && year <= 2100;
+}
+
+/**
+ * Hybrid inference for backfilling — safe to use contract-level info (dates,
+ * contract_amount) ONLY when this is the customer's sole unprocessed
+ * payment, since then there's no ambiguity about which payment a contract
+ * term belongs to. This is what correctly handles an undercharged payment
+ * (e.g. contract says $500/3-months but only $434.78 was actually charged)
+ * — the contract's own dates/total tell us the real term length even though
+ * the dollar amount alone wouldn't match.
+ *
+ * When a customer has MULTIPLE unprocessed payments, this falls back to
+ * amount-only matching per payment — using contract-level info there is
+ * exactly what caused the original bug (every historical payment getting
+ * stamped with whatever the customer's CURRENT contract span happens to be).
+ */
+function inferMonthsForBackfill(customer, amountExGst, isSolePayment) {
+  const amt = Number(amountExGst);
+  if (!Number.isFinite(amt) || amt <= 0) return 1;
+
+  if (isSolePayment) {
+    const start = customer.contract_start_date ? String(customer.contract_start_date).slice(0, 10) : null;
+    const expiry = customer.expiry_date ? String(customer.expiry_date).slice(0, 10) : null;
+    if (start && expiry) {
+      const fromDates = monthsBetweenYmd(start, expiry);
+      if (fromDates >= 2 && fromDates <= 12) return fromDates;
+    }
+    const contractAmt = customer.contract_amount != null && customer.contract_amount !== ''
+      ? parseFloat(customer.contract_amount) : null;
+    if (contractAmt != null) {
+      for (const [m, total] of Object.entries(LT_TERM_TOTALS)) {
+        if (parseInt(m, 10) > 1 && nearEqual(contractAmt, total)) return parseInt(m, 10);
+      }
+    }
+  }
+
+  return inferMonthsFromAmountOnly(amt);
 }
 
 /**
@@ -237,6 +278,7 @@ module.exports = {
   monthsBetweenYmd,
   inferContractMonths,
   inferMonthsFromAmountOnly,
+  inferMonthsForBackfill,
   isPlausibleDate,
   splitAmount,
   buildProratedPayments,

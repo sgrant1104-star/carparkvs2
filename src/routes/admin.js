@@ -263,7 +263,7 @@ router.post('/backfill/account-allocations', requireAuth, requireAdmin, async (r
 
 router.get('/backfill/lt-proration-preview', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { inferMonthsFromAmountOnly, isPlausibleDate, buildProratedPayments } = require('../utils/longtermProration');
+    const { inferMonthsForBackfill, isPlausibleDate, buildProratedPayments } = require('../utils/longtermProration');
     const candidates = await db.prepare(`
       SELECT lp.*, lc.name, lc.lt_number, lc.contract_start_date, lc.expiry_date, lc.contract_amount, lc.carpark_id as lt_carpark_id
       FROM longterm_payments lp
@@ -272,11 +272,22 @@ router.get('/backfill/lt-proration-preview', requireAuth, requireAdmin, async (r
       ORDER BY lp.longterm_customer_id, lp.payment_date
     `).all();
 
+    // Count how many unprocessed payments each customer has — only trust
+    // contract-level dates/total when a customer has exactly one, since
+    // that's the only case with no ambiguity about which payment a
+    // contract term belongs to.
+    const countByCustomer = new Map();
+    for (const row of candidates) countByCustomer.set(row.longterm_customer_id, (countByCustomer.get(row.longterm_customer_id) || 0) + 1);
+
     const preview = [];
     let leftAlone = 0;
     let badDate = 0;
     for (const row of candidates) {
-      const months = inferMonthsFromAmountOnly(row.amount_ex_gst);
+      const isSolePayment = countByCustomer.get(row.longterm_customer_id) === 1;
+      const months = inferMonthsForBackfill(
+        { contract_start_date: row.contract_start_date, expiry_date: row.expiry_date, contract_amount: row.contract_amount },
+        row.amount_ex_gst, isSolePayment
+      );
       if (months <= 1) { leftAlone++; continue; }
       const cashReceivedDate = row.cash_received_date || row.payment_date;
       if (!isPlausibleDate(cashReceivedDate)) {
@@ -307,7 +318,7 @@ router.get('/backfill/lt-proration-preview', requireAuth, requireAdmin, async (r
 
 router.post('/backfill/lt-proration-apply', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { inferMonthsFromAmountOnly, isPlausibleDate, buildProratedPayments } = require('../utils/longtermProration');
+    const { inferMonthsForBackfill, isPlausibleDate, buildProratedPayments } = require('../utils/longtermProration');
     const { logActivity, actorFromReq } = require('../utils/audit');
     const { userId, userName } = actorFromReq(req);
 
@@ -319,12 +330,19 @@ router.post('/backfill/lt-proration-apply', requireAuth, requireAdmin, async (re
       ORDER BY lp.longterm_customer_id, lp.payment_date
     `).all();
 
+    const countByCustomer = new Map();
+    for (const row of candidates) countByCustomer.set(row.longterm_customer_id, (countByCustomer.get(row.longterm_customer_id) || 0) + 1);
+
     let spread = 0, leftAlone = 0, errors = 0, badDate = 0;
     const errorDetails = [];
     const badDateDetails = [];
 
     for (const row of candidates) {
-      const months = inferMonthsFromAmountOnly(row.amount_ex_gst);
+      const isSolePayment = countByCustomer.get(row.longterm_customer_id) === 1;
+      const months = inferMonthsForBackfill(
+        { contract_start_date: row.contract_start_date, expiry_date: row.expiry_date, contract_amount: row.contract_amount },
+        row.amount_ex_gst, isSolePayment
+      );
       if (months <= 1) { leftAlone++; continue; }
 
       const cashReceivedDate = row.cash_received_date || row.payment_date;
