@@ -1009,6 +1009,24 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
     return;
   }
 
+  // Prevent the exact data problem this was designed to catch: staff typing
+  // in a payment amount but leaving PAID STATUS on the placeholder, which
+  // used to silently save as "To Pay" (unpaid) even though money was
+  // recorded — corrupting revenue reports with unpaid-looking paid bookings.
+  const paidStatusVal = document.getElementById('inv-paid-status').value;
+  const paymentAmountVal = parseFloat(document.getElementById('inv-payment-amount').value) || 0;
+  if (paymentAmountVal > 0 && !paidStatusVal) {
+    showAlert('You entered a Payment $ amount but haven\'t selected how it was paid — please choose Eftpos / Cash / etc. under PAID STATUS.', 'danger');
+    document.getElementById('inv-paid-status').focus();
+    return;
+  }
+  const paidStatus2Val = document.getElementById('inv-paid-status-2') ? document.getElementById('inv-paid-status-2').value : '';
+  const paymentAmount2Val = parseFloat(document.getElementById('inv-payment-amount-2') ? document.getElementById('inv-payment-amount-2').value : 0) || 0;
+  if (paymentAmount2Val > 0 && !paidStatus2Val) {
+    showAlert('You entered a 2nd payment amount but haven\'t selected its method — please choose one for the 2nd payment.', 'danger');
+    return;
+  }
+
   const payload = {
     invoice_number: invNum,
     customer_id: document.getElementById('inv-customer-id').value || null,

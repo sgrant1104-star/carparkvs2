@@ -48,7 +48,25 @@ router.get('/stats', requireAuth, async (req, res) => {
       WHERE carpark_id = ? AND DATE(return_date) = ? AND void = 0
         AND (picked_up IS NULL OR picked_up = '' OR picked_up = 'Car In Yard')
     `).get(carparkId, today);
-    const revenueByMethod= await db.prepare(`SELECT paid_status, COALESCE(SUM(payment_amount), 0) as total FROM invoices WHERE carpark_id = ? AND ${invDay} >= ? AND ${invDay} <= ? AND void = 0 GROUP BY paid_status`).all(carparkId, firstOfMonth, today);
+    const revenueByMethodRaw = await db.prepare(`
+      SELECT paid_status, COALESCE(SUM(payment_amount), 0) as total
+      FROM invoices WHERE carpark_id = ? AND ${invDay} >= ? AND ${invDay} <= ? AND void = 0
+      GROUP BY paid_status
+      UNION ALL
+      SELECT paid_status_2 as paid_status, COALESCE(SUM(payment_amount_2), 0) as total
+      FROM invoices WHERE carpark_id = ? AND ${invDay} >= ? AND ${invDay} <= ? AND void = 0
+        AND paid_status_2 IS NOT NULL AND COALESCE(payment_amount_2, 0) > 0
+      GROUP BY paid_status_2
+    `).all(carparkId, firstOfMonth, today, carparkId, firstOfMonth, today);
+    // Combine the two payment lines into one total per status — a booking
+    // split across two methods (e.g. part Eftpos, part Cash) previously only
+    // had its FIRST payment line counted here, silently dropping the rest.
+    const revenueByMethodMap = new Map();
+    for (const r of revenueByMethodRaw) {
+      const key = r.paid_status || 'Unknown';
+      revenueByMethodMap.set(key, (revenueByMethodMap.get(key) || 0) + (r.total || 0));
+    }
+    const revenueByMethod = Array.from(revenueByMethodMap.entries()).map(([paid_status, total]) => ({ paid_status, total }));
     // Add long-term revenue into the breakdown so the chart matches the month total.
     if ((ltRevenueMonth.total || 0) > 0) {
       revenueByMethod.push({ paid_status: 'LongTerm', total: ltRevenueMonth.total });
