@@ -286,3 +286,19 @@ function renderNavbar(activePage) {
     </nav>
   `;
 }
+
+// ─── HTML escaping ──────────────────────────────────────────────────────────
+// Any customer/staff-entered free text (names, notes, references, company
+// names, etc.) MUST be passed through this before being placed inside an
+// innerHTML template string. Without it, a name or note containing HTML/
+// script tags would render/execute in every other staff member's browser
+// the next time that record is displayed — a stored XSS hole.
+function escapeHtml(value) {
+  if (value == null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

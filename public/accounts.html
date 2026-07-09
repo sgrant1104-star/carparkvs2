@@ -211,10 +211,10 @@
 
       tbody.innerHTML = accounts.map(a => `
         <tr>
-          <td class="fw-bold">${a.company_name}</td>
+          <td class="fw-bold">${escapeHtml(a.company_name)}</td>
           <td class="small">${[a.rego_1, a.rego_2].filter(Boolean).join(' / ') || '—'}</td>
-          <td>${a.contact_name||''}</td>
-          <td>${a.phone||''}</td>
+          <td>${escapeHtml(a.contact_name||'')}</td>
+          <td>${escapeHtml(a.phone||'')}</td>
           <td>${a.billing_email||a.email||''}</td>
           <td>${a.discount_percent > 0 ? `<span class="badge bg-info">${a.discount_percent}%</span>` : '—'}</td>
           <td>${a.credit_balance > 0 ? `<span class="text-success fw-bold">${formatCurrency(a.credit_balance)}</span>` : '—'}</td>
@@ -227,7 +227,7 @@
           <td>
             <div class="d-flex gap-1">
               <button class="btn btn-action btn-warning btn-edit" data-id="${a.id}">Edit</button>
-              <button class="btn btn-action btn-outline-info btn-view" data-id="${a.id}" data-name="${a.company_name}">View</button>
+              <button class="btn btn-action btn-outline-info btn-view" data-id="${a.id}" data-name="${escapeHtml(a.company_name)}">View</button>
             </div>
           </td>
         </tr>
@@ -328,8 +328,8 @@
                 return `
                 <tr>
                   <td class="small text-nowrap">${formatDateShort(inv.date_in)} – ${formatDateShort(inv.return_date)}</td>
-                  <td>${inv.first_name||''} ${inv.last_name||''}</td>
-                  <td class="fw-bold">${inv.rego||''}</td>
+                  <td>${escapeHtml(inv.first_name||'')} ${escapeHtml(inv.last_name||'')}</td>
+                  <td class="fw-bold">${escapeHtml(inv.rego||'')}</td>
                   <td class="text-end fw-bold text-success">${formatCurrency(inv.total_price || 0)}</td>
                   <td class="text-end fw-bold ${out > 0.01 ? 'text-danger' : 'text-muted'}">${out > 0.01 ? formatCurrency(out) : '—'}</td>
                   <td><span class="badge ${badgeClass}">${payStatus}</span> <span class="small text-muted">(${statusBadge(inv.paid_status)})</span></td>
@@ -363,7 +363,7 @@
             <td class="small">${p.payment_date || ''}</td>
             <td class="fw-bold text-success">${formatCurrency(p.amount || 0)}</td>
             <td class="small">${p.payment_method || ''}</td>
-            <td class="small">${p.transaction_reference || ''}</td>
+            <td class="small">${escapeHtml(p.transaction_reference || '')}</td>
             <td class="text-end">
               <button type="button" class="btn btn-sm btn-outline-danger btn-delete-acct-payment" data-id="${p.id}" title="Delete payment"><i class="bi bi-trash"></i></button>
             </td>
@@ -393,7 +393,7 @@
       const pickerOptions = (data.outstandingInvoicesForPicker || []);
       invoicePicker.innerHTML = '<option value="">Auto — apply to oldest outstanding invoice(s) first</option>' +
         pickerOptions.map(inv => `
-          <option value="${inv.id}">#${inv.invoice_number} — ${inv.rego || ''} — ${formatDateShort(inv.date_in)} — ${formatCurrency(inv.outstanding_amount)} owing</option>
+          <option value="${inv.id}">#${inv.invoice_number} — ${escapeHtml(inv.rego || '')} — ${formatDateShort(inv.date_in)} — ${formatCurrency(inv.outstanding_amount)} owing</option>
         `).join('');
     }
 

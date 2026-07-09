@@ -339,12 +339,12 @@
         return items.map(c => `
           <div class="lt-card mb-2">
             <div class="lt-number">${c.lt_number}</div>
-            <div class="lt-name" title="${escapeAttr(c.name)}">${c.name}</div>
+            <div class="lt-name" title="${escapeAttr(c.name)}">${escapeHtml(c.name)}</div>
             <div class="lt-cell-renewal">${renewalBadge(c)}</div>
             <div class="lt-cell-payment">${paymentBadgeHtml(c)}</div>
             ${c.rego_1 ? `<span class="lt-rego">${c.rego_1}</span>` : '<span class="lt-rego text-muted">—</span>'}
             ${c.rego_2 ? `<span class="lt-rego">${c.rego_2}</span>` : '<span class="lt-rego text-muted" style="opacity:0.3;">—</span>'}
-            <div class="lt-phone-cell">${c.phone || ''}</div>
+            <div class="lt-phone-cell">${escapeHtml(c.phone || '')}</div>
             <button class="btn btn-warning btn-action btn-edit-lt" data-id="${c.id}" 
               data-lt='${JSON.stringify(c).replace(/'/g, "&#39;")}'>
               Edit
@@ -481,7 +481,7 @@
               <td class="small">${d}${prorated ? `<br><span class="badge bg-info text-dark">${p.months} mo</span>` : ''}</td>
               <td class="small fw-bold">$${Number(p.amount_ex_gst || 0).toFixed(2)}${prorated ? ' <span class="text-muted fw-normal">total</span>' : ''}</td>
               <td class="small">${p.payment_method || ''}</td>
-              <td class="small">${p.transaction_reference || (p.notes ? p.notes.slice(0, 40) : '—')}${allocHint}</td>
+              <td class="small">${escapeHtml(p.transaction_reference || (p.notes ? p.notes.slice(0, 40) : '—'))}${allocHint}</td>
               <td class="text-end">
                 <button type="button" class="btn btn-sm btn-outline-danger btn-delete-lt-payment"
                   data-id="${p.id}" data-prorated="${prorated ? '1' : '0'}"
@@ -495,13 +495,20 @@
 
         tbody.querySelectorAll('.btn-delete-lt-payment').forEach((btn) => {
           btn.addEventListener('click', async () => {
-            const isProrated = btn.dataset.prorated === '1';
             const id = btn.dataset.id;
-            const confirmMsg = isProrated
+            // Every payment (even a single-month one) is assigned a batch id
+            // internally, so the displayed row id is ALWAYS that batch id
+            // string (e.g. "ltb-...") unless it's a legacy row from before
+            // batch ids existed, in which case it's a plain numeric row id.
+            // Route on the actual shape of the id, not on month count.
+            const isBatchId = /^ltb-/.test(String(id));
+            const matchingItem = display.find(p => String(p.id) === String(id));
+            const prorated = isBatchId && matchingItem && matchingItem.months > 1;
+            const confirmMsg = prorated
               ? 'Delete this ENTIRE prepay spread (all months of this swipe)? This cannot be undone — to correct a mistake, delete then re-add the payment.'
               : 'Delete this payment? This cannot be undone — to correct a mistake, delete then re-add the payment.';
             if (!confirm(confirmMsg)) return;
-            const url = isProrated
+            const url = isBatchId
               ? `/api/longterm/${ltId}/payments/batch/${encodeURIComponent(id)}`
               : `/api/longterm/${ltId}/payments/${id}`;
             const res = await fetch(url, { method: 'DELETE' });

@@ -3,7 +3,7 @@ const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { businessDateYmd } = require('../utils/businessDate');
 const { EFFECTIVE_PAY1_DAY, EFFECTIVE_PAY2_DAY } = require('../utils/invoicePaymentDates');
-const { getEftposReconciliation, buildVarianceReport } = require('../utils/eftposReconciliation');
+const { getEftposReconciliation, buildVarianceReport, findMismatchSuspects } = require('../utils/eftposReconciliation');
 const { logActivity, actorFromReq } = require('../utils/audit');
 const router = express.Router();
 
@@ -59,6 +59,7 @@ router.get('/', requireAuth, async (req, res) => {
     const reconciliation = await getEftposReconciliation(db, { carparkId, date: today });
     const savedMachineTotal = record && record.eftpos_machine_total != null ? parseFloat(record.eftpos_machine_total) : null;
     const eftposCheck = buildVarianceReport(reconciliation, savedMachineTotal);
+    const suspects = eftposCheck.matched === false ? await findMismatchSuspects(db, { carparkId, date: today }) : null;
 
     res.json({
       date: today,
@@ -66,7 +67,7 @@ router.get('/', requireAuth, async (req, res) => {
       invoices,
       returningToday,
       record,
-      eftposReconciliation: { ...reconciliation, ...eftposCheck },
+      eftposReconciliation: { ...reconciliation, ...eftposCheck, suspects },
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -82,7 +83,8 @@ router.get('/eftpos-reconciliation', requireAuth, async (req, res) => {
 
     const reconciliation = await getEftposReconciliation(db, { carparkId, date });
     const check = buildVarianceReport(reconciliation, Number.isFinite(machineTotal) ? machineTotal : null);
-    res.json({ ...reconciliation, ...check });
+    const suspects = check.matched === false ? await findMismatchSuspects(db, { carparkId, date }) : null;
+    res.json({ ...reconciliation, ...check, suspects });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -146,7 +148,7 @@ router.post('/', requireAuth, async (req, res) => {
       });
     }
 
-    res.json({ success: true, stats, eftposReconciliation: { ...reconciliation, ...eftposCheck } });
+    res.json({ success: true, stats, eftposReconciliation: { ...reconciliation, ...eftposCheck, suspects: eftposCheck.matched === false ? await findMismatchSuspects(db, { carparkId, date: today }) : null } });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

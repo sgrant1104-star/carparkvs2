@@ -7,6 +7,7 @@ const cron = require('node-cron');
 
 const { db, initializeDatabase } = require('./src/database');
 const { getSessionSecret } = require('./src/utils/config');
+const { getAccountInvoicesWithOutstanding } = require('./src/utils/paymentAllocation');
 
 const app = express();
 
@@ -174,6 +175,18 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
 
           if (invoices.length === 0) continue;
 
+          // Skip if everything being billed this month is already paid — no
+          // point re-sending a statement for a balance that's already $0.
+          const invoiceIds = new Set(invoices.map(i => i.id));
+          const allWithOutstanding = await getAccountInvoicesWithOutstanding(db, { carparkId: carpark.id, accountCustomerId: account.id });
+          const outstandingThisBatch = Math.round(
+            allWithOutstanding.filter(i => invoiceIds.has(i.id)).reduce((s, i) => s + i.outstanding_amount, 0) * 100
+          ) / 100;
+          if (outstandingThisBatch <= 0.01) {
+            console.log(`[month-end email] Skipping ${account.company_name} — already paid in full for ${monthName} ${year}.`);
+            continue;
+          }
+
           const emailTo = account.billing_email || account.email;
           if (!emailTo) continue;
 
@@ -205,6 +218,10 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
               <tr><th>Stay</th><th>Name</th><th>Car Rego</th><th>Cost</th></tr>${rows}
             </table>
             <p><strong>Total: <span style="color:#27ae60;">$${parseFloat(total).toFixed(2)}</span></strong></p>
+            ${outstandingThisBatch < total - 0.01
+              ? `<p><strong>Already paid: <span style="color:#27ae60;">$${(total - outstandingThisBatch).toFixed(2)}</span></strong></p>
+                 <p><strong>Amount still outstanding: <span style="color:#e74c3c;">$${outstandingThisBatch.toFixed(2)}</span></strong></p>`
+              : ''}
             <p><strong>Payment due date:</strong> 20th of next month (${dueDateYmd})</p>
             ${paymentLink}
             ${bank ? `<hr><h3 style="color:#2c3e50;font-size:15px;">Payment details</h3>${bank}` : ''}
@@ -233,12 +250,35 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
       }
 
       if (includeLongTerm) {
-        // Monthly Long-term invoices (default monthly plan: $200 ex GST)
+        // Monthly Long-term invoices
         const ltCustomers = await db.prepare('SELECT * FROM longterm_customers WHERE carpark_id = ? AND active = 1').all(carpark.id);
         for (const lt of ltCustomers) {
           const emailTo = String(lt.email || '').trim();
           if (!emailTo) continue;
-          const baseExGst = 200.00;
+
+          // Skip if the contract has already ended — no ongoing obligation to bill.
+          if (lt.expiry_date && String(lt.expiry_date).slice(0, 10) < startDate) {
+            console.log(`[month-end email] Skipping ${lt.name} — contract expired ${lt.expiry_date}.`);
+            continue;
+          }
+
+          // Skip if this recognition month is already covered — checks against
+          // payment_date (the accrual month), which correctly accounts for
+          // prepaid/prorated contracts as well as month-by-month payers.
+          const monthlyRate = lt.rate && parseFloat(lt.rate) > 0 ? parseFloat(lt.rate) : 200.00;
+          const monthPaidRow = await db.prepare(`
+            SELECT COALESCE(SUM(amount_ex_gst), 0) AS paid
+            FROM longterm_payments
+            WHERE carpark_id = ? AND longterm_customer_id = ?
+              AND substr(trim(COALESCE(payment_date,'')),1,10) >= ? AND substr(trim(COALESCE(payment_date,'')),1,10) <= ?
+          `).get(carpark.id, lt.id, startDate, endDate);
+          const paidForMonth = parseFloat(monthPaidRow?.paid || 0);
+          if (paidForMonth >= monthlyRate - 0.01) {
+            console.log(`[month-end email] Skipping ${lt.name} — already paid for ${monthName} ${year} ($${paidForMonth.toFixed(2)}).`);
+            continue;
+          }
+
+          const baseExGst = Math.max(0, monthlyRate - paidForMonth);
           const gstAmt = Math.round((baseExGst * 0.15) * 100) / 100;
           const total = Math.round((baseExGst + gstAmt) * 100) / 100;
           const html = `<!DOCTYPE html><html><body style="font-family:Arial;max-width:700px;margin:0 auto;padding:20px;">
@@ -247,7 +287,7 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
             <p>This is your monthly long-term storage invoice for <strong>${monthName} ${year}</strong>.</p>
             <table border="1" cellpadding="8" cellspacing="0" width="100%">
               <tr><th>Plan</th><th>Amount ex GST</th><th>GST (15%)</th><th>Total</th></tr>
-              <tr><td>Monthly</td><td>$${baseExGst.toFixed(2)}</td><td>$${gstAmt.toFixed(2)}</td><td><strong>$${total.toFixed(2)}</strong></td></tr>
+              <tr><td>Monthly${paidForMonth > 0 ? ' (balance owing)' : ''}</td><td>$${baseExGst.toFixed(2)}</td><td>$${gstAmt.toFixed(2)}</td><td><strong>$${total.toFixed(2)}</strong></td></tr>
             </table>
             <p><strong>Payment due:</strong> by the 20th (${dueDateYmd})</p>
             <p style="color:#666;">Reference: ${lt.lt_number || ''}</p>

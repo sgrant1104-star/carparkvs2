@@ -3,6 +3,7 @@ const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { businessDateYmd } = require('../utils/businessDate');
 const { syncKeyBoxForPickedUp } = require('../utils/keyBoxSync');
+const { checkAndCreateEarlyReturnCredit } = require('../utils/customerCredit');
 const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
@@ -94,7 +95,17 @@ router.post('/:id/pickup', requireAuth, async (req, res) => {
       .run(final, id);
     // Mirror Invoice save: Pick Up / not in yard → key free; In Yard → key tied to this booking again
     await syncKeyBoxForPickedUp(db, carparkId, Number(id), invoice, final);
-    res.json({ success: true });
+
+    // If this car left before the paid-for return date, save the unused
+    // portion as credit against the customer's name/phone for next visit.
+    let credit = null;
+    if (final !== 'Car In Yard' && final !== 'Voided') {
+      credit = await checkAndCreateEarlyReturnCredit(db, {
+        carparkId, invoiceId: Number(id), actualReturnDate: businessDateYmd(),
+      });
+    }
+
+    res.json({ success: true, credit });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

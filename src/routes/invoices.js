@@ -4,8 +4,48 @@ const { requireAuth } = require('../middleware/auth');
 const { releaseKey, syncKeyBoxForPickedUp } = require('../utils/keyBoxSync');
 const { businessDateYmd } = require('../utils/businessDate');
 const { logActivity, actorFromReq } = require('../utils/audit');
+const { checkAndCreateEarlyReturnCredit, findAvailableCredit, applyCreditToInvoice } = require('../utils/customerCredit');
 const PDFDocument = require('pdfkit');
 const router = express.Router();
+
+// GET /api/invoices/credits/lookup?phone=&first_name=&last_name=
+// Called from the booking form when a phone/name is entered, so staff see
+// "this customer has $X credit" before they finish the new booking.
+router.get('/credits/lookup', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const { phone, first_name, last_name } = req.query;
+    if (!phone && !(first_name && last_name)) {
+      return res.json({ credits: [], totalAvailable: 0 });
+    }
+    const result = await findAvailableCredit(db, { carparkId, phone, firstName: first_name, lastName: last_name });
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/invoices/:id/apply-credit  { amount, phone, first_name, last_name }
+// Applies up to `amount` of the customer's available credit to this invoice.
+router.post('/:id/apply-credit', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const { id } = req.params;
+    const { amount, phone, first_name, last_name } = req.body || {};
+    const amt = parseFloat(amount);
+    if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'amount must be > 0' });
+    const invoice = await db.prepare('SELECT id FROM invoices WHERE id = ? AND carpark_id = ?').get(id, carparkId);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    const { userId, userName } = actorFromReq(req);
+    const result = await applyCreditToInvoice(db, {
+      carparkId, invoiceId: id, amount: amt, phone, firstName: first_name, lastName: last_name, userId, userName,
+    });
+    if (result.applied <= 0) {
+      return res.status(400).json({ error: 'No credit could be applied — invoice may already be fully covered, or no matching credit was found' });
+    }
+    const updated = await db.prepare('SELECT credit_applied, total_price FROM invoices WHERE id = ?').get(id);
+    res.json({ ...result, credit_applied: updated.credit_applied, total_price: updated.total_price });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 function normalizeTimeString(raw) {
   let s = String(raw || '').trim().replace(/\u202f/g, ' ').replace(/\s+/g, ' ').toLowerCase();
@@ -385,6 +425,20 @@ router.put('/:id', requireAuth, async (req, res) => {
       no_key: no_key ? 1 : 0
     }, finalPickedUp);
 
+    // Same early-return credit check as the Returns page — covers staff
+    // marking a booking picked up directly from the invoice edit screen
+    // instead of via Returns. Only fires on the transition INTO a picked-up
+    // state (not on every save of an already-picked-up booking).
+    let earlyReturnCredit = null;
+    const wasInYard = !existing.picked_up || existing.picked_up === 'Car In Yard';
+    const nowDeparted = finalPickedUp !== 'Car In Yard' && finalPickedUp !== 'Voided';
+    if (wasInYard && nowDeparted) {
+      const { userId, userName } = actorFromReq(req);
+      earlyReturnCredit = await checkAndCreateEarlyReturnCredit(db, {
+        carparkId, invoiceId: Number(id), actualReturnDate: businessDateYmd(), userId, userName,
+      });
+    }
+
     const updated = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
 
     // Only log when a money-relevant field actually changed, to keep the
@@ -400,7 +454,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       });
     }
 
-    res.json(updated);
+    res.json({ ...updated, earlyReturnCredit });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

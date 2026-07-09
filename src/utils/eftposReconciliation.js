@@ -125,6 +125,59 @@ async function getEftposReconciliation(db, { carparkId, date }) {
 }
 
 /**
+ * When there's a mismatch, actively find and return the specific candidates
+ * worth checking — not just generic advice. Two kinds of leads:
+ *
+ *  1. "Unpaid today" — invoices touching this date (booked in, or picked up/
+ *     returned) that are STILL marked "To Pay". If the terminal shows more
+ *     than the system expected, one of these is the most likely explanation:
+ *     the customer paid by card but it was never marked Eftpos in the system.
+ *
+ *  2. "Neighbouring day totals" — the same Eftpos figure for yesterday and
+ *     tomorrow. A payment entered under the wrong date is a common cause of
+ *     a mismatch in EITHER direction, and an unusually high adjacent-day
+ *     total is a concrete clue pointing at which day to check.
+ */
+async function findMismatchSuspects(db, { carparkId, date }) {
+  const unpaidToday = await db.prepare(`
+    SELECT id, invoice_number, first_name, last_name, rego, total_price, date_in, time_in, return_date, paid_status
+    FROM invoices
+    WHERE carpark_id = ? AND void = 0
+      AND (substr(trim(COALESCE(date_in,'')),1,10) = ? OR substr(trim(COALESCE(return_date,'')),1,10) = ?)
+      AND paid_status = 'To Pay'
+      AND COALESCE(total_price, 0) > 0
+    ORDER BY time_in
+  `).all(carparkId, date, date);
+
+  const prevDate = shiftDate(date, -1);
+  const nextDate = shiftDate(date, 1);
+  const [prevRecon, nextRecon] = await Promise.all([
+    getEftposReconciliation(db, { carparkId, date: prevDate }),
+    getEftposReconciliation(db, { carparkId, date: nextDate }),
+  ]);
+
+  return {
+    unpaidToday: unpaidToday.map(r => ({
+      id: r.id,
+      ref: `Invoice #${r.invoice_number}`,
+      description: `${r.first_name || ''} ${r.last_name || ''} — ${r.rego || ''}`.trim(),
+      amount: round2(r.total_price),
+      link: `/invoice.html?id=${r.id}`,
+    })),
+    neighbouringDays: {
+      previous: { date: prevDate, total: prevRecon.expectedTotal, count: prevRecon.count },
+      next: { date: nextDate, total: nextRecon.expectedTotal, count: nextRecon.count },
+    },
+  };
+}
+
+function shiftDate(dateStr, days) {
+  const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
  * Compares the system's expected Eftpos total to what staff typed in from
  * the terminal's Z-report, and produces a plain-English trace of what to
  * check if they don't match.
@@ -143,18 +196,17 @@ function buildVarianceReport(reconciliation, machineTotal) {
     if (variance > 0) {
       warnings.push(
         `The terminal shows $${machine.toFixed(2)}, which is $${Math.abs(variance).toFixed(2)} MORE than the ` +
-        `$${expected.toFixed(2)} the system expected. Likely causes: a booking was taken by card but not yet ` +
-        `recorded as "Eftpos" in an invoice/payment (still shows "To Pay"), or a payment was recorded under ` +
-        `the wrong date. Check invoices still marked "To Pay" today, and any Eftpos payments recorded on a ` +
-        `neighbouring day (yesterday/tomorrow) that may actually belong to today's batch.`
+        `$${expected.toFixed(2)} the system expected. Most likely: one of the invoices below marked "To Pay" ` +
+        `was actually paid by card and never recorded, or a payment landed under the wrong date — check the ` +
+        `neighbouring-day totals below too.`
       );
     } else {
       warnings.push(
         `The terminal shows $${machine.toFixed(2)}, which is $${Math.abs(variance).toFixed(2)} LESS than the ` +
-        `$${expected.toFixed(2)} the system expected. Likely causes: a booking was marked "Eftpos" in the ` +
-        `system but the customer actually paid cash/bank transfer, a payment date was entered incorrectly ` +
-        `(pulling a transaction from another day into today's total), or a refund/decline on the terminal ` +
-        `wasn't reflected back in the invoice.`
+        `$${expected.toFixed(2)} the system expected. Most likely: one of the transactions in the list above was ` +
+        `marked "Eftpos" but the customer actually paid cash/bank transfer, a payment date was entered for the ` +
+        `wrong day (check the neighbouring-day totals below), or a decline/refund on the terminal wasn't ` +
+        `reflected back in the invoice.`
       );
     }
     if (reconciliation.items.length === 0) {
@@ -165,4 +217,4 @@ function buildVarianceReport(reconciliation, machineTotal) {
   return { expected, machine, variance, matched, warnings };
 }
 
-module.exports = { getEftposReconciliation, buildVarianceReport };
+module.exports = { getEftposReconciliation, buildVarianceReport, findMismatchSuspects };

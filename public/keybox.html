@@ -134,10 +134,10 @@
         const invIdAttr = k.invoice_id ? `data-invoice-id="${k.invoice_id}"` : '';
         const cursorStyle = 'cursor:pointer;';
         const titleTxt = inUse
-          ? `Open booking: ${k.first_name||''} ${k.last_name||''} (${k.rego||''})`
+          ? `Open booking: ${escapeHtml(k.first_name||'')} ${escapeHtml(k.last_name||'')} (${escapeHtml(k.rego||'')})`
           : 'Available';
         const nameTxt = inUse
-          ? `<span class="key-name">${(k.last_name||'').substring(0,8) || 'In Use'}</span>`
+          ? `<span class="key-name">${escapeHtml((k.last_name||'').substring(0,8)) || 'In Use'}</span>`
           : `<span class="key-name text-muted">Free</span>`;
         return `<div class="key-item ${cssClass}" data-status="${k.status}" data-key-number="${k.key_number}" ${invIdAttr} style="${cursorStyle}" title="${titleTxt}">
           <span class="key-num" style="pointer-events:none">${k.key_number}</span>
@@ -153,12 +153,12 @@
         ltGrid.innerHTML = ltKeys.map(k => {
           const hasHolder = !!k.longterm_customer_id;
           const inYard = hasHolder && Number(k.in_yard) === 1;
-          const title = hasHolder ? `${k.lt_number} ${k.name}` : `Spare LT${k.key_number}`;
+          const title = hasHolder ? `${k.lt_number} ${escapeHtml(k.name)}` : `Spare LT${k.key_number}`;
           const name = hasHolder ? ((k.name || '').substring(0,10) || k.lt_number) : 'Spare';
           const topLabel = hasHolder ? (k.lt_number || `LT${k.key_number}`) : `LT${k.key_number}`;
-          return `<div class="key-item ${inYard ? 'in-use' : 'available'}" data-lt-id="${k.longterm_customer_id || ''}" data-lt-slot="${k.key_number}" data-lt-number="${k.lt_number || ''}" data-lt-name="${k.name || ''}" data-lt-inyard="${inYard ? 1 : 0}" style="cursor:pointer;" title="${title}">
+          return `<div class="key-item ${inYard ? 'in-use' : 'available'}" data-lt-id="${k.longterm_customer_id || ''}" data-lt-slot="${k.key_number}" data-lt-number="${k.lt_number || ''}" data-lt-name="${escapeHtml(k.name || '')}" data-lt-inyard="${inYard ? 1 : 0}" style="cursor:pointer;" title="${title}">
             <span class="key-num" style="pointer-events:none">${topLabel}</span>
-            <span style="pointer-events:none"><span class="key-name">${name}</span></span>
+            <span style="pointer-events:none"><span class="key-name">${escapeHtml(name)}</span></span>
           </div>`;
         }).join('');
       }
@@ -175,14 +175,14 @@
       document.getElementById('key-modal-body').innerHTML = (!isLt && k.invoice_number) ? `
         <table class="table table-sm">
           <tr><th>Invoice #</th><td><strong>${k.invoice_number}</strong></td></tr>
-          <tr><th>Customer</th><td>${k.first_name||''} ${k.last_name||''}</td></tr>
-          <tr><th>Rego</th><td><strong>${k.rego||''}</strong></td></tr>
+          <tr><th>Customer</th><td>${escapeHtml(k.first_name||'')} ${escapeHtml(k.last_name||'')}</td></tr>
+          <tr><th>Rego</th><td><strong>${escapeHtml(k.rego||'')}</strong></td></tr>
           <tr><th>Return Date</th><td>${k.return_date ? formatDateShort(k.return_date) : 'Unknown'}</td></tr>
           <tr><th>Status</th><td><span class="badge bg-danger">In Use</span></td></tr>
         </table>
       ` : (isLt ? `
         <table class="table table-sm">
-          <tr><th>Holder</th><td><strong>${k.lt_number || ''} - ${k.lt_name || ''}</strong></td></tr>
+          <tr><th>Holder</th><td><strong>${k.lt_number || ''} - ${escapeHtml(k.lt_name || '')}</strong></td></tr>
           <tr><th>Slot</th><td><strong>LT${k.key_number}</strong></td></tr>
           <tr><th>Rego</th><td><strong>${k.lt_rego_1 || k.lt_rego_2 || '—'}</strong></td></tr>
           <tr><th>Status</th><td>${isInUse ? '<span class="badge bg-warning text-dark">Long Term In Yard</span>' : '<span class="badge bg-secondary">Released</span>'}</td></tr>

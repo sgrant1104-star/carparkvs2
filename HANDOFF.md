@@ -120,6 +120,52 @@ Manual checks:
 
 ---
 
+# Fix Hand-off (July 2026, round 3) — XSS hardening + customer credit system
+
+## 1. Stored XSS fix
+
+Every place customer/staff-entered free text (names, notes, references, company names, etc.) was inserted into the page via `innerHTML` is now passed through a shared `escapeHtml()` helper (added to `public/js/common.js`, loaded on every page). 69 spots were fixed programmatically across 14 files (13 HTML pages + `invoice.js`), then verified file-by-file for valid syntax, plus 3 additional spots found via manual grep that used string concatenation/function calls the automated pass didn't catch (`invoices.html`, `keybox.html`, `longterm.html`).
+
+`escapeHtml()` is safe to apply broadly — it neutralises `< > & " '`, and reading it back via `.dataset`/`.value` (not `.innerHTML`) automatically decodes the entities, so nothing that relies on those data attributes downstream was broken.
+
+**Not yet done:** a small number of very unusual interpolation patterns (e.g. deeply nested ternaries) may not have been caught by the automated pass. If you spot a page showing `&amp;` or similar literally instead of the real character, or conversely spot a field that still isn't escaped, flag it and it can be patched individually.
+
+## 2. Customer credit system (early-return refunds)
+
+Implements: *"customer books 10 nights and pays, returns after 8 → the 2 unused nights become credit against their name, auto-surfaced next time they book."*
+
+Turned out the UI already had a placeholder for this (`Credit $` display on the booking form, and a `credit_applied` column on invoices) that was never wired up — likely planned by a previous developer and left unfinished. Completed it:
+
+- New `customer_credits` table — a simple ledger: who, how much, from which booking, used/unused.
+- New `src/utils/customerCredit.js`:
+  - `checkAndCreateEarlyReturnCredit()` — fires automatically when a booking is marked picked up (from the Returns page, or by editing the invoice directly) **before** its paid return date. Credit = `(total_price / booked_nights) × unused_nights`. Idempotent — never double-creates for the same booking. Skips bookings that were never actually paid.
+  - `findAvailableCredit()` — matches by phone number first (most reliable), falling back to exact first+last name if no phone match.
+  - `applyCreditToInvoice()` — consumes oldest credit first, and is capped server-side at what the invoice actually owes (can't push an invoice into a negative balance — any excess just stays available for next time).
+- Booking form (`invoice.html`/`invoice.js`): entering a phone number or last name on a **new** booking triggers a lookup; if credit is found, the existing `Credit $` display shows it with an **Apply** button. Applying shows a live "Amount due: $X (after $Y credit)" hint next to the Payment field. The credit is only actually deducted from the ledger once the booking is successfully saved (so a booking that's abandoned mid-entry never consumes credit).
+- Returns page and invoice save both show a toast when a new credit is created: *"💰 Early return — $X credit saved to this customer's name for next visit."*
+
+### Known limitations (documented, not silently glossed over)
+
+- **Pricing is an average-rate approximation** — `total_price ÷ booked_nights × unused_nights`. It is NOT aware of tiered daily pricing (e.g. if day 9-10 is cheaper per-night than day 1-2 on your rate card). If exact tiered proration matters, that's a follow-up enhancement.
+- **"Actual return date" = the day staff click pickup**, not a separately-entered date — there's no field elsewhere in the app for backdating a pickup, so this matches how the rest of the system already works.
+- **Credit lookup only runs for brand-new bookings**, not when re-editing an already-saved invoice — this avoids a double-counting risk against that invoice's own credit ledger entry. A customer with credit who needs it applied to an *existing* booking would need a new booking created (or this can be extended later if that scenario comes up in practice).
+- **Matching is phone-first, name-fallback** — two different customers who happen to share both an identical first+last name AND have no phone on file could theoretically be matched to each other's credit. Low risk in practice but worth knowing.
+
+## Required action after deploy
+
+Run the new test scripts locally once `npm install` succeeds (not executable in the authoring environment — no network access there):
+```
+node scripts/test-payment-allocation.js
+node scripts/test-eftpos-reconciliation.js
+node scripts/test-lt-payment-delete.js
+node scripts/test-customer-credit.js
+```
+All were carefully hand-traced against the implementation (including catching and fixing two real bugs — a credit double-counting risk and an uncapped over-application risk — before they'd have surfaced live), but none have actually been executed given the lack of network access in this environment.
+
+
+
+---
+
 # Fix Hand-off (July 2026) — Payment traceability, audit log, Eftpos reconciliation
 
 ## Summary

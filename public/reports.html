@@ -333,8 +333,8 @@
       document.getElementById('top-customers-tbody').innerHTML = data.topCustomers.map((c, i) => `
         <tr>
           <td class="text-muted">${i+1}</td>
-          <td class="fw-bold">${c.name}</td>
-          <td>${c.phone||''}</td>
+          <td class="fw-bold">${escapeHtml(c.name)}</td>
+          <td>${escapeHtml(c.phone||'')}</td>
           <td><span class="badge bg-primary">${c.visits}</span></td>
           <td class="text-success fw-bold">${formatCurrency(c.total_spent)}</td>
           <td class="small">${c.last_visit ? formatDateShort(c.last_visit) : ''}</td>
@@ -343,7 +343,7 @@
 
       document.getElementById('account-usage-tbody').innerHTML = data.accountUsage.map(a => `
         <tr>
-          <td class="fw-bold">${a.company_name}</td>
+          <td class="fw-bold">${escapeHtml(a.company_name)}</td>
           <td><span class="badge bg-info">${a.visits}</span></td>
           <td class="text-danger fw-bold">${formatCurrency(a.total_billed)}</td>
         </tr>

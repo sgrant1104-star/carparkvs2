@@ -447,6 +447,29 @@ async function initializeDatabase() {
   try { x(`CREATE INDEX IF NOT EXISTS payment_allocations_by_payment ON payment_allocations (carpark_id, payment_source, payment_id)`); } catch (_) {}
   try { x(`CREATE INDEX IF NOT EXISTS payment_allocations_by_invoice ON payment_allocations (carpark_id, invoice_id)`); } catch (_) {}
 
+  // ── Customer credit ledger ──────────────────────────────────────────────
+  // Tracks credit owed back to a customer — e.g. booked 10 nights and paid
+  // for them, but returned after 8. Matched to a returning customer primarily
+  // by phone (most reliable), falling back to first+last name.
+  x(`CREATE TABLE IF NOT EXISTS customer_credits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    carpark_id INTEGER DEFAULT 1,
+    phone TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    amount REAL NOT NULL,
+    amount_used REAL DEFAULT 0,
+    source_invoice_id INTEGER,
+    reason TEXT,
+    status TEXT DEFAULT 'available',   -- available | used | expired
+    used_invoice_id INTEGER,
+    used_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  try { x(`CREATE INDEX IF NOT EXISTS customer_credits_phone ON customer_credits (carpark_id, phone, status)`); } catch (_) {}
+  try { x(`CREATE INDEX IF NOT EXISTS customer_credits_name ON customer_credits (carpark_id, last_name, first_name, status)`); } catch (_) {}
+  try { x(`CREATE INDEX IF NOT EXISTS customer_credits_source ON customer_credits (source_invoice_id)`); } catch (_) {}
+
   x(`CREATE TABLE IF NOT EXISTS email_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     carpark_id INTEGER DEFAULT 1,

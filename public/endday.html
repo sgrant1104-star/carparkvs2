@@ -72,6 +72,7 @@
         </div>
       </div>
       <div id="ep-warning" class="alert alert-warning mt-3 d-none"></div>
+      <div id="ep-suspects-wrap" class="d-none"></div>
       <div class="table-responsive mt-3 d-none" id="ep-items-wrap">
         <div class="small text-muted mb-1">Everything the system counted as Eftpos today — use this to trace a mismatch:</div>
         <table class="table table-sm">
@@ -202,14 +203,14 @@
         return `
         <tr class="${rowClass(inv.paid_status)}">
           <td><a href="/invoice.html?id=${inv.id}">#${inv.invoice_number}</a></td>
-          <td>${inv.first_name||''} ${inv.last_name||''}</td>
-          <td class="fw-bold">${inv.rego||''}</td>
+          <td>${escapeHtml(inv.first_name||'')} ${escapeHtml(inv.last_name||'')}</td>
+          <td class="fw-bold">${escapeHtml(inv.rego||'')}</td>
           <td>${inv.time_in||''}</td>
           <td>${inv.return_date ? formatDateShort(inv.return_date) : ''}</td>
           <td class="fw-bold">${formatCurrency(inv.total_price)}</td>
           <td class="fw-bold ${paidTotal > 0 ? 'text-success' : 'text-warning'}">${paidTotal > 0 ? formatCurrency(paidTotal) : '—'}</td>
           <td class="small">${methodStr}</td>
-          <td class="small">${inv.staff_name||''}</td>
+          <td class="small">${escapeHtml(inv.staff_name||'')}</td>
         </tr>`;
       }).join('') || '<tr><td colspan="9" class="text-center text-muted">No invoices today</td></tr>';
 
@@ -246,18 +247,63 @@
       const tbody = document.getElementById('ep-items-tbody');
       if (items.length === 0) {
         wrap.classList.add('d-none');
-        return;
+      } else {
+        wrap.classList.remove('d-none');
+        tbody.innerHTML = items.map(it => `
+          <tr>
+            <td><span class="badge bg-light text-dark">${it.source}</span></td>
+            <td>${it.link ? `<a href="${it.link}">${it.ref}</a>` : it.ref}</td>
+            <td class="small">${escapeHtml(it.description || '')}</td>
+            <td class="small">${it.time || ''}</td>
+            <td class="text-end fw-bold">${formatCurrency(it.amount)}</td>
+          </tr>
+        `).join('');
       }
-      wrap.classList.remove('d-none');
-      tbody.innerHTML = items.map(it => `
-        <tr>
-          <td><span class="badge bg-light text-dark">${it.source}</span></td>
-          <td>${it.link ? `<a href="${it.link}">${it.ref}</a>` : it.ref}</td>
-          <td class="small">${it.description || ''}</td>
-          <td class="small">${it.time || ''}</td>
-          <td class="text-end fw-bold">${formatCurrency(it.amount)}</td>
-        </tr>
-      `).join('');
+
+      // Suspects — only present when there's an actual mismatch. This is the
+      // "where could it be" answer: specific invoices still unpaid today, and
+      // what yesterday/tomorrow's Eftpos totals look like for comparison.
+      const suspectsWrap = document.getElementById('ep-suspects-wrap');
+      const s = rec.suspects;
+      if (!s) {
+        suspectsWrap.classList.add('d-none');
+        suspectsWrap.innerHTML = '';
+      } else {
+        suspectsWrap.classList.remove('d-none');
+        const unpaidRows = (s.unpaidToday || []).map(u => `
+          <tr>
+            <td>${u.link ? `<a href="${u.link}">${u.ref}</a>` : u.ref}</td>
+            <td class="small">${escapeHtml(u.description || '')}</td>
+            <td class="text-end fw-bold">${formatCurrency(u.amount)}</td>
+          </tr>
+        `).join('');
+        const unpaidSection = (s.unpaidToday || []).length
+          ? `
+            <div class="small fw-bold mt-3 mb-1"><i class="bi bi-exclamation-circle text-danger me-1"></i>Invoices still marked "To Pay" today — check if one of these was actually paid by card:</div>
+            <table class="table table-sm table-bordered mb-2">
+              <thead class="table-light"><tr><th>Invoice</th><th>Customer</th><th class="text-end">Amount</th></tr></thead>
+              <tbody>${unpaidRows}</tbody>
+            </table>`
+          : `<div class="small text-muted mt-3">No invoices are sitting on "To Pay" for this date — the gap likely isn't an unrecorded booking.</div>`;
+
+        const nd = s.neighbouringDays || {};
+        const neighbourSection = nd.previous && nd.next ? `
+          <div class="small fw-bold mt-2 mb-1"><i class="bi bi-calendar-week text-warning me-1"></i>Neighbouring-day Eftpos totals — a payment dated wrong often shows up here:</div>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <div class="border rounded p-2 small">
+                <strong>${nd.previous.date}</strong> (yesterday): ${formatCurrency(nd.previous.total)} across ${nd.previous.count} transaction(s)
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="border rounded p-2 small">
+                <strong>${nd.next.date}</strong> (tomorrow): ${formatCurrency(nd.next.total)} across ${nd.next.count} transaction(s)
+              </div>
+            </div>
+          </div>` : '';
+
+        suspectsWrap.innerHTML = unpaidSection + neighbourSection;
+      }
     }
 
     document.getElementById('btn-check-eftpos').addEventListener('click', async () => {
@@ -303,7 +349,7 @@
           <td>${formatCurrency(r.cash_total)}</td>
           <td>${formatCurrency(r.internet_banking_total || 0)}</td>
           <td>${formatCurrency(r.account_total)}</td>
-          <td class="small text-muted">${r.notes||''}</td>
+          <td class="small text-muted">${escapeHtml(r.notes||'')}</td>
         </tr>`;
       }).join('') || '<tr><td colspan="11" class="text-center text-muted">No history yet</td></tr>';
     }

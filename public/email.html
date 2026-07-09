@@ -188,7 +188,7 @@
       let html = `
         <div class="mb-3 p-3 bg-light rounded border">
           <h3 style="color: #2c3e50; font-style: italic;">
-            <i class="bi bi-building me-2"></i>${data.carpark.name} - ${data.monthName} ${data.year} Accounts
+            <i class="bi bi-building me-2"></i>${escapeHtml(data.carpark.name)} - ${data.monthName} ${data.year} Accounts
           </h3>
           <p class="text-muted mb-0">Preview of monthly account invoices to be emailed. Payment due date: 20th of next month (${data.dueDate || 'N/A'}).</p>
         </div>
@@ -201,8 +201,8 @@
           return `
             <tr>
               <td class="small">${dIn} - ${dOut}</td>
-              <td>${inv.first_name||''} ${inv.last_name||''}</td>
-              <td class="fw-bold">${inv.rego||''}</td>
+              <td>${escapeHtml(inv.first_name||'')} ${escapeHtml(inv.last_name||'')}</td>
+              <td class="fw-bold">${escapeHtml(inv.rego||'')}</td>
               <td class="text-success fw-bold">${formatCurrency(inv.payment_amount)}</td>
             </tr>`;
         }).join('');
@@ -210,7 +210,7 @@
         html += `
           <div class="account-section">
             <div class="d-flex align-items-center justify-content-between mb-2">
-              <h4 class="mb-0">${account.company_name}</h4>
+              <h4 class="mb-0">${escapeHtml(account.company_name)}</h4>
               <div>
                 <span class="small text-muted me-2">To: ${account.billing_email || account.email || 'No email'}</span>
                 <button type="button" class="btn btn-sm btn-outline-secondary me-2 btn-download-account-pdf"
@@ -307,7 +307,7 @@
       document.getElementById('email-logs-tbody').innerHTML = logs.length > 0 ? logs.map(l => `
         <tr>
           <td class="small">${l.sent_at ? new Date(l.sent_at).toLocaleString('en-NZ') : '—'}</td>
-          <td class="fw-bold">${l.account_name||''}</td>
+          <td class="fw-bold">${escapeHtml(l.account_name||'')}</td>
           <td>${monthName(l.month)} ${l.year}</td>
           <td class="small">${l.recipient_email||''}</td>
           <td>

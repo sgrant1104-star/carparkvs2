@@ -29,6 +29,19 @@ const {
 const PDFDocument = require('pdfkit');
 const router = express.Router();
 
+/**
+ * Safely quote a CSV field: doubles any embedded quotes (per RFC 4180), and
+ * neutralises formula injection (a cell starting with =, +, -, or @ can
+ * execute as a formula when opened in Excel/Sheets) by prefixing a leading
+ * apostrophe. Without this, a customer name containing a comma or quote
+ * silently corrupts the whole export — columns shift for every row after it.
+ */
+function csvField(value) {
+  let s = value == null ? '' : String(value);
+  if (/^[=+\-@]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
 // Calendar date from stored values (handles YYYY-MM-DD and ISO timestamps; avoids SQLite DATE() quirks on some rows)
 const INV_DAY = invDay();
 const RET_DAY = `substr(trim(COALESCE(return_date,'')), 1, 10)`;
@@ -263,12 +276,16 @@ router.get('/revenue/csv', requireAuth, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="revenue-${fromDate}-to-${toDate}.csv"`);
     const header = 'Invoice,Date In,Return Date,Nights,Customer,Rego,Total Price,Status,Payment 1,Payment 2,Account,Staff\n';
     const invRows = invoices.map(i =>
-      `${i.invoice_number},"${i.date_in}","${i.return_date || ''}",${i.stay_nights},"${i.customer_name}","${i.rego || ''}",${i.total_price},${i.paid_status},${i.payment_amount},${i.payment_amount_2},"${i.account}","${i.staff || ''}"`
+      [csvField(i.invoice_number), csvField(i.date_in), csvField(i.return_date || ''), csvField(i.stay_nights),
+       csvField(i.customer_name), csvField(i.rego || ''), csvField(i.total_price), csvField(i.paid_status),
+       csvField(i.payment_amount), csvField(i.payment_amount_2), csvField(i.account), csvField(i.staff || '')].join(',')
     ).join('\n');
     const ltRows = ltPayments.map(p => {
       const inc = (parseFloat(p.amount_ex_gst || 0) * 1.15);
       const cust = `${p.lt_number || ''} ${p.name || ''}`.trim();
-      return `LT-PAY,"${p.payment_date}","",,"${cust}","",${inc.toFixed(2)},LongTerm,${inc.toFixed(2)},0.00,"","${p.payment_method || ''}${p.transaction_reference ? ` (${p.transaction_reference})` : ''}"`;
+      return [csvField('LT-PAY'), csvField(p.payment_date), csvField(''), csvField(''), csvField(cust), csvField(''),
+        csvField(inc.toFixed(2)), csvField('LongTerm'), csvField(inc.toFixed(2)), csvField('0.00'), csvField(''),
+        csvField(`${p.payment_method || ''}${p.transaction_reference ? ` (${p.transaction_reference})` : ''}`)].join(',');
     }).join('\n');
     const rows = [invRows, ltRows].filter(Boolean).join('\n');
     res.send(header + rows);
@@ -400,7 +417,7 @@ router.get('/customers/csv', requireAuth, async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="customer-report.csv"');
     const header = 'Name,Phone,Rego,Visits,Total Spent,Last Visit\n';
     const rows = customers.map(c =>
-      `"${c.name}","${c.phone || ''}","${c.rego || ''}",${c.visits},${c.total_spent},"${c.last_visit || ''}"`
+      [csvField(c.name), csvField(c.phone || ''), csvField(c.rego || ''), csvField(c.visits), csvField(c.total_spent), csvField(c.last_visit || '')].join(',')
     ).join('\n');
     res.send(header + rows);
   } catch (err) { res.status(500).json({ error: err.message }); }

@@ -232,8 +232,8 @@
           <td>${formatCurrency(r.account_total)}</td>
           <td>${formatCurrency(r.other_total)}</td>
           <td class="fw-bold text-success">${formatCurrency(r.eftpos_total + r.cash_total + r.account_total + r.other_total)}</td>
-          <td class="small text-muted">${r.notes||''}</td>
-          <td class="small">${r.staff_name||''}</td>
+          <td class="small text-muted">${escapeHtml(r.notes||'')}</td>
+          <td class="small">${escapeHtml(r.staff_name||'')}</td>
         </tr>
       `).join('') || '<tr><td colspan="8" class="text-center text-muted">No banking records</td></tr>';
     }
@@ -287,7 +287,7 @@
       document.getElementById('pc-tbody').innerHTML = data.records.map(r => `
         <tr class="${r.type === 'income' ? 'row-eftpos' : 'row-topay'}">
           <td>${r.date}</td>
-          <td>${r.description}</td>
+          <td>${escapeHtml(r.description)}</td>
           <td class="small text-muted">${r.category||''}</td>
           <td>
             <span class="badge ${r.type === 'income' ? 'bg-success' : 'bg-danger'}">${r.type}</span>
@@ -295,7 +295,7 @@
           <td class="fw-bold ${r.type === 'income' ? 'text-success' : 'text-danger'}">
             ${r.type === 'income' ? '+' : '-'}${formatCurrency(r.amount)}
           </td>
-          <td class="small">${r.staff_name||''}</td>
+          <td class="small">${escapeHtml(r.staff_name||'')}</td>
           <td>
             <button class="btn btn-action btn-outline-danger btn-delete-pc" data-id="${r.id}">
               <i class="bi bi-trash"></i>

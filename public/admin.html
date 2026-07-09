@@ -311,8 +311,8 @@
       document.getElementById('users-tbody').innerHTML = users.map(u => `
         <tr>
           <td class="fw-bold">${u.username}</td>
-          <td>${u.name}</td>
-          <td>${u.email||''}</td>
+          <td>${escapeHtml(u.name)}</td>
+          <td>${escapeHtml(u.email||'')}</td>
           <td><span class="badge ${u.role === 'admin' ? 'bg-danger' : 'bg-secondary'}">${u.role}</span></td>
           <td><span class="badge ${u.active ? 'bg-success' : 'bg-secondary'}">${u.active ? 'Active' : 'Inactive'}</span></td>
           <td>
@@ -417,7 +417,7 @@
       const rules = await res.json();
       document.getElementById('pricing-tbody').innerHTML = rules.map(r => `
         <tr>
-          <td>${r.description||''}</td>
+          <td>${escapeHtml(r.description||'')}</td>
           <td>${r.days_from}</td>
           <td>${r.days_to||'∞'}</td>
           <td class="fw-bold text-success">$${parseFloat(r.daily_rate).toFixed(2)}/night</td>

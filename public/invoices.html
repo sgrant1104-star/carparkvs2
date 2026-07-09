@@ -93,7 +93,7 @@
       const voided = inv.void ? ' <span class="badge bg-secondary">VOID</span>' : '';
       return `<tr class="${inv.void ? 'opacity-50' : ''}">
         <td class="fw-bold">#${inv.invoice_number}</td>
-        <td>${(inv.first_name || '') + ' ' + (inv.last_name || '')}</td>
+        <td>${escapeHtml((inv.first_name || '') + ' ' + (inv.last_name || ''))}</td>
         <td>${inv.rego || '—'}</td>
         <td class="small">${inv.date_in ? formatDateShort(inv.date_in) : '—'}</td>
         <td>${statusBadge(inv.paid_status)}${voided}</td>

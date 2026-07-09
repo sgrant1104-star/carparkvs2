@@ -9,6 +9,11 @@ let paymentLockReason = ''; // when set, PAID STATUS is hard-locked to OnAcc
 let longTermPricingActive = false; // when true, LT auto price is in control
 let pricingMode = 'manual'; // manual | longterm | account-rate-card | account-discount
 
+// ─── Customer credit (early-return refunds) ────────────────────────────────
+let existingCreditApplied = 0;   // credit_applied as loaded from the server (0 for a new booking)
+let newlyStagedCredit = 0;       // amount staged via the "Apply" button THIS session, not yet consumed server-side
+let availableCreditInfo = null;  // last lookup result, cached so Apply doesn't need to re-fetch
+
 function syncPaymentReceivedDateUi() {
   const s1 = document.getElementById('inv-paid-status').value;
   const paid1 = s1 && s1 !== 'To Pay';
@@ -188,6 +193,11 @@ async function newInvoice() {
 
   // Clear form
   currentInvoiceId = null;
+  existingCreditApplied = 0;
+  newlyStagedCredit = 0;
+  availableCreditInfo = null;
+  document.getElementById('credit-display').innerHTML = 'N/A';
+  document.getElementById('amount-due-hint').classList.add('d-none');
   document.getElementById('inv-id').value = '';
   document.getElementById('inv-customer-id').value = '';
   document.getElementById('inv-rego').value = '';
@@ -263,6 +273,12 @@ async function loadInvoice(invoiceNumber, invoiceId) {
   document.getElementById('inv-flight-info').value = inv.flight_info || '';
   document.getElementById('inv-flight-type').value = inv.flight_type || 'Standard - On Flight';
   document.getElementById('inv-total-price').value = inv.total_price || '';
+  existingCreditApplied = parseFloat(inv.credit_applied) || 0;
+  newlyStagedCredit = 0;
+  if (existingCreditApplied > 0) {
+    document.getElementById('credit-display').innerHTML = `<span class="text-success">$${existingCreditApplied.toFixed(2)} applied</span>`;
+  }
+  updateAmountDueHint();
   document.getElementById('inv-payment-amount').value = inv.payment_amount || '';
   document.getElementById('inv-paid-status').value = inv.paid_status || 'To Pay';
   document.getElementById('inv-payment-amount-2').value = inv.payment_amount_2 || '';
@@ -535,7 +551,7 @@ function applyAccountCustomerPricingFromLookup(acct) {
   const billing = (acct.billing_email || acct.email || '').trim();
   if (billing) document.getElementById('inv-email').value = billing;
   const d = acct.discount_percent || 0;
-  showAlert(`On-account customer: ${acct.company_name}${d > 0 ? ` (${d}% discount on short-term rates)` : ''}`, 'info');
+  showAlert(`On-account customer: ${escapeHtml(acct.company_name)}${d > 0 ? ` (${d}% discount on short-term rates)` : ''}`, 'info');
   const nights = parseInt(document.getElementById('inv-nights').value, 10) || 1;
   fetch(`/api/invoices/calculate-price?nights=${nights}&account_customer_id=${acct.id}`)
     .then(r => r.json())
@@ -579,8 +595,8 @@ async function runCustomerLookup() {
     const rp = lt.rate_period || 'monthly';
     const selected = getLongTermInvoiceAmount(lt);
     const msg = selected.source === 'contract'
-      ? `Long-term match (${lt.lt_number} — ${lt.name}). LT rate is missing, term fallback used: ex GST $${selected.base.toFixed(2)} + GST = $${selected.amount.toFixed(2)} (${rp}).`
-      : `Long-term match (${lt.lt_number} — ${lt.name}). Amount with GST: $${selected.amount.toFixed(2)} (ex GST $${selected.base.toFixed(2)}, ${rp}).`;
+      ? `Long-term match (${lt.lt_number} — ${escapeHtml(lt.name)}). LT rate is missing, term fallback used: ex GST $${selected.base.toFixed(2)} + GST = $${selected.amount.toFixed(2)} (${rp}).`
+      : `Long-term match (${lt.lt_number} — ${escapeHtml(lt.name)}). Amount with GST: $${selected.amount.toFixed(2)} (ex GST $${selected.base.toFixed(2)}, ${rp}).`;
     showAlert(msg, 'warning');
     return;
   }
@@ -599,6 +615,83 @@ async function runCustomerLookup() {
 }
 
 document.getElementById('inv-rego').addEventListener('blur', () => { runCustomerLookup(); });
+
+// ─── Customer credit lookup (early-return refunds) ─────────────────────────
+// Only runs for NEW bookings — once an invoice is saved, its credit_applied
+// is fixed to what was staged at save time (see save() below); re-running
+// this against an existing invoice risks double-counting an already-applied
+// credit against its own source ledger entry.
+async function checkCustomerCredit() {
+  if (currentInvoiceId) return;
+  const phone = document.getElementById('inv-phone').value.trim();
+  const firstName = document.getElementById('inv-first-name').value.trim();
+  const lastName = document.getElementById('inv-last-name').value.trim();
+  if (!phone && !(firstName && lastName)) {
+    renderCreditDisplay(null);
+    return;
+  }
+  try {
+    const qs = new URLSearchParams();
+    if (phone) qs.set('phone', phone);
+    if (firstName) qs.set('first_name', firstName);
+    if (lastName) qs.set('last_name', lastName);
+    const res = await fetch(`/api/invoices/credits/lookup?${qs.toString()}`);
+    if (!res.ok) return;
+    availableCreditInfo = await res.json();
+    renderCreditDisplay(availableCreditInfo);
+  } catch (e) { /* credit lookup is a convenience, not a blocking part of booking */ }
+}
+
+function updateAmountDueHint() {
+  const hint = document.getElementById('amount-due-hint');
+  if (!hint) return;
+  const total = parseFloat(document.getElementById('inv-total-price').value) || 0;
+  const creditNow = existingCreditApplied + newlyStagedCredit;
+  if (creditNow <= 0 || total <= 0) {
+    hint.classList.add('d-none');
+    return;
+  }
+  const due = Math.max(0, Math.round((total - creditNow) * 100) / 100);
+  hint.classList.remove('d-none');
+  hint.textContent = `Amount due: $${due.toFixed(2)} (after $${creditNow.toFixed(2)} credit)`;
+}
+
+function renderCreditDisplay(data) {
+  const el = document.getElementById('credit-display');
+  if (newlyStagedCredit > 0) return; // don't clobber a credit the user just applied
+  if (!data || !data.totalAvailable || data.totalAvailable <= 0) {
+    el.innerHTML = 'N/A';
+    return;
+  }
+  el.innerHTML = `<span class="text-success">$${data.totalAvailable.toFixed(2)} available</span> ` +
+    `<button type="button" class="btn btn-sm btn-outline-success ms-1" id="btn-apply-credit">Apply</button>`;
+  const btn = document.getElementById('btn-apply-credit');
+  if (btn) btn.addEventListener('click', applyAvailableCredit);
+}
+
+function applyAvailableCredit() {
+  if (!availableCreditInfo || !availableCreditInfo.totalAvailable) return;
+  const total = parseFloat(document.getElementById('inv-total-price').value) || 0;
+  if (total <= 0) { showAlert('Enter a total price before applying credit', 'warning'); return; }
+  const toApply = Math.round(Math.min(availableCreditInfo.totalAvailable, total) * 100) / 100;
+  if (toApply <= 0) return;
+  newlyStagedCredit = toApply;
+  const el = document.getElementById('credit-display');
+  el.innerHTML = `<span class="text-success">$${toApply.toFixed(2)} credit will be applied</span> ` +
+    `<button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="btn-undo-credit">Undo</button>`;
+  document.getElementById('btn-undo-credit').addEventListener('click', () => {
+    newlyStagedCredit = 0;
+    renderCreditDisplay(availableCreditInfo);
+    updateAmountDueHint();
+  });
+  showAlert(`$${toApply.toFixed(2)} credit will be applied to this booking when you save.`, 'success');
+  updateAmountDueHint();
+}
+
+document.getElementById('inv-phone').addEventListener('blur', checkCustomerCredit);
+document.getElementById('inv-last-name').addEventListener('blur', checkCustomerCredit);
+document.getElementById('inv-total-price').addEventListener('input', updateAmountDueHint);
+document.getElementById('inv-total-price').addEventListener('change', updateAmountDueHint);
 
 document.getElementById('inv-email').addEventListener('blur', () => {
   if (currentInvoiceId) return;
@@ -808,13 +901,13 @@ document.getElementById('btn-search-customer').addEventListener('click', async (
         <tbody>
           ${customers.map(c => `
             <tr>
-              <td>${c.last_name || ''}, ${c.first_name || ''}</td>
-              <td>${c.phone || ''}</td>
-              <td>${c.email || ''}</td>
+              <td>${escapeHtml(c.last_name || '')}, ${escapeHtml(c.first_name || '')}</td>
+              <td>${escapeHtml(c.phone || '')}</td>
+              <td>${escapeHtml(c.email || '')}</td>
               <td><button class="btn btn-sm btn-primary select-customer" data-id="${c.id}" 
-                  data-firstname="${c.first_name||''}" data-lastname="${c.last_name||''}"
-                  data-phone="${c.phone||''}" data-email="${c.email||''}"
-                  data-alert="${c.alert_message||''}">Select</button></td>
+                  data-firstname="${escapeHtml(c.first_name||'')}" data-lastname="${escapeHtml(c.last_name||'')}"
+                  data-phone="${escapeHtml(c.phone||'')}" data-email="${escapeHtml(c.email||'')}"
+                  data-alert="${escapeHtml(c.alert_message||'')}">Select</button></td>
             </tr>
           `).join('')}
         </tbody>
@@ -928,7 +1021,8 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
     picked_up: document.getElementById('inv-picked-up').value,
     staff_id: document.getElementById('inv-staff').value,
     notes: document.getElementById('inv-notes').value,
-    customer_alert: getCustomerAlertText() || null
+    customer_alert: getCustomerAlertText() || null,
+    credit_applied: existingCreditApplied
   };
 
   _saving = true;
@@ -962,6 +1056,35 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
       currentInvoiceId = inv.id;
       document.getElementById('inv-id').value = inv.id;
       document.getElementById('inv-status-badge').innerHTML = `<span class="badge bg-success">SAVED</span>`;
+
+      // Actually consume the staged credit now that the invoice has a real ID.
+      // This is the ONLY place that debits the credit ledger — the payload's
+      // credit_applied field above just preserves whatever was already
+      // recorded, it does not touch customer_credits itself.
+      if (newlyStagedCredit > 0) {
+        try {
+          const creditRes = await fetch(`/api/invoices/${inv.id}/apply-credit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              amount: newlyStagedCredit,
+              phone: payload.phone, first_name: payload.first_name, last_name: payload.last_name,
+            })
+          });
+          if (creditRes.ok) {
+            const creditResult = await creditRes.json();
+            existingCreditApplied = parseFloat(creditResult.credit_applied) || existingCreditApplied;
+            newlyStagedCredit = 0;
+            document.getElementById('credit-display').innerHTML = `<span class="text-success">$${existingCreditApplied.toFixed(2)} applied</span>`;
+            updateAmountDueHint();
+          }
+        } catch (e) { /* invoice itself is already saved successfully; credit consumption failing shouldn't block that */ }
+      }
+
+      if (inv.earlyReturnCredit) {
+        showAlert(`💰 Customer picked up early — $${inv.earlyReturnCredit.amount.toFixed(2)} credit saved to their name for next visit.`, 'info');
+      }
+
       // NOTE: do NOT touch save-btn-text here – the spinner already replaced
       // the button innerHTML so that span no longer exists.  The btn.innerHTML
       // line AFTER this try/catch restores the full button (including the span).
@@ -1023,7 +1146,7 @@ document.getElementById('btn-email-receipt').addEventListener('click', async () 
     const res = await fetch(`/api/email/receipt/${currentInvoiceId}`, { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
-      showAlert(`✅ Receipt sent to ${email}`, 'success');
+      showAlert(`✅ Receipt sent to ${escapeHtml(email)}`, 'success');
     } else {
       showAlert('Failed to send receipt: ' + (data.error || 'Unknown error'), 'danger');
     }
