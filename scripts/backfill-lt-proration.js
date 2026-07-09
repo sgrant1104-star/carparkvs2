@@ -55,8 +55,18 @@
 
   console.log(`Found ${candidates.length} payment(s) with no batch id (candidates for review).\n`);
 
+  // "Sole payment" must mean this customer has EVER only had one payment
+  // event, full stop — not just "only one left unprocessed right now". See
+  // the equivalent admin.js route for the full explanation.
+  const allPayments = await db.prepare(`SELECT longterm_customer_id, id, payment_batch_id FROM longterm_payments`).all();
+  const eventKeysByCustomer = new Map();
+  for (const p of allPayments) {
+    const key = p.payment_batch_id || `row-${p.id}`;
+    if (!eventKeysByCustomer.has(p.longterm_customer_id)) eventKeysByCustomer.set(p.longterm_customer_id, new Set());
+    eventKeysByCustomer.get(p.longterm_customer_id).add(key);
+  }
   const countByCustomer = new Map();
-  for (const row of candidates) countByCustomer.set(row.longterm_customer_id, (countByCustomer.get(row.longterm_customer_id) || 0) + 1);
+  for (const [customerId, keys] of eventKeysByCustomer.entries()) countByCustomer.set(customerId, keys.size);
 
   let toSpread = 0;
   let leftAlone = 0;

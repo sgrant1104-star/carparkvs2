@@ -276,8 +276,23 @@ router.get('/backfill/lt-proration-preview', requireAuth, requireAdmin, async (r
     // contract-level dates/total when a customer has exactly one, since
     // that's the only case with no ambiguity about which payment a
     // contract term belongs to.
+    // "Sole payment" must mean this customer has EVER only had one payment
+    // event, full stop — not just "only one left unprocessed right now".
+    // Counting only unprocessed rows breaks across multiple backfill runs:
+    // once a customer's OTHER payments get processed and removed from the
+    // pending list, their one remaining payment would wrongly look "alone"
+    // and start trusting contract dates that don't apply to it. Count
+    // distinct payment events across the customer's FULL history instead —
+    // a previously-processed 12-row batch is one event, not twelve.
+    const allPayments = await db.prepare(`SELECT longterm_customer_id, id, payment_batch_id FROM longterm_payments`).all();
+    const eventKeysByCustomer = new Map();
+    for (const p of allPayments) {
+      const key = p.payment_batch_id || `row-${p.id}`;
+      if (!eventKeysByCustomer.has(p.longterm_customer_id)) eventKeysByCustomer.set(p.longterm_customer_id, new Set());
+      eventKeysByCustomer.get(p.longterm_customer_id).add(key);
+    }
     const countByCustomer = new Map();
-    for (const row of candidates) countByCustomer.set(row.longterm_customer_id, (countByCustomer.get(row.longterm_customer_id) || 0) + 1);
+    for (const [customerId, keys] of eventKeysByCustomer.entries()) countByCustomer.set(customerId, keys.size);
 
     const preview = [];
     let leftAlone = 0;
@@ -330,8 +345,23 @@ router.post('/backfill/lt-proration-apply', requireAuth, requireAdmin, async (re
       ORDER BY lp.longterm_customer_id, lp.payment_date
     `).all();
 
+    // "Sole payment" must mean this customer has EVER only had one payment
+    // event, full stop — not just "only one left unprocessed right now".
+    // Counting only unprocessed rows breaks across multiple backfill runs:
+    // once a customer's OTHER payments get processed and removed from the
+    // pending list, their one remaining payment would wrongly look "alone"
+    // and start trusting contract dates that don't apply to it. Count
+    // distinct payment events across the customer's FULL history instead —
+    // a previously-processed 12-row batch is one event, not twelve.
+    const allPayments = await db.prepare(`SELECT longterm_customer_id, id, payment_batch_id FROM longterm_payments`).all();
+    const eventKeysByCustomer = new Map();
+    for (const p of allPayments) {
+      const key = p.payment_batch_id || `row-${p.id}`;
+      if (!eventKeysByCustomer.has(p.longterm_customer_id)) eventKeysByCustomer.set(p.longterm_customer_id, new Set());
+      eventKeysByCustomer.get(p.longterm_customer_id).add(key);
+    }
     const countByCustomer = new Map();
-    for (const row of candidates) countByCustomer.set(row.longterm_customer_id, (countByCustomer.get(row.longterm_customer_id) || 0) + 1);
+    for (const [customerId, keys] of eventKeysByCustomer.entries()) countByCustomer.set(customerId, keys.size);
 
     let spread = 0, leftAlone = 0, errors = 0, badDate = 0;
     const errorDetails = [];
