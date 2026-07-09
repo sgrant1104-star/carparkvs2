@@ -405,6 +405,7 @@ async function initializeDatabase() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   try { x(`ALTER TABLE end_day ADD COLUMN internet_banking_total REAL DEFAULT 0`); } catch (_) {}
+  try { x(`ALTER TABLE end_day ADD COLUMN credit_redeemed_total REAL DEFAULT 0`); } catch (_) {}
   // Eftpos terminal (Z-report) reconciliation: what the terminal says vs what the system expected.
   try { x(`ALTER TABLE end_day ADD COLUMN eftpos_machine_total REAL`); } catch (_) {}
   try { x(`ALTER TABLE end_day ADD COLUMN eftpos_variance REAL`); } catch (_) {}

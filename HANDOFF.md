@@ -120,6 +120,26 @@ Manual checks:
 
 ---
 
+# Fix Hand-off (July 2026, round 4) — "Customer Credit" as a real payment status
+
+## What changed
+
+Applying customer credit to a booking previously had no clean way to be recorded — there was no payment status that meant "settled via credit, not new money." Added one properly:
+
+- **New payment status: "Customer Credit"** — available in both payment slots on the booking form, alongside Eftpos/Cash/Internet Banking/OnAcc.
+- **Revenue reporting**: the core `l1PaidTotal`/`l2PaidTotal` SQL expressions (used everywhere — Dashboard, Reports, End of Day) now explicitly include Customer Credit, so a credit-covered stay still counts as real revenue. This was a genuine gap: before this fix, simply adding the new status without updating this shared calculation would have made credit-covered bookings **invisible to revenue reporting entirely** — worse than not having the feature. Caught and fixed before it shipped.
+- **Banking/reconciliation**: explicitly excluded from the Eftpos/Cash/Account/Other buckets in both the Banking autofill and the Eftpos terminal reconciliation — it's not physical money that needs to go to the bank or match the card terminal. Tracked as its own separate `creditRedeemed` figure instead.
+- **End of Day breakdown**: new "Credit Redeemed (not new money)" line so the breakdown visibly reconciles (Eftpos + Cash + Internet + Credit + Account = Total revenue) instead of leaving an unexplained gap.
+- **Apply Credit flow** (`invoice.js`): clicking "Apply" on the credit banner now actually sets `PAID STATUS = Customer Credit` and the payment amount, rather than just being a display-only staging step. If the credit only partially covers the booking, it automatically opens the 2nd payment slot with the remaining balance pre-filled, so staff pick the real method (Eftpos/Cash/etc.) for what's left.
+
+## Required action after deploy
+
+No new migration script needed — the new `credit_redeemed_total` column on `end_day` is created automatically via the same `IF NOT EXISTS`/`ALTER TABLE` pattern used throughout, safe against the existing live database.
+
+
+
+---
+
 # Fix Hand-off (July 2026, round 3) — XSS hardening + customer credit system
 
 ## 1. Stored XSS fix

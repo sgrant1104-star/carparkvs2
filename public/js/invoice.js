@@ -676,15 +676,40 @@ function applyAvailableCredit() {
   const toApply = Math.round(Math.min(availableCreditInfo.totalAvailable, total) * 100) / 100;
   if (toApply <= 0) return;
   newlyStagedCredit = toApply;
+
+  // Record the credit as the payment method for the portion it covers —
+  // "Customer Credit" is a real, distinct payment status (counted as
+  // revenue, but excluded from Eftpos/Cash/Banking reconciliation, since
+  // no new physical money changes hands today).
+  document.getElementById('inv-paid-status').value = 'Customer Credit';
+  document.getElementById('inv-payment-amount').value = toApply.toFixed(2);
+  syncPaymentReceivedDateUi();
+
+  const remainder = Math.round((total - toApply) * 100) / 100;
+  if (remainder > 0.01) {
+    // Credit only covers part of the booking — open the 2nd payment slot
+    // for staff to record how the remaining balance was actually paid.
+    document.getElementById('split-payment-toggle').checked = true;
+    document.getElementById('payment2-section').classList.remove('d-none');
+    document.getElementById('inv-payment-amount-2').value = remainder.toFixed(2);
+    showAlert(`$${toApply.toFixed(2)} credit applied. $${remainder.toFixed(2)} remains — pick a payment method for the 2nd payment below.`, 'info');
+  } else {
+    showAlert(`$${toApply.toFixed(2)} credit fully covers this booking.`, 'success');
+  }
+
   const el = document.getElementById('credit-display');
   el.innerHTML = `<span class="text-success">$${toApply.toFixed(2)} credit will be applied</span> ` +
     `<button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="btn-undo-credit">Undo</button>`;
   document.getElementById('btn-undo-credit').addEventListener('click', () => {
     newlyStagedCredit = 0;
+    if (document.getElementById('inv-paid-status').value === 'Customer Credit') {
+      document.getElementById('inv-paid-status').value = 'To Pay';
+      document.getElementById('inv-payment-amount').value = '';
+      syncPaymentReceivedDateUi();
+    }
     renderCreditDisplay(availableCreditInfo);
     updateAmountDueHint();
   });
-  showAlert(`$${toApply.toFixed(2)} credit will be applied to this booking when you save.`, 'success');
   updateAmountDueHint();
 }
 

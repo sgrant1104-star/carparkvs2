@@ -40,11 +40,15 @@ router.get('/', requireAuth, async (req, res) => {
           COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Internet Banking' THEN payment_amount_2 ELSE 0 END, 0)
         ), 0) as internet_banking,
         COALESCE(SUM(
+          COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Customer Credit' THEN payment_amount ELSE 0 END, 0) +
+          COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Customer Credit' THEN payment_amount_2 ELSE 0 END, 0)
+        ), 0) as credit_redeemed,
+        COALESCE(SUM(
           COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status != 'To Pay' THEN payment_amount ELSE 0 END, 0) +
           COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 != 'To Pay' THEN payment_amount_2 ELSE 0 END, 0)
         ), 0) as total_revenue
       FROM invoices WHERE carpark_id = ? AND void = 0
-    `).get(today, today, today, today, today, today, today, today, today, today, today, today, carparkId);
+    `).get(today, today, today, today, today, today, today, today, today, today, today, today, today, today, carparkId);
     const carsInYard   = await db.prepare(`SELECT COUNT(*) as count FROM invoices WHERE carpark_id = ? AND void = 0 AND picked_up = 'Car In Yard'`).get(carparkId);
     const invoices     = await db.prepare(`SELECT i.*, u.name as staff_name FROM invoices i LEFT JOIN users u ON i.staff_id = u.id WHERE i.carpark_id = ? AND DATE(i.date_in) = ? AND i.void = 0 ORDER BY i.time_in`).all(carparkId, today);
     const returningToday = await db.prepare(`
@@ -116,9 +120,13 @@ router.post('/', requireAuth, async (req, res) => {
         COALESCE(SUM(
           COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Internet Banking' THEN payment_amount ELSE 0 END, 0) +
           COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Internet Banking' THEN payment_amount_2 ELSE 0 END, 0)
-        ), 0) as internet_banking
+        ), 0) as internet_banking,
+        COALESCE(SUM(
+          COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Customer Credit' THEN payment_amount ELSE 0 END, 0) +
+          COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Customer Credit' THEN payment_amount_2 ELSE 0 END, 0)
+        ), 0) as credit_redeemed
       FROM invoices WHERE carpark_id = ? AND void = 0
-    `).get(today, today, today, today, today, today, today, today, today, today, today, carparkId);
+    `).get(today, today, today, today, today, today, today, today, today, today, today, today, today, carparkId);
     const carsInYard = await db.prepare(`SELECT COUNT(*) as count FROM invoices WHERE carpark_id = ? AND void = 0 AND picked_up = 'Car In Yard'`).get(carparkId);
 
     const reconciliation = await getEftposReconciliation(db, { carparkId, date: today });
@@ -131,11 +139,11 @@ router.post('/', requireAuth, async (req, res) => {
     const variance_notes = eftposCheck.matched === false ? eftposCheck.warnings.join(' ') : null;
 
     if (existing) {
-      await db.prepare(`UPDATE end_day SET total_revenue=?, cars_in=?, cars_in_yard=?, eftpos_total=?, cash_total=?, account_total=?, internet_banking_total=?, notes=?, staff_id=?, eftpos_machine_total=?, eftpos_variance=?, eftpos_variance_notes=? WHERE id=?`)
-        .run(stats.total_revenue, stats.cars_in, carsInYard.count || 0, stats.eftpos, stats.cash, stats.on_account, stats.internet_banking, notes, req.session.userId, machineTotal, variance, variance_notes, existing.id);
+      await db.prepare(`UPDATE end_day SET total_revenue=?, cars_in=?, cars_in_yard=?, eftpos_total=?, cash_total=?, account_total=?, internet_banking_total=?, credit_redeemed_total=?, notes=?, staff_id=?, eftpos_machine_total=?, eftpos_variance=?, eftpos_variance_notes=? WHERE id=?`)
+        .run(stats.total_revenue, stats.cars_in, carsInYard.count || 0, stats.eftpos, stats.cash, stats.on_account, stats.internet_banking, stats.credit_redeemed, notes, req.session.userId, machineTotal, variance, variance_notes, existing.id);
     } else {
-      await db.prepare(`INSERT INTO end_day (carpark_id, date, total_revenue, cars_in, cars_in_yard, eftpos_total, cash_total, account_total, internet_banking_total, notes, staff_id, eftpos_machine_total, eftpos_variance, eftpos_variance_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(carparkId, today, stats.total_revenue, stats.cars_in, carsInYard.count || 0, stats.eftpos, stats.cash, stats.on_account, stats.internet_banking, notes, req.session.userId, machineTotal, variance, variance_notes);
+      await db.prepare(`INSERT INTO end_day (carpark_id, date, total_revenue, cars_in, cars_in_yard, eftpos_total, cash_total, account_total, internet_banking_total, credit_redeemed_total, notes, staff_id, eftpos_machine_total, eftpos_variance, eftpos_variance_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(carparkId, today, stats.total_revenue, stats.cars_in, carsInYard.count || 0, stats.eftpos, stats.cash, stats.on_account, stats.internet_banking, stats.credit_redeemed, notes, req.session.userId, machineTotal, variance, variance_notes);
     }
 
     if (eftposCheck.matched === false) {

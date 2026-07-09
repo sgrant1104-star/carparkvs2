@@ -59,6 +59,7 @@ router.get('/autofill', requireAuth, async (req, res) => {
     let cash = 0;
     let account = 0;
     let other = 0;
+    let creditRedeemed = 0;
 
     const addByStatus = (statusRaw, amountRaw) => {
       const status = String(statusRaw || '').trim();
@@ -68,6 +69,10 @@ router.get('/autofill', requireAuth, async (req, res) => {
       else if (status === 'Cash') cash += amount;
       else if (status === 'OnAcc') account += amount;
       else if (status === 'Internet Banking') other += amount;
+      // Customer Credit isn't physical money received today — it's value the
+      // customer already paid for on an earlier visit. Track separately so
+      // it doesn't inflate what actually needs to go to the bank/till.
+      else if (status === 'Customer Credit') creditRedeemed += amount;
       else if (status && status !== 'To Pay') other += amount;
     };
 
@@ -116,6 +121,7 @@ router.get('/autofill', requireAuth, async (req, res) => {
       cash: round2(cash),
       account: round2(account),
       other: round2(other),
+      creditRedeemed: round2(creditRedeemed),
       total: round2(eftpos + cash + account + other)
     });
   } catch (err) {

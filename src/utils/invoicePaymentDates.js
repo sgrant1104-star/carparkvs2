@@ -36,8 +36,12 @@ function l1InternetBanking(alias = '') {
   const p = alias ? `${alias}.` : '';
   return `(CASE WHEN ${p}paid_status = 'Internet Banking' THEN COALESCE(${p}payment_amount,0) ELSE 0 END)`;
 }
+function l1CustomerCredit(alias = '') {
+  const p = alias ? `${alias}.` : '';
+  return `(CASE WHEN ${p}paid_status = 'Customer Credit' THEN COALESCE(${p}payment_amount,0) ELSE 0 END)`;
+}
 function l1PaidTotal(alias = '') {
-  return `(${l1Eftpos(alias)} + ${l1Cash(alias)} + ${l1OnAcc(alias)} + ${l1InternetBanking(alias)})`;
+  return `(${l1Eftpos(alias)} + ${l1Cash(alias)} + ${l1OnAcc(alias)} + ${l1InternetBanking(alias)} + ${l1CustomerCredit(alias)})`;
 }
 function l2Eftpos(alias = '') {
   const p = alias ? `${alias}.` : '';
@@ -55,8 +59,12 @@ function l2InternetBanking(alias = '') {
   const p = alias ? `${alias}.` : '';
   return `(CASE WHEN ${p}paid_status_2 = 'Internet Banking' THEN COALESCE(${p}payment_amount_2,0) ELSE 0 END)`;
 }
+function l2CustomerCredit(alias = '') {
+  const p = alias ? `${alias}.` : '';
+  return `(CASE WHEN ${p}paid_status_2 = 'Customer Credit' THEN COALESCE(${p}payment_amount_2,0) ELSE 0 END)`;
+}
 function l2PaidTotal(alias = '') {
-  return `(${l2Eftpos(alias)} + ${l2Cash(alias)} + ${l2OnAcc(alias)} + ${l2InternetBanking(alias)})`;
+  return `(${l2Eftpos(alias)} + ${l2Cash(alias)} + ${l2OnAcc(alias)} + ${l2InternetBanking(alias)} + ${l2CustomerCredit(alias)})`;
 }
 
 const EFFECTIVE_PAY1_DAY = effectivePay1Day();
@@ -64,10 +72,12 @@ const EFFECTIVE_PAY2_DAY = effectivePay2Day();
 const L1_EFTPOS = l1Eftpos();
 const L1_CASH = l1Cash();
 const L1_ONACC = l1OnAcc();
+const L1_CUSTOMER_CREDIT = l1CustomerCredit();
 const L1_PAID_TOTAL = l1PaidTotal();
 const L2_EFTPOS = l2Eftpos();
 const L2_CASH = l2Cash();
 const L2_ONACC = l2OnAcc();
+const L2_CUSTOMER_CREDIT = l2CustomerCredit();
 const L2_PAID_TOTAL = l2PaidTotal();
 
 function sumLine1InRange(amountExpr) {
@@ -90,21 +100,25 @@ module.exports = {
   l1Cash,
   l1OnAcc,
   l1InternetBanking,
+  l1CustomerCredit,
   l1PaidTotal,
   l2Eftpos,
   l2Cash,
   l2OnAcc,
   l2InternetBanking,
+  l2CustomerCredit,
   l2PaidTotal,
   EFFECTIVE_PAY1_DAY,
   EFFECTIVE_PAY2_DAY,
   L1_EFTPOS,
   L1_CASH,
   L1_ONACC,
+  L1_CUSTOMER_CREDIT,
   L1_PAID_TOTAL,
   L2_EFTPOS,
   L2_CASH,
   L2_ONACC,
+  L2_CUSTOMER_CREDIT,
   L2_PAID_TOTAL,
   sumLine1InRange,
   sumLine2InRange,

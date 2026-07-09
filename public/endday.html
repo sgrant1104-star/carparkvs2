@@ -93,8 +93,9 @@
               <tr class="table-success"><td><i class="bi bi-credit-card me-1"></i><strong>Eftpos (short-stay only)</strong></td><td class="fw-bold text-success text-end fs-6" id="ed-eftpos">$0</td></tr>
               <tr><td>Cash</td><td class="fw-bold text-primary text-end" id="ed-cash">$0</td></tr>
               <tr><td><i class="bi bi-bank me-1"></i>Internet Banking</td><td class="fw-bold text-end" style="color:#6f42c1;" id="ed-internet">$0</td></tr>
+              <tr><td><i class="bi bi-wallet2 me-1"></i>Credit Redeemed <small class="text-muted">(not new money)</small></td><td class="fw-bold text-end text-secondary" id="ed-credit">$0</td></tr>
               <tr><td>On Account</td><td class="fw-bold text-danger text-end" id="ed-account">$0</td></tr>
-              <tr class="table-light"><td><small class="text-muted">Total banked</small></td><td class="text-muted text-end small" id="ed-total-inline">$0</td></tr>
+              <tr class="table-light"><td><small class="text-muted">Total revenue (all methods)</small></td><td class="text-muted text-end small" id="ed-total-inline">$0</td></tr>
             </tbody>
           </table>
           <div class="small text-muted mt-2">The "Eftpos Terminal Check" panel above includes long-term and account Eftpos payments too — use that figure against the actual terminal, not this line alone.</div>
@@ -172,6 +173,7 @@
       document.getElementById('ed-eftpos').textContent = formatCurrency(s.eftpos);
       document.getElementById('ed-cash').textContent = formatCurrency(s.cash);
       document.getElementById('ed-internet').textContent = formatCurrency(s.internet_banking || 0);
+      document.getElementById('ed-credit').textContent = formatCurrency(s.credit_redeemed || 0);
       document.getElementById('ed-account').textContent = formatCurrency(s.on_account);
       document.getElementById('ed-total-inline').textContent = formatCurrency(s.total_revenue);
       document.getElementById('ed-cars-in').textContent = s.cars_in || 0;

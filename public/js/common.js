@@ -112,6 +112,7 @@ function statusBadge(status) {
     'Cash': 'badge-cash',
     'Internet Banking': 'badge bg-primary-subtle text-primary-emphasis',
     'OnAcc': 'badge-onaccount',
+    'Customer Credit': 'badge bg-success-subtle text-success-emphasis',
     'To Pay': 'badge-topay',
     'Voided': 'badge-voided'
   };
