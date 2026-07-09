@@ -130,11 +130,21 @@ router.post('/', requireAuth, async (req, res) => {
     const carsInYard = await db.prepare(`SELECT COUNT(*) as count FROM invoices WHERE carpark_id = ? AND void = 0 AND picked_up = 'Car In Yard'`).get(carparkId);
 
     const reconciliation = await getEftposReconciliation(db, { carparkId, date: today });
-    const machineTotal = eftpos_machine_total != null && eftpos_machine_total !== ''
+    const existing = await db.prepare('SELECT * FROM end_day WHERE carpark_id = ? AND date = ?').get(carparkId, today);
+
+    const submittedMachineTotal = eftpos_machine_total != null && eftpos_machine_total !== ''
       ? parseFloat(eftpos_machine_total) : null;
+    // If this save didn't include a new terminal figure, keep whatever was
+    // already checked/saved for this date instead of silently wiping it —
+    // e.g. revisiting later just to add a note shouldn't erase an already-
+    // confirmed match. To genuinely clear a check, re-enter a value (even
+    // the same one) rather than leaving the field blank.
+    const machineTotal = Number.isFinite(submittedMachineTotal)
+      ? submittedMachineTotal
+      : (existing && existing.eftpos_machine_total != null ? parseFloat(existing.eftpos_machine_total) : null);
+
     const eftposCheck = buildVarianceReport(reconciliation, Number.isFinite(machineTotal) ? machineTotal : null);
 
-    const existing = await db.prepare('SELECT * FROM end_day WHERE carpark_id = ? AND date = ?').get(carparkId, today);
     const variance = eftposCheck.variance;
     const variance_notes = eftposCheck.matched === false ? eftposCheck.warnings.join(' ') : null;
 
