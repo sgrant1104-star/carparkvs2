@@ -113,6 +113,25 @@ router.get('/:id/statement', requireAuth, async (req, res) => {
     `).all(carparkId, req.params.id, startDate, endDate);
     const cashReceivedThisMonth = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100;
 
+    // Attach allocation detail to each payment — which invoice(s) it actually
+    // landed on — so staff can see this directly in the payment history
+    // table instead of needing a separate lookup.
+    const paymentsWithAllocation = [];
+    for (const p of payments) {
+      const allocRows = await db.prepare(`
+        SELECT pa.amount_allocated, i.id as invoice_id, i.invoice_number, i.date_in
+        FROM payment_allocations pa JOIN invoices i ON i.id = pa.invoice_id
+        WHERE pa.payment_source = 'account' AND pa.payment_id = ?
+        ORDER BY i.date_in ASC
+      `).all(p.id);
+      const allocatedTotal = Math.round(allocRows.reduce((s, r) => s + r.amount_allocated, 0) * 100) / 100;
+      paymentsWithAllocation.push({
+        ...p,
+        allocations: allocRows,
+        unallocated: Math.round(Math.max(0, (parseFloat(p.amount) || 0) - allocatedTotal) * 100) / 100,
+      });
+    }
+
     // Outstanding invoices across ALL periods (not just this month) — used to
     // populate the "apply payment to" picker so a payment can settle an older
     // unpaid invoice, not just ones in the currently-viewed month.
@@ -120,7 +139,7 @@ router.get('/:id/statement', requireAuth, async (req, res) => {
       .filter(i => i.outstanding_amount > 0.001)
       .map(i => ({ id: i.id, invoice_number: i.invoice_number, date_in: i.date_in, rego: i.rego, outstanding_amount: i.outstanding_amount }));
 
-    res.json({ account, invoices, total, month: m, year: y, startDate, endDate, payments, paid, outstanding, cashReceivedThisMonth, outstandingInvoicesForPicker });
+    res.json({ account, invoices, total, month: m, year: y, startDate, endDate, payments: paymentsWithAllocation, paid, outstanding, cashReceivedThisMonth, outstandingInvoicesForPicker });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -245,6 +264,41 @@ router.delete('/:id', requireAuth, async (req, res) => {
     const { userId, userName } = actorFromReq(req);
     await logActivity(db, { carparkId, tableName: 'account_customers', recordId: req.params.id, action: 'deactivate', before, after: { ...before, active: 0 }, userId, userName });
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/accounts/:id/payments/:paymentId/reallocate  { invoice_id }
+// Moves an existing payment's allocation to a specific invoice (any leftover
+// after that invoice is settled spills FIFO to the next-oldest outstanding
+// invoice, same as a fresh payment). Use this to correct a payment that
+// auto-allocated to the wrong invoice — e.g. staff can see from the amount
+// or a transaction reference that it was clearly meant for a specific
+// booking, even though FIFO picked an older one.
+router.put('/:id/payments/:paymentId/reallocate', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const { id: accountId, paymentId } = req.params;
+    const { invoice_id } = req.body || {};
+
+    const payment = await db.prepare(`
+      SELECT * FROM account_payments WHERE id = ? AND carpark_id = ? AND account_customer_id = ?
+    `).get(paymentId, carparkId, accountId);
+    if (!payment) return res.status(404).json({ error: 'Payment not found' });
+
+    await deallocatePayment(db, { carparkId, paymentSource: 'account', paymentId });
+    const result = await allocateAccountPayment(db, {
+      carparkId, accountCustomerId: accountId, paymentId, amount: payment.amount,
+      targetInvoiceId: invoice_id || null,
+    });
+
+    const { userId, userName } = actorFromReq(req);
+    await logActivity(db, {
+      carparkId, tableName: 'account_payments', recordId: paymentId, action: 'reallocate',
+      before: null, after: { targeted_invoice_id: invoice_id || null, splits: result.splits },
+      notes: `Manually reassigned payment allocation`, userId, userName,
+    });
+
+    res.json({ success: true, allocation: result.splits, unallocated: result.unallocated });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

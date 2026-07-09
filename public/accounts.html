@@ -119,10 +119,10 @@
           <div class="table-responsive">
             <table class="table table-sm table-bordered mb-0">
               <thead class="table-light">
-                <tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th class="text-end"></th></tr>
+                <tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Applied to</th><th class="text-end"></th></tr>
               </thead>
               <tbody id="acct-payments-tbody">
-                <tr><td colspan="5" class="text-center text-muted small">No payments recorded for this period.</td></tr>
+                <tr><td colspan="6" class="text-center text-muted small">No payments recorded for this period.</td></tr>
               </tbody>
             </table>
           </div>
@@ -357,19 +357,57 @@
         `${monthLabel}: invoiced ${formatCurrency(total)} · paid ${formatCurrency(paid)} · outstanding ${formatCurrency(outstanding)}.`;
       const pt = document.getElementById('acct-payments-tbody');
       const payments = data.payments || [];
+      const pickerOptionsHtml = (data.outstandingInvoicesForPicker || []).map(inv => `
+        <option value="${inv.id}">#${inv.invoice_number} — ${inv.rego || ''} — ${formatCurrency(inv.outstanding_amount)} owing</option>
+      `).join('');
       pt.innerHTML = payments.length
-        ? payments.map(p => `
+        ? payments.map(p => {
+            const allocs = p.allocations || [];
+            const appliedHtml = allocs.length === 0
+              ? `<span class="text-danger small">Unallocated${p.unallocated > 0.01 ? ` ($${p.unallocated.toFixed(2)})` : ''}</span>`
+              : allocs.map(a => `<a href="/invoice.html?id=${a.invoice_id}" class="small">#${a.invoice_number} ($${a.amount_allocated.toFixed(2)})</a>`).join(', ') +
+                (p.unallocated > 0.01 ? ` <span class="text-muted small">+$${p.unallocated.toFixed(2)} credit</span>` : '');
+            return `
           <tr>
             <td class="small">${p.payment_date || ''}</td>
             <td class="fw-bold text-success">${formatCurrency(p.amount || 0)}</td>
             <td class="small">${p.payment_method || ''}</td>
             <td class="small">${escapeHtml(p.transaction_reference || '')}</td>
-            <td class="text-end">
+            <td class="small">${appliedHtml}</td>
+            <td class="text-end text-nowrap">
+              <button type="button" class="btn btn-sm btn-outline-secondary btn-reassign-payment" data-id="${p.id}" title="Change which invoice this payment applies to"><i class="bi bi-arrow-left-right"></i></button>
               <button type="button" class="btn btn-sm btn-outline-danger btn-delete-acct-payment" data-id="${p.id}" title="Delete payment"><i class="bi bi-trash"></i></button>
             </td>
           </tr>
-        `).join('')
-        : '<tr><td colspan="5" class="text-center text-muted small">No payments recorded for this period.</td></tr>';
+        `;
+          }).join('')
+        : '<tr><td colspan="6" class="text-center text-muted small">No payments recorded for this period.</td></tr>';
+
+      pt.querySelectorAll('.btn-reassign-payment').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const pid = btn.dataset.id;
+          const select = document.createElement('select');
+          select.className = 'form-select form-select-sm d-inline-block';
+          select.style.width = 'auto';
+          select.innerHTML = `<option value="">Auto — oldest outstanding first</option>${pickerOptionsHtml}`;
+          if (!confirm('Reassign this payment to a different invoice? A prompt will ask which invoice next.')) return;
+          const choice = prompt('Enter the invoice number to apply this payment to (leave blank for auto/oldest-first):');
+          if (choice === null) return; // cancelled
+          const match = (data.outstandingInvoicesForPicker || []).find(inv => String(inv.invoice_number) === choice.trim());
+          if (choice.trim() && !match) { showAlert('No outstanding invoice found with that number', 'danger'); return; }
+          (async () => {
+            const res = await fetch(`/api/accounts/${currentAccountId}/payments/${pid}/reallocate`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ invoice_id: match ? match.id : null })
+            });
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok) { showAlert(result.error || 'Could not reassign payment', 'danger'); return; }
+            showAlert('Payment reassigned', 'success');
+            await loadStatement();
+          })();
+        });
+      });
 
       pt.querySelectorAll('.btn-delete-acct-payment').forEach((btn) => {
         btn.addEventListener('click', async () => {
