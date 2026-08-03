@@ -251,6 +251,9 @@ async function initializeDatabase() {
   try { x(`CREATE INDEX IF NOT EXISTS bookings_by_customer ON bookings (customer_account_id, created_at DESC)`); } catch (_) {}
   // Links an allocated booking to the real invoice it became.
   try { x(`ALTER TABLE bookings ADD COLUMN invoice_id INTEGER`); } catch (_) {}
+  // Drop-off/pick-up times (HH:MM), matching the staff check-in form's granularity.
+  try { x(`ALTER TABLE bookings ADD COLUMN time_in TEXT`); } catch (_) {}
+  try { x(`ALTER TABLE bookings ADD COLUMN time_out TEXT`); } catch (_) {}
 
   x(`CREATE TABLE IF NOT EXISTS longterm_customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

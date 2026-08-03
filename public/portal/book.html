@@ -14,6 +14,12 @@
       padding: 1.25rem 1.5rem;
     }
     .portal-body { max-width: 640px; margin: 2.5rem auto; padding: 0 1rem; }
+    .estimate-box {
+      background: #f4f7fb;
+      border: 1px solid #dbe4f0;
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
   </style>
 </head>
 <body>
@@ -30,7 +36,6 @@
         <h4 class="mb-3"><i class="bi bi-calendar-plus me-2"></i>Book Parking</h4>
         <p class="text-muted small mb-4">
           Submit your booking request below — our team will confirm your spot before your drop-off date.
-          Payment is taken on arrival as usual.
         </p>
 
         <form id="bookForm">
@@ -40,10 +45,31 @@
               <input type="date" class="form-control" id="dateIn" required>
             </div>
             <div class="col-6">
+              <label class="form-label">Drop-off time</label>
+              <input type="time" class="form-control" id="timeIn" required>
+            </div>
+            <div class="col-6">
               <label class="form-label">Pick-up date</label>
               <input type="date" class="form-control" id="dateOut" required>
             </div>
+            <div class="col-6">
+              <label class="form-label">Pick-up time</label>
+              <input type="time" class="form-control" id="timeOut" required>
+            </div>
           </div>
+
+          <div class="estimate-box mb-3">
+            <div class="d-flex justify-content-between align-items-center">
+              <span class="text-muted small">Estimated cost</span>
+              <span class="fw-bold fs-5" id="estimate-total">—</span>
+            </div>
+            <div class="small text-muted" id="estimate-breakdown">Set your dates and times above</div>
+            <div class="small mt-2">
+              <i class="bi bi-info-circle me-1"></i>This is an estimate — the final price is confirmed at drop-off.
+              <strong>Payment is taken on arrival; nothing is charged online.</strong>
+            </div>
+          </div>
+
           <div class="mb-3">
             <label class="form-label">Vehicle registration</label>
             <input type="text" class="form-control text-uppercase" id="rego" placeholder="e.g. ABC123" required>
@@ -83,21 +109,71 @@
       if (!r.ok) window.location.href = '/portal/login.html';
     }).catch(() => { window.location.href = '/portal/login.html'; });
 
-    // Sensible defaults: drop-off today, pick-up tomorrow.
+    // Sensible defaults: drop-off now, pick-up tomorrow at the usual 2:35pm changeover.
     function localDateStr(d) {
       const yr = d.getFullYear(), mo = String(d.getMonth() + 1).padStart(2, '0'), da = String(d.getDate()).padStart(2, '0');
       return `${yr}-${mo}-${da}`;
     }
+    function localTimeStr(d) {
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
     const today = new Date();
     const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
     document.getElementById('dateIn').value = localDateStr(today);
+    document.getElementById('timeIn').value = localTimeStr(today);
     document.getElementById('dateOut').value = localDateStr(tomorrow);
+    document.getElementById('timeOut').value = '14:35';
+
+    // Same 24-hour-block rule the staff check-in form uses (calcNights24h in
+    // public/js/common.js) — a stay is billed in whole 24h blocks from
+    // drop-off to pick-up, rounded up, minimum 1.
+    function calcNights24h(dateIn, timeIn, dateOut, timeOut) {
+      const t1 = Date.parse(`${dateIn}T${timeIn || '00:00'}:00Z`);
+      const t2 = Date.parse(`${dateOut}T${timeOut || '00:00'}:00Z`);
+      if (!Number.isFinite(t1) || !Number.isFinite(t2)) return 1;
+      const diffMs = t2 - t1;
+      const dayMs = 24 * 60 * 60 * 1000;
+      if (diffMs <= dayMs) return 1;
+      return Math.max(1, Math.ceil(diffMs / dayMs));
+    }
+
+    let estimateSeq = 0;
+    async function updateEstimate() {
+      const dateIn = document.getElementById('dateIn').value;
+      const timeIn = document.getElementById('timeIn').value;
+      const dateOut = document.getElementById('dateOut').value;
+      const timeOut = document.getElementById('timeOut').value;
+      const totalEl = document.getElementById('estimate-total');
+      const breakdownEl = document.getElementById('estimate-breakdown');
+      if (!dateIn || !dateOut) return;
+
+      const nights = calcNights24h(dateIn, timeIn, dateOut, timeOut);
+      const mySeq = ++estimateSeq;
+      try {
+        const res = await fetch(`/api/bookings/estimate-price?nights=${nights}`, { credentials: 'include' });
+        if (mySeq !== estimateSeq) return; // a newer request has since started; ignore this stale response
+        if (!res.ok) { totalEl.textContent = '—'; breakdownEl.textContent = 'Could not load pricing'; return; }
+        const data = await res.json();
+        totalEl.textContent = `$${data.total.toFixed(2)}`;
+        breakdownEl.textContent = `${data.nights} night${data.nights === 1 ? '' : 's'} × $${data.dailyRate.toFixed(2)}/night`;
+      } catch (e) {
+        if (mySeq !== estimateSeq) return;
+        totalEl.textContent = '—';
+        breakdownEl.textContent = 'Could not load pricing';
+      }
+    }
+    ['dateIn', 'timeIn', 'dateOut', 'timeOut'].forEach((id) => {
+      document.getElementById(id).addEventListener('change', updateEstimate);
+    });
+    updateEstimate();
 
     document.getElementById('bookForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const payload = {
         dateIn: document.getElementById('dateIn').value,
+        timeIn: document.getElementById('timeIn').value,
         dateOut: document.getElementById('dateOut').value,
+        timeOut: document.getElementById('timeOut').value,
         rego: document.getElementById('rego').value,
         vehicleMake: document.getElementById('vehicleMake').value,
         vehicleModel: document.getElementById('vehicleModel').value,

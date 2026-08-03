@@ -7,6 +7,7 @@ const { logActivity, actorFromReq } = require('../utils/audit');
 const { checkAndCreateEarlyReturnCredit, findAvailableCredit, applyCreditToInvoice, releaseCreditForInvoice } = require('../utils/customerCredit');
 const { deallocateInvoice } = require('../utils/paymentAllocation');
 const { streamInvoicePdf } = require('../utils/invoicePdf');
+const { calculateShortStayPrice } = require('../utils/pricing');
 const router = express.Router();
 
 // GET /api/invoices/credits/lookup?phone=&first_name=&last_name=
@@ -139,46 +140,8 @@ router.get('/calculate-price', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
     const { nights, account_customer_id } = req.query;
-    const n = parseInt(nights) || 1;
-    const accountRateCard = {
-      1: 18.00,
-      2: 16.50,
-      3: 16.00,
-      4: 15.75,
-      5: 15.60,
-      6: 15.50,
-      7: 15.43,
-      8: 15.00,
-      9: 14.67,
-    };
-
-    if (account_customer_id && accountRateCard[n]) {
-      const dailyRate = accountRateCard[n];
-      const total = Math.round((dailyRate * n) * 100) / 100;
-      return res.json({
-        nights: n,
-        dailyRate,
-        total,
-        discountPercent: 0,
-        pricing_mode: 'account_rate_card',
-      });
-    }
-
-    let discountPercent = 0;
-    if (account_customer_id) {
-      const acct = await db.prepare('SELECT discount_percent FROM account_customers WHERE id = ?').get(account_customer_id);
-      if (acct) discountPercent = acct.discount_percent || 0;
-    }
-    const rule = await db.prepare(`
-      SELECT * FROM pricing_rules
-      WHERE carpark_id = ? AND customer_type = 'short' AND active = 1
-      AND days_from <= ? AND (days_to IS NULL OR days_to >= ?)
-      ORDER BY days_from DESC LIMIT 1
-    `).get(carparkId, n, n);
-    const dailyRate = rule ? rule.daily_rate : 10.00;
-    let total = dailyRate * n;
-    if (discountPercent > 0) total = total * (1 - discountPercent / 100);
-    res.json({ nights: n, dailyRate, total: Math.round(total * 100) / 100, discountPercent });
+    const result = await calculateShortStayPrice(db, { carparkId, nights, accountCustomerId: account_customer_id });
+    res.json(result);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

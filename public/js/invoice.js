@@ -270,7 +270,9 @@ async function prefillFromPrebooking(prebookingId) {
     document.getElementById('inv-phone').value = b.phone || '';
     document.getElementById('inv-email').value = b.email || '';
     if (b.dateIn) document.getElementById('inv-date-in').value = b.dateIn;
+    if (b.timeIn) document.getElementById('inv-time-in').value = b.timeIn;
     if (b.dateOut) document.getElementById('inv-return-date').value = b.dateOut;
+    if (b.timeOut) document.getElementById('inv-return-time').value = b.timeOut;
 
     const vehicle = [b.vehicleMake, b.vehicleModel, b.vehicleColor].filter(Boolean).join(' ');
     const noteParts = [];

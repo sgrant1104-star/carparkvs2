@@ -79,8 +79,8 @@
             <td>${escapeHtml(b.phone || '—')}</td>
             <td class="fw-bold">${escapeHtml(b.rego)}</td>
             <td>${escapeHtml(vehicle)}</td>
-            <td>${escapeHtml(b.dateIn)} ${b.overdue ? '<span class="badge bg-danger ms-1">Overdue</span>' : ''}</td>
-            <td>${escapeHtml(b.dateOut)}</td>
+            <td>${escapeHtml(b.dateIn)} ${escapeHtml(b.timeIn || '')} ${b.overdue ? '<span class="badge bg-danger ms-1">Overdue</span>' : ''}</td>
+            <td>${escapeHtml(b.dateOut)} ${escapeHtml(b.timeOut || '')}</td>
             <td class="small text-muted" style="max-width:220px;">${escapeHtml(b.notes || '')}</td>
             <td class="text-end">
               <a href="/invoice.html?prebooking=${b.id}" class="btn btn-sm btn-success">

@@ -85,7 +85,7 @@
             <div>
               <strong>${escapeHtml(b.rego)}</strong>
               ${b.vehicleMake || b.vehicleModel ? `<span class="text-muted"> — ${escapeHtml(b.vehicleMake)} ${escapeHtml(b.vehicleModel)}</span>` : ''}
-              <div class="small text-muted">${escapeHtml(b.dateIn)} → ${escapeHtml(b.dateOut)}</div>
+              <div class="small text-muted">${escapeHtml(b.dateIn)} ${escapeHtml(b.timeIn || '')} → ${escapeHtml(b.dateOut)} ${escapeHtml(b.timeOut || '')}</div>
             </div>
             <div>${statusBadge(b.status)}</div>
           </div>
