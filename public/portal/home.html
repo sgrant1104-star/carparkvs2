@@ -56,9 +56,14 @@
         pending: 'bg-warning text-dark',
         allocated: 'bg-info text-dark',
         completed: 'bg-success',
+        cancelled: 'bg-secondary',
+        no_show: 'bg-danger',
         auto_cancelled: 'bg-secondary',
       };
-      const label = { pending: 'Pending', allocated: 'Allocated', completed: 'Completed', auto_cancelled: 'Auto-cancelled' }[status] || status;
+      const label = {
+        pending: 'Pending', allocated: 'Allocated', completed: 'Completed',
+        cancelled: 'Cancelled', no_show: 'No-show', auto_cancelled: 'Auto-cancelled',
+      }[status] || status;
       return `<span class="badge ${map[status] || 'bg-secondary'}">${label}</span>`;
     }
 
@@ -87,9 +92,32 @@
               ${b.vehicleMake || b.vehicleModel ? `<span class="text-muted"> — ${escapeHtml(b.vehicleMake)} ${escapeHtml(b.vehicleModel)}</span>` : ''}
               <div class="small text-muted">${escapeHtml(b.dateIn)} ${escapeHtml(b.timeIn || '')} → ${escapeHtml(b.dateOut)} ${escapeHtml(b.timeOut || '')}</div>
             </div>
-            <div>${statusBadge(b.status)}</div>
+            <div class="text-end">
+              ${statusBadge(b.status)}
+              ${b.status === 'pending' ? `<div class="mt-1"><button class="btn btn-sm btn-outline-danger btn-cancel-booking" data-id="${b.id}">Cancel</button></div>` : ''}
+            </div>
           </div>
         `).join('');
+
+        document.querySelectorAll('.btn-cancel-booking').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('Cancel this booking request?')) return;
+            btn.disabled = true;
+            try {
+              const res = await fetch(`/api/bookings/${btn.dataset.id}/cancel`, { method: 'POST', credentials: 'include' });
+              if (res.ok) {
+                loadBookings();
+              } else {
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || 'Could not cancel booking');
+                btn.disabled = false;
+              }
+            } catch (e) {
+              alert('Connection error. Please try again.');
+              btn.disabled = false;
+            }
+          });
+        });
       } catch (e) {
         el.textContent = 'Could not load bookings.';
       }

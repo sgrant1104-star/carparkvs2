@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../database');
 const { requireCustomerAuth } = require('../middleware/customerAuth');
 const { calculateShortStayPrice } = require('../utils/pricing');
+const { notifyAdminNewBooking, notifyCustomerBookingSubmitted, notifyAdminBookingCancelledByCustomer } = require('../utils/bookingEmails');
 const router = express.Router();
 
 function isValidYmd(s) {
@@ -104,7 +105,34 @@ router.post('/', requireCustomerAuth, async (req, res) => {
     );
 
     const booking = await db.prepare('SELECT * FROM bookings WHERE id = ?').get(result.lastInsertRowid);
+
+    await Promise.all([
+      notifyCustomerBookingSubmitted(booking),
+      notifyAdminNewBooking(booking),
+    ]);
+
     res.status(201).json({ success: true, booking: publicBooking(booking) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/bookings/:id/cancel — customer cancels their own booking, only
+// while it's still pending (once staff have allocated it to a real spot,
+// cancelling is handled through the normal invoice void flow instead).
+router.post('/:id/cancel', requireCustomerAuth, async (req, res) => {
+  try {
+    const booking = await db.prepare('SELECT * FROM bookings WHERE id = ? AND customer_account_id = ?')
+      .get(req.params.id, req.customerSession.customerId);
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (booking.status !== 'pending') {
+      return res.status(400).json({ error: `This booking is already ${booking.status} and can't be cancelled here.` });
+    }
+
+    await db.prepare(`UPDATE bookings SET status = 'cancelled' WHERE id = ?`).run(booking.id);
+    await notifyAdminBookingCancelledByCustomer(booking);
+
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
