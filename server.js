@@ -61,6 +61,30 @@ app.use((req, res, next) => {
   next();
 });
 
+// ─── Customer portal session middleware ───────────────────────────────────
+// Completely independent of the staff session above: separate cookie name,
+// separate req property, and the JWT payload carries type:'customer' so a
+// staff token could never be mistaken for one even if the cookies collided.
+// Staff routes never read req.customerSession; customer routes never read
+// req.session — there is no shared code path between the two.
+app.use((req, res, next) => {
+  req.customerSession = {};
+  const token = req.cookies && req.cookies.customer_auth_token;
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (decoded.type === 'customer') {
+        req.customerSession.customerId = decoded.customerId;
+        req.customerSession.email      = decoded.email;
+        req.customerSession.firstName  = decoded.firstName;
+      }
+    } catch (_) {
+      // expired / tampered → req.customerSession stays empty
+    }
+  }
+  next();
+});
+
 // Serve static files – disable caching so browsers always get latest JS/HTML
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: false,
@@ -72,6 +96,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 
 // API Routes
 app.use('/api/auth',      require('./src/routes/auth'));
+app.use('/api/customer-auth', require('./src/routes/customerAuth'));
 app.use('/api/dashboard', require('./src/routes/dashboard'));
 app.use('/api/invoices',  require('./src/routes/invoices'));
 app.use('/api/returns',   require('./src/routes/returns'));

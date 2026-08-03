@@ -206,6 +206,24 @@ async function initializeDatabase() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
+  // ── Customer portal accounts ────────────────────────────────────────────
+  // Login identities for the customer-facing booking portal. Deliberately
+  // separate from `customers` above (which is just walk-in contact info tied
+  // to invoices, not an authenticated account) and from `users` (staff).
+  x(`CREATE TABLE IF NOT EXISTS customer_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    carpark_id INTEGER DEFAULT 1,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    phone TEXT,
+    password_hash TEXT NOT NULL,
+    reset_token TEXT,
+    reset_token_expires DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  try { x(`CREATE INDEX IF NOT EXISTS customer_accounts_reset_token ON customer_accounts (reset_token)`); } catch (_) {}
+
   x(`CREATE TABLE IF NOT EXISTS longterm_customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     lt_number TEXT UNIQUE NOT NULL,
