@@ -281,6 +281,7 @@ async function prefillFromPrebooking(prebookingId) {
     if (noteParts.length) document.getElementById('inv-notes').value = noteParts.join(' — ');
 
     updateNightsAndDisplay();
+    await calculatePriceNow();
     showAlert('Pre-filled from an online booking — review before saving.', 'info');
   } catch (err) {
     showAlert('Could not load that pre-booking — continuing with a blank form.', 'warning');
@@ -918,8 +919,10 @@ document.getElementById('inv-paid-status-2').addEventListener('change', () => {
   ensurePaymentDateDefaults();
 });
 
-// Calculate price
-document.getElementById('btn-calculate').addEventListener('click', async () => {
+// Calculate price — also called automatically after pre-filling from an
+// online booking (see prefillFromPrebooking), so staff don't have to click
+// this just to get the number the customer already saw as their estimate.
+async function calculatePriceNow() {
   if (longTermPricingActive) {
     showAlert('Long-term booking detected: price is auto-filled from Long Term settings.', 'info');
     return;
@@ -945,7 +948,8 @@ document.getElementById('btn-calculate').addEventListener('click', async () => {
   setPricingModeLabel(data.pricing_mode === 'account_rate_card'
     ? 'account-rate-card'
     : (data.discountPercent > 0 ? 'account-discount' : 'manual'));
-});
+}
+document.getElementById('btn-calculate').addEventListener('click', calculatePriceNow);
 
 // Search customer
 document.getElementById('btn-search-customer').addEventListener('click', async () => {
