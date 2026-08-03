@@ -249,6 +249,8 @@ async function initializeDatabase() {
   )`);
   try { x(`CREATE INDEX IF NOT EXISTS bookings_by_status_date ON bookings (carpark_id, status, date_in)`); } catch (_) {}
   try { x(`CREATE INDEX IF NOT EXISTS bookings_by_customer ON bookings (customer_account_id, created_at DESC)`); } catch (_) {}
+  // Links an allocated booking to the real invoice it became.
+  try { x(`ALTER TABLE bookings ADD COLUMN invoice_id INTEGER`); } catch (_) {}
 
   x(`CREATE TABLE IF NOT EXISTS longterm_customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

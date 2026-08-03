@@ -2,6 +2,7 @@
 document.getElementById('navbar-container').innerHTML = renderNavbar('invoice');
 
 let currentInvoiceId = null;
+let currentPrebookingId = null; // set when this invoice is being created from an online pre-booking
 let staffList = [];
 let accountCustomers = [];
 let _saving = false; // guard against concurrent saves / race conditions
@@ -132,6 +133,9 @@ async function initInvoicePage() {
     await loadInvoice(null, params.get('id'));
   } else {
     await newInvoice();
+    if (params.get('prebooking')) {
+      await prefillFromPrebooking(params.get('prebooking'));
+    }
   }
 
   updateNavCarsCount();
@@ -243,6 +247,42 @@ async function newInvoice() {
   document.getElementById('btn-void-invoice').disabled = true;
   document.getElementById('btn-refund').disabled = true;
   document.getElementById('btn-delete-invoice').disabled = true;
+}
+
+// Pre-fills the just-cleared new-invoice form from an online customer
+// booking, so staff allocating it don't retype what the customer already
+// gave us. Only rego/name/phone/email/dates/notes have matching fields here —
+// vehicle make/model/color get folded into the notes box since this form has
+// no dedicated vehicle-detail inputs.
+async function prefillFromPrebooking(prebookingId) {
+  try {
+    const res = await fetch(`/api/prebookings/${prebookingId}`);
+    if (!res.ok) {
+      showAlert('Could not load that pre-booking — continuing with a blank form.', 'warning');
+      return;
+    }
+    const b = await res.json();
+    currentPrebookingId = prebookingId;
+
+    document.getElementById('inv-rego').value = b.rego || '';
+    document.getElementById('inv-first-name').value = b.firstName || '';
+    document.getElementById('inv-last-name').value = b.lastName || '';
+    document.getElementById('inv-phone').value = b.phone || '';
+    document.getElementById('inv-email').value = b.email || '';
+    if (b.dateIn) document.getElementById('inv-date-in').value = b.dateIn;
+    if (b.dateOut) document.getElementById('inv-return-date').value = b.dateOut;
+
+    const vehicle = [b.vehicleMake, b.vehicleModel, b.vehicleColor].filter(Boolean).join(' ');
+    const noteParts = [];
+    if (vehicle) noteParts.push(`Vehicle: ${vehicle}`);
+    if (b.notes) noteParts.push(b.notes);
+    if (noteParts.length) document.getElementById('inv-notes').value = noteParts.join(' — ');
+
+    updateNightsAndDisplay();
+    showAlert('Pre-filled from an online booking — review before saving.', 'info');
+  } catch (err) {
+    showAlert('Could not load that pre-booking — continuing with a blank form.', 'warning');
+  }
 }
 
 async function loadInvoice(invoiceNumber, invoiceId) {
@@ -1143,6 +1183,21 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
   document.getElementById('btn-delete-invoice').disabled = false;
   showAlert('Invoice saved successfully!', 'success');
       history.replaceState(null, '', `/invoice.html?id=${inv.id}`);
+
+      // First save of an invoice started from a pre-booking: mark it
+      // allocated and link it to the invoice that was just created. Only
+      // fires once — currentPrebookingId is cleared right after, so
+      // subsequent edits/re-saves of this same invoice don't re-trigger it.
+      if (currentPrebookingId) {
+        try {
+          await fetch(`/api/prebookings/${currentPrebookingId}/allocate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ invoiceId: inv.id })
+          });
+        } catch (_) { /* invoice itself is already saved; allocation link failing shouldn't block that */ }
+        currentPrebookingId = null;
+      }
 
       // Save customer if new
       if (!payload.customer_id && (payload.first_name || payload.last_name)) {

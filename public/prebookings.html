@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pre-Bookings - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <h2><i class="bi bi-inbox me-2"></i>Pre-Bookings</h2>
+    </div>
+
+    <div id="prebookings-summary" class="alert alert-info small mb-3">
+      Loading...
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle bg-white">
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th>Phone</th>
+            <th>Rego</th>
+            <th>Vehicle</th>
+            <th>Drop-off</th>
+            <th>Pick-up</th>
+            <th>Notes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="prebookings-tbody">
+          <tr><td colspan="8" class="text-center py-4"><div class="spinner-border"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('prebookings');
+
+    function escapeHtml(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function loadPrebookings() {
+      const res = await fetch('/api/prebookings');
+      if (!res.ok) return;
+      const bookings = await res.json();
+
+      const summary = document.getElementById('prebookings-summary');
+      const overdueCount = bookings.filter(b => b.overdue).length;
+      if (bookings.length === 0) {
+        summary.className = 'alert alert-success small mb-3';
+        summary.textContent = 'No pending bookings — all caught up.';
+      } else {
+        summary.className = `alert ${overdueCount > 0 ? 'alert-warning' : 'alert-info'} small mb-3`;
+        summary.textContent = `${bookings.length} pending booking${bookings.length === 1 ? '' : 's'}` +
+          (overdueCount > 0 ? `, ${overdueCount} overdue (drop-off date has passed)` : '');
+      }
+
+      const tbody = document.getElementById('prebookings-tbody');
+      if (bookings.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No pending bookings.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = bookings.map(b => {
+        const vehicle = [b.vehicleMake, b.vehicleModel, b.vehicleColor].filter(Boolean).join(' ') || '—';
+        return `
+          <tr class="${b.overdue ? 'table-warning' : ''}">
+            <td>${escapeHtml(b.firstName)} ${escapeHtml(b.lastName)}</td>
+            <td>${escapeHtml(b.phone || '—')}</td>
+            <td class="fw-bold">${escapeHtml(b.rego)}</td>
+            <td>${escapeHtml(vehicle)}</td>
+            <td>${escapeHtml(b.dateIn)} ${b.overdue ? '<span class="badge bg-danger ms-1">Overdue</span>' : ''}</td>
+            <td>${escapeHtml(b.dateOut)}</td>
+            <td class="small text-muted" style="max-width:220px;">${escapeHtml(b.notes || '')}</td>
+            <td class="text-end">
+              <a href="/invoice.html?prebooking=${b.id}" class="btn btn-sm btn-success">
+                <i class="bi bi-box-arrow-in-right me-1"></i>Allocate
+              </a>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function init() {
+      await checkAuth();
+      await loadPrebookings();
+      updateNavCarsCount();
+    }
+    init();
+  </script>
+</body>
+</html>

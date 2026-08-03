@@ -236,6 +236,7 @@ function renderNavbar(activePage) {
   const navItems = [
     { href: '/menu.html', label: 'Menu', icon: 'bi-house-fill', key: 'menu' },
     { href: '/invoice.html', label: 'Bookings', icon: 'bi-receipt', key: 'invoice' },
+    { href: '/prebookings.html', label: 'Pre-Bookings', icon: 'bi-inbox', key: 'prebookings' },
     { href: '/invoices.html', label: 'All Invoices', icon: 'bi-journal-text', key: 'invoices' },
     { href: '/returns.html', label: 'Returns', icon: 'bi-car-front', key: 'returns' },
     { href: '/longterm.html', label: 'Long Term', icon: 'bi-calendar-check', key: 'longterm' },

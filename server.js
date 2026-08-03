@@ -98,6 +98,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 app.use('/api/auth',      require('./src/routes/auth'));
 app.use('/api/customer-auth', require('./src/routes/customerAuth'));
 app.use('/api/bookings', require('./src/routes/bookings'));
+app.use('/api/prebookings', require('./src/routes/prebookings'));
 app.use('/api/dashboard', require('./src/routes/dashboard'));
 app.use('/api/invoices',  require('./src/routes/invoices'));
 app.use('/api/returns',   require('./src/routes/returns'));
