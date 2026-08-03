@@ -224,6 +224,32 @@ async function initializeDatabase() {
   )`);
   try { x(`CREATE INDEX IF NOT EXISTS customer_accounts_reset_token ON customer_accounts (reset_token)`); } catch (_) {}
 
+  // ── Customer portal bookings ────────────────────────────────────────────
+  // Submitted online by a logged-in customer; staff allocate them to a real
+  // spot manually (no capacity checking here — see stage 4 of the plan).
+  // Name/phone/email are snapshotted at booking time so the record stays
+  // self-contained even if the customer later edits their account.
+  x(`CREATE TABLE IF NOT EXISTS bookings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    carpark_id INTEGER DEFAULT 1,
+    customer_account_id INTEGER NOT NULL,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    phone TEXT,
+    email TEXT,
+    rego TEXT NOT NULL,
+    vehicle_make TEXT,
+    vehicle_model TEXT,
+    vehicle_color TEXT,
+    date_in DATE NOT NULL,
+    date_out DATE NOT NULL,
+    status TEXT DEFAULT 'pending',
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  try { x(`CREATE INDEX IF NOT EXISTS bookings_by_status_date ON bookings (carpark_id, status, date_in)`); } catch (_) {}
+  try { x(`CREATE INDEX IF NOT EXISTS bookings_by_customer ON bookings (customer_account_id, created_at DESC)`); } catch (_) {}
+
   x(`CREATE TABLE IF NOT EXISTS longterm_customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     lt_number TEXT UNIQUE NOT NULL,

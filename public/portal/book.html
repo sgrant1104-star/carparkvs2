@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Book Parking - BOI Car Storage</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+  <style>
+    .portal-header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: #fff;
+      padding: 1.25rem 1.5rem;
+    }
+    .portal-body { max-width: 640px; margin: 2.5rem auto; padding: 0 1rem; }
+  </style>
+</head>
+<body>
+  <div class="portal-header d-flex justify-content-between align-items-center">
+    <div><i class="bi bi-p-square-fill me-2"></i><strong>BOI Car Storage</strong></div>
+    <a href="/portal/home.html" class="btn btn-sm btn-outline-light">
+      <i class="bi bi-arrow-left me-1"></i>My Account
+    </a>
+  </div>
+
+  <div class="portal-body">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h4 class="mb-3"><i class="bi bi-calendar-plus me-2"></i>Book Parking</h4>
+        <p class="text-muted small mb-4">
+          Submit your booking request below — our team will confirm your spot before your drop-off date.
+          Payment is taken on arrival as usual.
+        </p>
+
+        <form id="bookForm">
+          <div class="row g-3 mb-3">
+            <div class="col-6">
+              <label class="form-label">Drop-off date</label>
+              <input type="date" class="form-control" id="dateIn" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label">Pick-up date</label>
+              <input type="date" class="form-control" id="dateOut" required>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Vehicle registration</label>
+            <input type="text" class="form-control text-uppercase" id="rego" placeholder="e.g. ABC123" required>
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col-4">
+              <label class="form-label">Make</label>
+              <input type="text" class="form-control" id="vehicleMake" placeholder="e.g. Toyota">
+            </div>
+            <div class="col-4">
+              <label class="form-label">Model</label>
+              <input type="text" class="form-control" id="vehicleModel" placeholder="e.g. Corolla">
+            </div>
+            <div class="col-4">
+              <label class="form-label">Color</label>
+              <input type="text" class="form-control" id="vehicleColor" placeholder="e.g. Silver">
+            </div>
+          </div>
+          <div class="mb-4">
+            <label class="form-label">Notes (optional)</label>
+            <textarea class="form-control" id="notes" rows="2" placeholder="Flight details, special requests, etc."></textarea>
+          </div>
+
+          <div id="formError" class="alert alert-danger d-none"></div>
+          <div id="formSuccess" class="alert alert-success d-none"></div>
+
+          <button type="submit" class="btn w-100 btn-lg" id="submitBtn" style="background: linear-gradient(135deg, var(--primary), var(--primary-light)); color: white; font-weight: 700;">
+            <i class="bi bi-send-check me-2"></i>Submit Booking Request
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    fetch('/api/customer-auth/me', { credentials: 'include' }).then((r) => {
+      if (!r.ok) window.location.href = '/portal/login.html';
+    }).catch(() => { window.location.href = '/portal/login.html'; });
+
+    // Sensible defaults: drop-off today, pick-up tomorrow.
+    function localDateStr(d) {
+      const yr = d.getFullYear(), mo = String(d.getMonth() + 1).padStart(2, '0'), da = String(d.getDate()).padStart(2, '0');
+      return `${yr}-${mo}-${da}`;
+    }
+    const today = new Date();
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    document.getElementById('dateIn').value = localDateStr(today);
+    document.getElementById('dateOut').value = localDateStr(tomorrow);
+
+    document.getElementById('bookForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        dateIn: document.getElementById('dateIn').value,
+        dateOut: document.getElementById('dateOut').value,
+        rego: document.getElementById('rego').value,
+        vehicleMake: document.getElementById('vehicleMake').value,
+        vehicleModel: document.getElementById('vehicleModel').value,
+        vehicleColor: document.getElementById('vehicleColor').value,
+        notes: document.getElementById('notes').value,
+      };
+      const errEl = document.getElementById('formError');
+      const okEl = document.getElementById('formSuccess');
+      errEl.classList.add('d-none');
+      okEl.classList.add('d-none');
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Submitting...';
+
+      try {
+        const res = await fetch('/api/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          okEl.textContent = 'Booking request submitted! Redirecting to your account...';
+          okEl.classList.remove('d-none');
+          document.getElementById('bookForm').classList.add('d-none');
+          setTimeout(() => { window.location.href = '/portal/home.html'; }, 1600);
+        } else {
+          errEl.textContent = data.error || 'Could not submit booking';
+          errEl.classList.remove('d-none');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-send-check me-2"></i>Submit Booking Request';
+        }
+      } catch (err) {
+        errEl.textContent = 'Connection error. Please try again.';
+        errEl.classList.remove('d-none');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-send-check me-2"></i>Submit Booking Request';
+      }
+    });
+  </script>
+</body>
+</html>
