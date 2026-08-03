@@ -263,11 +263,15 @@ router.get('/revenue/csv', requireAuth, async (req, res) => {
       AND substr(trim(COALESCE(i.date_in,'')),1,10) >= ? AND substr(trim(COALESCE(i.date_in,'')),1,10) <= ?
       ORDER BY i.date_in ASC
     `).all(carparkId, fromDate, toDate);
+    // LEFT JOIN: an INNER JOIN here would silently drop payments belonging
+    // to a customer who has since been archived (or, previously, hard
+    // deleted) — the payment row itself always outlives the customer row
+    // and must keep showing up in this export regardless.
     const ltPayments = await db.prepare(`
       SELECT p.payment_date, p.amount_ex_gst, p.payment_method, p.transaction_reference,
-             lt.lt_number, lt.name
+             lt.lt_number, lt.name, lt.active as customer_active
       FROM longterm_payments p
-      JOIN longterm_customers lt ON lt.id = p.longterm_customer_id
+      LEFT JOIN longterm_customers lt ON lt.id = p.longterm_customer_id
       WHERE p.carpark_id = ?
         AND substr(trim(COALESCE(p.payment_date,'')),1,10) >= ? AND substr(trim(COALESCE(p.payment_date,'')),1,10) <= ?
       ORDER BY p.payment_date ASC
@@ -282,7 +286,9 @@ router.get('/revenue/csv', requireAuth, async (req, res) => {
     ).join('\n');
     const ltRows = ltPayments.map(p => {
       const inc = (parseFloat(p.amount_ex_gst || 0) * 1.15);
-      const cust = `${p.lt_number || ''} ${p.name || ''}`.trim();
+      let cust = `${p.lt_number || ''} ${p.name || ''}`.trim();
+      if (!cust) cust = '(archived LT customer)';
+      else if (p.customer_active === 0) cust += ' (archived)';
       return [csvField('LT-PAY'), csvField(p.payment_date), csvField(''), csvField(''), csvField(cust), csvField(''),
         csvField(inc.toFixed(2)), csvField('LongTerm'), csvField(inc.toFixed(2)), csvField('0.00'), csvField(''),
         csvField(`${p.payment_method || ''}${p.transaction_reference ? ` (${p.transaction_reference})` : ''}`)].join(',');

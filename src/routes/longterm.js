@@ -44,8 +44,12 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
     const today = ymdToday();
+    const status = String(req.query.status || 'active').toLowerCase();
+    let activeClause = ' AND active = 1';
+    if (status === 'archived') activeClause = ' AND active = 0';
+    else if (status === 'all') activeClause = '';
     const customers = await db.prepare(`
-      SELECT * FROM longterm_customers WHERE carpark_id = ? AND active = 1
+      SELECT * FROM longterm_customers WHERE carpark_id = ?${activeClause}
       ORDER BY CAST(REPLACE(lt_number, 'LT', '') AS INTEGER)
     `).all(carparkId);
     res.json(customers.map(c => withRenewalStatus(c, today)));
@@ -55,15 +59,15 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/next-number', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
-    // Pick the smallest missing LT number among ACTIVE customers.
-    // This ensures:
-    // - Empty list => LT1
-    // - If LT5 is deleted from the middle => next add uses LT5 again
-    // - Easy + safe: no mass-renumbering of existing records required
+    // Pick the smallest missing LT number among all customers (active OR
+    // archived). Archived rows still occupy their lt_number (UNIQUE) — if we
+    // only checked active rows here, this could suggest an archived
+    // customer's number, and creating a new customer with it silently
+    // reactivates + overwrites the archived record (see POST '/').
     const rows = await db.prepare(`
       SELECT lt_number
       FROM longterm_customers
-      WHERE carpark_id = ? AND active = 1
+      WHERE carpark_id = ?
       ORDER BY CAST(REPLACE(lt_number, 'LT', '') AS INTEGER) ASC
     `).all(carparkId);
 
@@ -98,10 +102,13 @@ router.get('/:id/payments', requireAuth, async (req, res) => {
     const ltId = parseInt(req.params.id, 10);
     if (!Number.isFinite(ltId)) return res.status(400).json({ error: 'Invalid LT id' });
 
+    // No `active = 1` filter here — archived customers must still be able
+    // to have their payment history viewed (that's the whole point of
+    // archiving instead of deleting).
     const lt = await db.prepare(`
       SELECT id, contract_amount
       FROM longterm_customers
-      WHERE id = ? AND carpark_id = ? AND active = 1
+      WHERE id = ? AND carpark_id = ?
     `).get(ltId, carparkId);
     if (!lt) return res.status(404).json({ error: 'Long-term customer not found' });
 
@@ -344,27 +351,13 @@ router.post('/', requireAuth, async (req, res) => {
     const { lt_number, name, rego_1, rego_2, phone, email, rate, rate_period, contract_start_date, expiry_date, notes, contract_amount, payment_status } = req.body;
     const existing = await db.prepare('SELECT id, active FROM longterm_customers WHERE lt_number = ? AND carpark_id = ?').get(lt_number, carparkId);
 
-    // If the LT exists but is inactive, reuse the same LT# by reactivating it.
-    // This is required because `lt_number` is UNIQUE in the DB schema.
     if (existing) {
       if (existing.active === 1) return res.status(400).json({ error: 'LT number already exists' });
-
-      await db.prepare(`
-        UPDATE longterm_customers
-        SET active = 1, name=?, rego_1=?, rego_2=?, phone=?, email=?, rate=?, rate_period=?, expiry_date=?, notes=?,
-            contract_start_date=?, contract_amount=?, payment_status=?
-        WHERE id = ?
-      `).run(
-        name, rego_1, rego_2, phone, email,
-        normalizedMoney(rate) || 0, rate_period || 'monthly', expiry_date || null, notes,
-        contract_start_date || null,
-        contract_amount != null && contract_amount !== '' ? parseFloat(contract_amount) : null,
-        payment_status || 'Unpaid',
-        existing.id
-      );
-
-      const customer = await db.prepare('SELECT * FROM longterm_customers WHERE id = ?').get(existing.id);
-      return res.json(customer);
+      // Don't silently overwrite an archived customer's name/rego/etc as a
+      // side effect of "creating" a new one with the same number — that
+      // would misattribute their preserved payment history to whoever gets
+      // typed in next. Require an explicit unarchive instead.
+      return res.status(400).json({ error: `LT number ${lt_number} belongs to an archived customer. Unarchive them from the Archived list, or choose a different LT #.` });
     }
 
     const result = await db.prepare(`
@@ -416,8 +409,12 @@ router.put('/:id', requireAuth, async (req, res) => {
         return res.status(400).json({ error: 'LT number already exists' });
       }
       if (conflict && conflict.active !== 1) {
-        // If there is a non-active row holding the number, remove it to free the unique constraint.
-        await db.prepare('DELETE FROM longterm_customers WHERE id = ? AND carpark_id = ?').run(conflict.id, carparkId);
+        // An archived customer holds this number. Do NOT silently delete
+        // them to free it up — that would destroy their payment history,
+        // exactly what archiving is meant to prevent. Block the rename
+        // instead; staff can pick a different number or unarchive/renumber
+        // the archived record first.
+        return res.status(400).json({ error: `LT number ${nextLtNumber} belongs to an archived customer. Unarchive or renumber them first, or choose a different LT #.` });
       }
 
       // Use normalized value for the update.
@@ -445,18 +442,71 @@ router.put('/:id', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Hard delete. Not used by the normal customer-cleanup flow anymore — use
+// PATCH /:id/archive instead, which keeps the row (and its payment history)
+// intact. This stays only as a last-resort admin tool for correcting a
+// genuinely erroneous entry (e.g. a duplicate created by mistake, never paid).
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
     const before = await db.prepare('SELECT * FROM longterm_customers WHERE id = ?').get(req.params.id);
-    // Hard delete so `lt_number` (UNIQUE) is actually free to reuse.
-    // Soft-delete would keep the lt_number occupied and block "next" numbering.
     await db.prepare('DELETE FROM longterm_customers WHERE id = ?').run(req.params.id);
     if (before) {
       const { userId, userName } = actorFromReq(req);
       await logActivity(db, { carparkId, tableName: 'longterm_customers', recordId: req.params.id, action: 'delete', before, after: null, userId, userName });
     }
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/longterm/:id/archive — soft-delete. Sets active = 0 so the
+// customer drops off the active list but the row (and every
+// longterm_payments row referencing it) is preserved permanently.
+router.patch('/:id/archive', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const ltId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(ltId)) return res.status(400).json({ error: 'Invalid id' });
+
+    const before = await db.prepare('SELECT * FROM longterm_customers WHERE id = ? AND carpark_id = ?').get(ltId, carparkId);
+    if (!before) return res.status(404).json({ error: 'Not found' });
+
+    await db.prepare('UPDATE longterm_customers SET active = 0 WHERE id = ? AND carpark_id = ?').run(ltId, carparkId);
+    const after = await db.prepare('SELECT * FROM longterm_customers WHERE id = ?').get(ltId);
+
+    const { userId, userName } = actorFromReq(req);
+    await logActivity(db, { carparkId, tableName: 'longterm_customers', recordId: ltId, action: 'archive', before, after, userId, userName });
+
+    res.json(after);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/longterm/:id/unarchive — restores an archived customer to the
+// active list. Blocked if another active customer has since taken the same
+// LT # (that number would need to be freed up on the other customer first).
+router.patch('/:id/unarchive', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const ltId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(ltId)) return res.status(400).json({ error: 'Invalid id' });
+
+    const before = await db.prepare('SELECT * FROM longterm_customers WHERE id = ? AND carpark_id = ?').get(ltId, carparkId);
+    if (!before) return res.status(404).json({ error: 'Not found' });
+
+    const conflict = await db.prepare(`
+      SELECT id FROM longterm_customers WHERE carpark_id = ? AND lt_number = ? AND active = 1 AND id != ?
+    `).get(carparkId, before.lt_number, ltId);
+    if (conflict) {
+      return res.status(400).json({ error: `LT number ${before.lt_number} is already in use by an active customer. Change their LT # before unarchiving this one.` });
+    }
+
+    await db.prepare('UPDATE longterm_customers SET active = 1 WHERE id = ? AND carpark_id = ?').run(ltId, carparkId);
+    const after = await db.prepare('SELECT * FROM longterm_customers WHERE id = ?').get(ltId);
+
+    const { userId, userName } = actorFromReq(req);
+    await logActivity(db, { carparkId, tableName: 'longterm_customers', recordId: ltId, action: 'unarchive', before, after, userId, userName });
+
+    res.json(after);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

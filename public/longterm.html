@@ -23,6 +23,13 @@
       Checking renewal dates...
     </div>
 
+    <div class="d-flex align-items-center mb-2">
+      <div class="btn-group btn-group-sm" role="group" id="lt-status-filter">
+        <button type="button" class="btn btn-outline-primary active" data-status="active">Active</button>
+        <button type="button" class="btn btn-outline-secondary" data-status="archived">Archived</button>
+      </div>
+    </div>
+
     <!-- Column headers (same 8-column grid as .lt-card: renewal + payment match badges) -->
     <div class="row g-2 mb-2 px-1">
       <div class="col-12 col-md-6">
@@ -66,6 +73,10 @@
         </div>
         <div class="modal-body">
           <input type="hidden" id="lt-id">
+          <input type="hidden" id="lt-active" value="1">
+          <div class="alert alert-secondary small mb-3" id="lt-archived-banner" style="display:none;">
+            <i class="bi bi-archive me-1"></i> This customer is archived (off the active list). Their details and full payment history are preserved — unarchive to add new payments or edit contract terms.
+          </div>
           <div class="row g-3">
             <div class="col-md-3">
               <label class="form-label">LT #</label>
@@ -214,7 +225,12 @@
           </button>
           <div class="ms-auto d-flex gap-2">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="button" class="btn btn-danger" id="btn-delete-lt" style="display:none;">Delete</button>
+            <button type="button" class="btn btn-outline-danger" id="btn-archive-lt" style="display:none;">
+              <i class="bi bi-archive me-1"></i>Archive
+            </button>
+            <button type="button" class="btn btn-outline-success" id="btn-unarchive-lt" style="display:none;">
+              <i class="bi bi-arrow-counterclockwise me-1"></i>Unarchive
+            </button>
             <button type="button" class="btn btn-success" id="btn-save-lt">Save</button>
           </div>
         </div>
@@ -319,14 +335,25 @@
       `;
     }
 
-    async function loadLongTerm() {
-      const res = await fetch('/api/longterm');
+    let currentLtStatus = 'active';
+
+    async function loadLongTerm(status) {
+      if (status) currentLtStatus = status;
+      const res = await fetch(`/api/longterm?status=${currentLtStatus}`);
       if (!res.ok) return;
       const customers = await res.json();
-      renderRenewalSummary(customers);
+
+      const summaryEl = document.getElementById('renewal-summary');
+      if (currentLtStatus === 'active') {
+        summaryEl.style.display = '';
+        renderRenewalSummary(customers);
+      } else {
+        summaryEl.style.display = 'none';
+      }
 
       if (customers.length === 0) {
-        document.getElementById('lt-grid').innerHTML = '<div class="col-12 text-center text-muted py-4">No long term customers yet.</div>';
+        const label = currentLtStatus === 'archived' ? 'archived' : 'active';
+        document.getElementById('lt-grid').innerHTML = `<div class="col-12 text-center text-muted py-4">No ${label} long term customers${currentLtStatus === 'active' ? ' yet' : ''}.</div>`;
         return;
       }
 
@@ -340,7 +367,7 @@
           <div class="lt-card mb-2">
             <div class="lt-number">${c.lt_number}</div>
             <div class="lt-name" title="${escapeAttr(c.name)}">${escapeHtml(c.name)}</div>
-            <div class="lt-cell-renewal">${renewalBadge(c)}</div>
+            <div class="lt-cell-renewal">${currentLtStatus === 'archived' ? '<span class="badge bg-secondary">Archived</span>' : renewalBadge(c)}</div>
             <div class="lt-cell-payment">${paymentBadgeHtml(c)}</div>
             ${c.rego_1 ? `<span class="lt-rego">${c.rego_1}</span>` : '<span class="lt-rego text-muted">—</span>'}
             ${c.rego_2 ? `<span class="lt-rego">${c.rego_2}</span>` : '<span class="lt-rego text-muted" style="opacity:0.3;">—</span>'}
@@ -435,8 +462,9 @@
 
     function updateLtPaymentButtons() {
       const id = document.getElementById('lt-id').value;
+      const isActive = document.getElementById('lt-active').value !== '0';
       const btn = document.getElementById('btn-add-lt-payment');
-      if (btn) btn.disabled = !id;
+      if (btn) btn.disabled = !id || !isActive;
     }
 
     async function loadLtPayments(ltId) {
@@ -525,6 +553,8 @@
 
     function openEditModal(lt) {
       document.getElementById('lt-id').value = lt.id;
+      const isActive = lt.active !== 0 && lt.active !== '0';
+      document.getElementById('lt-active').value = isActive ? '1' : '0';
       document.getElementById('lt-modal-title').textContent = `Edit Long Term - ${lt.lt_number}`;
       document.getElementById('lt-number').value = lt.lt_number;
       document.getElementById('lt-name').value = lt.name;
@@ -548,7 +578,9 @@
       const ks = document.getElementById('lt-key-status');
       if (ks) ks.value = Number(currentInYard) === 1 || currentInYard === true ? 'in_yard' : 'released';
       populateLtKeyOptions(currentKeySlot || null);
-      document.getElementById('btn-delete-lt').style.display = 'inline-block';
+      document.getElementById('btn-archive-lt').style.display = isActive ? 'inline-block' : 'none';
+      document.getElementById('btn-unarchive-lt').style.display = isActive ? 'none' : 'inline-block';
+      document.getElementById('lt-archived-banner').style.display = isActive ? 'none' : 'block';
       updateLtEmailButtons();
       updateLtPaymentButtons();
       setLtPaymentDefaults();
@@ -566,6 +598,7 @@
       }
 
       document.getElementById('lt-id').value = '';
+      document.getElementById('lt-active').value = '1';
       document.getElementById('lt-modal-title').textContent = 'Add Long Term Customer';
       document.getElementById('lt-number').value = ltNum;
       document.getElementById('lt-name').value = '';
@@ -584,7 +617,9 @@
       document.getElementById('lt-notes').value = '';
       const ps = document.getElementById('lt-payment-status');
       if (ps) ps.value = 'Unpaid';
-      document.getElementById('btn-delete-lt').style.display = 'none';
+      document.getElementById('btn-archive-lt').style.display = 'none';
+      document.getElementById('btn-unarchive-lt').style.display = 'none';
+      document.getElementById('lt-archived-banner').style.display = 'none';
       updateLtEmailButtons();
       updateLtPaymentButtons();
       setLtPaymentDefaults();
@@ -749,15 +784,40 @@
       }
     });
 
-    document.getElementById('btn-delete-lt').addEventListener('click', async () => {
+    document.getElementById('btn-archive-lt').addEventListener('click', async () => {
       const id = document.getElementById('lt-id').value;
-      if (!id || !confirm('Remove this long term customer?')) return;
-      const res = await fetch(`/api/longterm/${id}`, { method: 'DELETE' });
+      if (!id || !confirm('Archive this long term customer? They will be removed from the active list, but their details and full payment history are kept permanently.')) return;
+      const res = await fetch(`/api/longterm/${id}/archive`, { method: 'PATCH' });
       if (res.ok) {
-        showAlert('Long term customer removed', 'warning');
+        showAlert('Long term customer archived', 'warning');
         bootstrap.Modal.getInstance('#ltModal').hide();
         loadLongTerm();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showAlert(err.error || 'Error archiving customer', 'danger');
       }
+    });
+
+    document.getElementById('btn-unarchive-lt').addEventListener('click', async () => {
+      const id = document.getElementById('lt-id').value;
+      if (!id) return;
+      const res = await fetch(`/api/longterm/${id}/unarchive`, { method: 'PATCH' });
+      if (res.ok) {
+        showAlert('Long term customer unarchived', 'success');
+        bootstrap.Modal.getInstance('#ltModal').hide();
+        loadLongTerm();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showAlert(err.error || 'Error unarchiving customer', 'danger');
+      }
+    });
+
+    document.querySelectorAll('#lt-status-filter button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#lt-status-filter button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadLongTerm(btn.dataset.status);
+      });
     });
 
     async function init() {

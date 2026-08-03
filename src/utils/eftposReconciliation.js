@@ -71,10 +71,12 @@ async function getEftposReconciliation(db, { carparkId, date }) {
   }
 
   // 3) Long-term prepayments — group by swipe (batch), not by recognition month
+  // LEFT JOIN: an archived customer's payment must still show up in the
+  // day's eftpos reconciliation — an INNER JOIN would silently drop it.
   const ltRows = await db.prepare(`
     SELECT lp.*, lc.lt_number, lc.name
     FROM longterm_payments lp
-    JOIN longterm_customers lc ON lc.id = lp.longterm_customer_id
+    LEFT JOIN longterm_customers lc ON lc.id = lp.longterm_customer_id
     WHERE lp.carpark_id = ? AND lp.payment_method = 'Eftpos'
       AND substr(trim(COALESCE(NULLIF(trim(lp.cash_received_date), ''), lp.payment_date)), 1, 10) = ?
   `).all(carparkId, date);
@@ -84,7 +86,8 @@ async function getEftposReconciliation(db, { carparkId, date }) {
     // present, otherwise the raw row id (NOT a prefixed string) — legacy rows
     // predating payment_batch_id fall into the second case.
     const key = r.payment_batch_id || r.id;
-    if (!ltRefByBatch.has(key)) ltRefByBatch.set(key, `${r.lt_number} — ${r.name}`);
+    const label = r.lt_number || r.name ? `${r.lt_number || ''} — ${r.name || ''}`.trim() : '(archived LT customer)';
+    if (!ltRefByBatch.has(key)) ltRefByBatch.set(key, label);
   }
   const ltCollapsed = collapsePaymentsForDisplay(ltRows);
   for (const b of ltCollapsed) {
