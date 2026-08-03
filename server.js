@@ -10,6 +10,7 @@ const { getSessionSecret } = require('./src/utils/config');
 const { getAccountStatementData } = require('./src/utils/paymentAllocation');
 const { buildInvoicePdfBuffer } = require('./src/utils/invoicePdf');
 const { buildAccountEmailHTML } = require('./src/routes/email');
+const { autoCancelOverdueBookings } = require('./src/utils/autoCancelBookings');
 
 const app = express();
 
@@ -332,6 +333,28 @@ app.post('/api/admin/run-month-end-emails', async (req, res) => {
     res.json({ success: true, ...result });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Failed to run month-end emails' });
+  }
+});
+
+// ─── Scheduled job: expire un-allocated online bookings ───────────────────────
+// Runs shortly after midnight NZ time. Anything still 'pending' whose
+// drop-off date has fully ended (NZ time) flips to 'auto_cancelled'.
+cron.schedule('15 0 * * *', async () => {
+  try {
+    await autoCancelOverdueBookings();
+  } catch (err) {
+    console.error('Auto-cancel bookings job error:', err);
+  }
+}, { timezone: 'Pacific/Auckland' });
+
+// ─── Admin: manually trigger the auto-cancel sweep now ────────────────────────
+app.post('/api/admin/run-auto-cancel-bookings', async (req, res) => {
+  if (!req.session || req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  try {
+    const result = await autoCancelOverdueBookings();
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Failed to run auto-cancel sweep' });
   }
 });
 

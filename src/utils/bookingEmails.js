@@ -117,6 +117,19 @@ async function notifyCustomerNoShow(booking) {
   await send(booking.email, 'Missed booking - BOI Car Storage', html, 'customer: no-show');
 }
 
+// Nobody allocated the booking before the drop-off date ended — expired,
+// not manually cancelled. Customer-only; staff already see it drop off the
+// Pre-Bookings list, so a separate admin email would just be noise.
+async function notifyCustomerBookingAutoCancelled(booking) {
+  const html = wrap('Your booking has expired', `
+    <p>Hi ${booking.first_name || booking.firstName || ''},</p>
+    <p>We weren't able to confirm your booking before its drop-off date, so it's now expired.
+    If you still need parking, please submit a new booking or get in touch.</p>
+    ${detailsTable(booking)}
+  `);
+  await send(booking.email, 'Your booking has expired - BOI Car Storage', html, 'customer: auto-cancelled');
+}
+
 function appUrl() {
   const explicit = (process.env.APP_BASE_URL || '').trim().replace(/\/$/, '');
   if (explicit) return explicit;
@@ -132,4 +145,5 @@ module.exports = {
   notifyCustomerBookingCancelled,
   notifyAdminBookingCancelledByCustomer,
   notifyCustomerNoShow,
+  notifyCustomerBookingAutoCancelled,
 };
