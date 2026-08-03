@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { db } = require('../database');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { getSessionSecret } = require('../utils/config');
+const { logActivity, actorFromReq } = require('../utils/audit');
 const router = express.Router();
 
 const JWT_SECRET = () => getSessionSecret();
@@ -441,6 +442,39 @@ router.get('/backfill/check-account', requireAuth, requireAdmin, async (req, res
     }
     res.json(out);
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/admin/cleanup-customer-account
+// Admin-only maintenance tool: removes a customer portal account (and any
+// bookings tied to it) by exact email match. Goes through the app's normal
+// db.prepare()/run() path — same in-memory copy the rest of the app uses,
+// so the change persists correctly through the next save-to-disk instead of
+// racing a direct file edit. Intended for removing test/mistaken accounts,
+// not a bulk-delete tool — nothing else in the schema is touched.
+router.post('/cleanup-customer-account', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email is required' });
+
+    const customer = await db.prepare('SELECT * FROM customer_accounts WHERE email = ?').get(email);
+    if (!customer) return res.status(404).json({ error: 'No customer account found for that email' });
+
+    const bookings = await db.prepare('SELECT * FROM bookings WHERE customer_account_id = ?').all(customer.id);
+    await db.prepare('DELETE FROM bookings WHERE customer_account_id = ?').run(customer.id);
+    await db.prepare('DELETE FROM customer_accounts WHERE id = ?').run(customer.id);
+
+    const carparkId = req.session.carparkId || 1;
+    const { userId, userName } = actorFromReq(req);
+    await logActivity(db, {
+      carparkId, tableName: 'customer_accounts', recordId: customer.id, action: 'delete',
+      before: { customer, bookings }, after: null, userId, userName,
+      notes: 'Manual admin cleanup via /api/admin/cleanup-customer-account',
+    });
+
+    res.json({ success: true, deletedCustomerId: customer.id, bookingsDeleted: bookings.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
