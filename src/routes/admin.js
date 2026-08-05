@@ -153,6 +153,59 @@ router.get('/staff-list', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/admin/staff-codes-list — active-only, lightweight lookup used by
+// the "enter your staff code" prompt shown to any logged-in staff member
+// (not just admins) when logging a booking or a return.
+router.get('/staff-codes-list', requireAuth, async (req, res) => {
+  try {
+    const codes = await db.prepare('SELECT id, code, name FROM staff_codes WHERE carpark_id = ? AND active = 1 ORDER BY name').all(req.session.carparkId || 1);
+    res.json(codes);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/admin/staff-codes — full list (active + inactive) for admin management.
+router.get('/staff-codes', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const codes = await db.prepare('SELECT * FROM staff_codes WHERE carpark_id = ? ORDER BY name').all(req.session.carparkId || 1);
+    res.json(codes);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/staff-codes', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const code = String(req.body.code || '').trim().toUpperCase();
+    const name = String(req.body.name || '').trim();
+    if (!code) return res.status(400).json({ error: 'Code is required' });
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    const existing = await db.prepare('SELECT id FROM staff_codes WHERE carpark_id = ? AND UPPER(code) = ? AND active = 1').get(carparkId, code);
+    if (existing) return res.status(400).json({ error: 'That code is already in use by an active staff member' });
+    const result = await db.prepare('INSERT INTO staff_codes (carpark_id, code, name, active) VALUES (?, ?, ?, 1)')
+      .run(carparkId, code, name);
+    const row = await db.prepare('SELECT * FROM staff_codes WHERE id = ?').get(result.lastInsertRowid);
+    res.status(201).json(row);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/staff-codes/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const code = String(req.body.code || '').trim().toUpperCase();
+    const name = String(req.body.name || '').trim();
+    const active = req.body.active === true || req.body.active === 1 || req.body.active === '1';
+    if (!code) return res.status(400).json({ error: 'Code is required' });
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    if (active) {
+      const existing = await db.prepare('SELECT id FROM staff_codes WHERE carpark_id = ? AND UPPER(code) = ? AND active = 1 AND id != ?').get(carparkId, code, req.params.id);
+      if (existing) return res.status(400).json({ error: 'That code is already in use by an active staff member' });
+    }
+    await db.prepare('UPDATE staff_codes SET code = ?, name = ?, active = ? WHERE id = ? AND carpark_id = ?')
+      .run(code, name, active ? 1 : 0, req.params.id, carparkId);
+    const row = await db.prepare('SELECT * FROM staff_codes WHERE id = ?').get(req.params.id);
+    res.json(row);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // PUT /api/admin/me — change own username and/or password (current password required)
 router.put('/me', requireAuth, async (req, res) => {
   try {

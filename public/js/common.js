@@ -304,3 +304,114 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+// ─── Staff code prompt ──────────────────────────────────────────────────────
+// Shared browser terminals stay logged in as one account all shift, so
+// req.session alone can't say which staff member actually did a given
+// booking or return. This prompts for a short per-person code (set up in
+// Admin > Staff Codes) at the moment of the action, so it can be attributed
+// accurately. Returns { code, name } on confirm, or null if cancelled.
+let _staffCodesCache = null;
+async function _loadStaffCodes() {
+  if (_staffCodesCache) return _staffCodesCache;
+  try {
+    const res = await fetch('/api/admin/staff-codes-list');
+    _staffCodesCache = res.ok ? await res.json() : [];
+  } catch (_) {
+    _staffCodesCache = [];
+  }
+  return _staffCodesCache;
+}
+
+function _ensureStaffCodeModal() {
+  if (document.getElementById('staffCodePromptModal')) return;
+  const div = document.createElement('div');
+  div.innerHTML = `
+    <div class="modal fade" id="staffCodePromptModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Who's logging this?</h5>
+          </div>
+          <div class="modal-body">
+            <label class="form-label">Staff code</label>
+            <input type="text" class="form-control text-uppercase" id="staff-code-prompt-input" style="text-transform:uppercase" placeholder="e.g. NL0321" autocomplete="off">
+            <div class="form-text" id="staff-code-prompt-match">&nbsp;</div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="staff-code-prompt-cancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="staff-code-prompt-continue" disabled>Continue</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(div.firstElementChild);
+}
+
+function promptStaffCode() {
+  return new Promise(async (resolve) => {
+    _ensureStaffCodeModal();
+    const codes = await _loadStaffCodes();
+    const input = document.getElementById('staff-code-prompt-input');
+    const matchEl = document.getElementById('staff-code-prompt-match');
+    const continueBtn = document.getElementById('staff-code-prompt-continue');
+    const cancelBtn = document.getElementById('staff-code-prompt-cancel');
+    const modalEl = document.getElementById('staffCodePromptModal');
+    const modal = new bootstrap.Modal(modalEl);
+
+    let matched = null;
+    function checkInput() {
+      const val = input.value.trim().toUpperCase();
+      matched = codes.find(c => c.code.toUpperCase() === val) || null;
+      if (!val) {
+        matchEl.textContent = codes.length === 0 ? 'No staff codes set up yet — add one in Admin > Staff Codes.' : ' ';
+        matchEl.className = 'form-text';
+      } else if (matched) {
+        matchEl.textContent = `✓ ${matched.name}`;
+        matchEl.className = 'form-text text-success';
+      } else {
+        matchEl.textContent = 'Code not recognised — check with your manager.';
+        matchEl.className = 'form-text text-danger';
+      }
+      continueBtn.disabled = !matched;
+    }
+
+    let settled = false;
+    function cleanup() {
+      input.removeEventListener('input', checkInput);
+      input.removeEventListener('keydown', onKeydown);
+      continueBtn.removeEventListener('click', onContinue);
+      cancelBtn.removeEventListener('click', onCancel);
+      modalEl.removeEventListener('hidden.bs.modal', onHidden);
+    }
+    function onContinue() {
+      if (!matched) return;
+      settled = true;
+      modal.hide();
+      resolve({ code: matched.code, name: matched.name });
+    }
+    function onCancel() {
+      modal.hide();
+    }
+    function onKeydown(e) {
+      if (e.key === 'Enter' && matched) onContinue();
+    }
+    function onHidden() {
+      cleanup();
+      if (!settled) resolve(null);
+    }
+
+    input.value = '';
+    matchEl.textContent = ' ';
+    matchEl.className = 'form-text';
+    continueBtn.disabled = true;
+    input.addEventListener('input', checkInput);
+    input.addEventListener('keydown', onKeydown);
+    continueBtn.addEventListener('click', onContinue);
+    cancelBtn.addEventListener('click', onCancel);
+    modalEl.addEventListener('hidden.bs.modal', onHidden);
+
+    modal.show();
+    setTimeout(() => input.focus(), 300);
+  });
+}

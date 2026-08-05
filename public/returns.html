@@ -195,10 +195,22 @@
         btn.addEventListener('click', async () => {
           const id = btn.dataset.id;
           const status = btn.dataset.status === 'Car In Yard' ? 'Picked Up' : 'Car In Yard';
+
+          // Only prompt when actually logging the return (not when undoing
+          // one back to "Car In Yard" — that's a correction, not a new event).
+          let staffCode = null;
+          if (status === 'Picked Up') {
+            staffCode = await promptStaffCode();
+            if (!staffCode) return; // cancelled
+          }
+
           const res = await fetch(`/api/returns/${id}/pickup`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ picked_up: status })
+            body: JSON.stringify({
+              picked_up: status,
+              ...(staffCode ? { staff_code: staffCode.code, staff_code_name: staffCode.name } : {})
+            })
           });
           if (res.ok) {
             const result = await res.json().catch(() => ({}));

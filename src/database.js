@@ -385,6 +385,23 @@ async function initializeDatabase() {
   )`);
   try { x(`ALTER TABLE invoices ADD COLUMN payment_date_1 DATE`); } catch (_) {}
   try { x(`ALTER TABLE invoices ADD COLUMN payment_date_2 DATE`); } catch (_) {}
+  // Denormalized (not a users FK) — the staff code that logged/returned this
+  // booking, captured via the per-transaction prompt rather than whoever's
+  // browser session happens to be logged in. Stored as text so history stays
+  // readable even if a code is later renamed or deactivated.
+  try { x(`ALTER TABLE invoices ADD COLUMN staff_code TEXT`); } catch (_) {}
+  try { x(`ALTER TABLE invoices ADD COLUMN staff_code_name TEXT`); } catch (_) {}
+  try { x(`ALTER TABLE invoices ADD COLUMN return_staff_code TEXT`); } catch (_) {}
+  try { x(`ALTER TABLE invoices ADD COLUMN return_staff_code_name TEXT`); } catch (_) {}
+
+  x(`CREATE TABLE IF NOT EXISTS staff_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    carpark_id INTEGER DEFAULT 1,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
 
   x(`CREATE TABLE IF NOT EXISTS key_box (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

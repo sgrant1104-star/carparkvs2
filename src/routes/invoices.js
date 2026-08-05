@@ -285,7 +285,8 @@ router.post('/', requireAuth, async (req, res) => {
       flight_info, flight_type, total_price, credit_applied, discount_percent,
       paid_status, payment_amount, payment_method, paid_status_2, payment_amount_2, payment_method_2,
       payment_date_1, payment_date_2,
-      do_not_move, picked_up, staff_id, notes, customer_alert
+      do_not_move, picked_up, staff_id, notes, customer_alert,
+      staff_code, staff_code_name
     } = req.body;
 
     const existing = await db.prepare('SELECT id FROM invoices WHERE invoice_number = ? AND carpark_id = ?').get(invoice_number, carparkId);
@@ -318,8 +319,8 @@ router.post('/', requireAuth, async (req, res) => {
         flight_info, flight_type, total_price, credit_applied, discount_percent,
         paid_status, payment_amount, payment_method, paid_status_2, payment_amount_2, payment_method_2,
         payment_date_1, payment_date_2,
-        do_not_move, picked_up, staff_id, notes, customer_alert
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        do_not_move, picked_up, staff_id, notes, customer_alert, staff_code, staff_code_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       invoice_number, carparkId, customer_id || null, account_customer_id || null, key_number || null, no_key ? 1 : 0,
       rego, first_name, last_name, phone, email,
@@ -328,7 +329,8 @@ router.post('/', requireAuth, async (req, res) => {
       paid_status || 'To Pay', payment_amount || 0, payment_method,
       paid_status_2 || null, payment_amount_2 || 0, payment_method_2 || null,
       paymentDate1, paymentDate2,
-      do_not_move ? 1 : 0, finalPickedUp, staff_id || req.session.userId, notes, customer_alert
+      do_not_move ? 1 : 0, finalPickedUp, staff_id || req.session.userId, notes, customer_alert,
+      staff_code || null, staff_code_name || null
     );
 
     await syncKeyBoxForPickedUp(db, carparkId, result.lastInsertRowid, {

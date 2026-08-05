@@ -86,13 +86,18 @@ router.get('/', requireAuth, async (req, res) => {
 router.post('/:id/pickup', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { picked_up } = req.body;
+    const { picked_up, staff_code, staff_code_name } = req.body;
     const carparkId = req.session.carparkId || 1;
     const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ? AND carpark_id = ?').get(id, carparkId);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     const final = picked_up || 'Picked Up';
-    await db.prepare("UPDATE invoices SET picked_up = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-      .run(final, id);
+    if (final === 'Picked Up' && staff_code) {
+      await db.prepare("UPDATE invoices SET picked_up = ?, return_staff_code = ?, return_staff_code_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .run(final, staff_code, staff_code_name || null, id);
+    } else {
+      await db.prepare("UPDATE invoices SET picked_up = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .run(final, id);
+    }
     // Mirror Invoice save: Pick Up / not in yard → key free; In Yard → key tied to this booking again
     await syncKeyBoxForPickedUp(db, carparkId, Number(id), invoice, final);
 

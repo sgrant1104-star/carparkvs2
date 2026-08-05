@@ -202,6 +202,7 @@ async function newInvoice() {
   availableCreditInfo = null;
   document.getElementById('credit-display').innerHTML = 'N/A';
   document.getElementById('amount-due-hint').classList.add('d-none');
+  document.getElementById('inv-staff-code-display').textContent = '';
   document.getElementById('inv-id').value = '';
   document.getElementById('inv-customer-id').value = '';
   document.getElementById('inv-rego').value = '';
@@ -306,6 +307,9 @@ async function loadInvoice(invoiceNumber, invoiceId) {
   currentInvoiceId = inv.id;
   document.getElementById('inv-id').value = inv.id;
   document.getElementById('inv-number-display').textContent = inv.invoice_number;
+  document.getElementById('inv-staff-code-display').textContent = inv.staff_code_name
+    ? `Logged by: ${inv.staff_code_name} (${inv.staff_code})${inv.return_staff_code_name ? ` · Returned by: ${inv.return_staff_code_name} (${inv.return_staff_code})` : ''}`
+    : '';
   document.getElementById('inv-customer-id').value = inv.customer_id || '';
   document.getElementById('inv-rego').value = inv.rego || '';
   document.getElementById('inv-last-name').value = inv.last_name || '';
@@ -1055,6 +1059,14 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
     return;
   }
 
+  // Who's actually logging this booking? Only asked on brand-new bookings —
+  // not on every subsequent edit of the same invoice.
+  let staffCode = null;
+  if (!currentInvoiceId) {
+    staffCode = await promptStaffCode();
+    if (!staffCode) return; // cancelled
+  }
+
   // Prevent the exact data problem this was designed to catch: staff typing
   // in a payment amount but leaving PAID STATUS on the placeholder, which
   // used to silently save as "To Pay" (unpaid) even though money was
@@ -1111,7 +1123,8 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
     staff_id: document.getElementById('inv-staff').value,
     notes: document.getElementById('inv-notes').value,
     customer_alert: getCustomerAlertText() || null,
-    credit_applied: existingCreditApplied
+    credit_applied: existingCreditApplied,
+    ...(staffCode ? { staff_code: staffCode.code, staff_code_name: staffCode.name } : {})
   };
 
   _saving = true;
@@ -1150,6 +1163,9 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
       currentInvoiceId = inv.id;
       document.getElementById('inv-id').value = inv.id;
       document.getElementById('inv-status-badge').innerHTML = `<span class="badge bg-success">SAVED</span>`;
+      document.getElementById('inv-staff-code-display').textContent = inv.staff_code_name
+        ? `Logged by: ${inv.staff_code_name} (${inv.staff_code})`
+        : '';
 
       // Actually consume the staged credit now that the invoice has a real ID.
       // This is the ONLY place that debits the credit ledger — the payload's
