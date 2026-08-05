@@ -532,6 +532,10 @@ async function initializeDatabase() {
     error_msg TEXT,
     recipient_email TEXT
   )`);
+  // customer_type distinguishes on-account vs long-term rows; longterm_customer_id
+  // parallels account_customer_id so long-term sends can be logged the same way.
+  try { x(`ALTER TABLE email_logs ADD COLUMN customer_type TEXT DEFAULT 'account'`); } catch (_) {}
+  try { x(`ALTER TABLE email_logs ADD COLUMN longterm_customer_id INTEGER`); } catch (_) {}
 
   // ── Seed data (INSERT OR IGNORE / check-first so re-runs are safe) ─────────
   const cp = await db.prepare('SELECT id FROM carparks WHERE id = 1').get();

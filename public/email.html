@@ -84,10 +84,10 @@
       <div class="table-responsive">
         <table class="table table-sm table-hover">
           <thead>
-            <tr><th>Date Sent</th><th>Account</th><th>Month/Year</th><th>Recipient</th><th>Status</th><th>Error</th><th>Actions</th></tr>
+            <tr><th>Date Sent</th><th>Type</th><th>Account</th><th>Month/Year</th><th>Recipient</th><th>Status</th><th>Error</th><th>Actions</th></tr>
           </thead>
           <tbody id="email-logs-tbody">
-            <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
+            <tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -307,11 +307,12 @@
       document.getElementById('email-logs-tbody').innerHTML = logs.length > 0 ? logs.map(l => `
         <tr>
           <td class="small">${l.sent_at ? new Date(l.sent_at).toLocaleString('en-NZ') : '—'}</td>
+          <td><span class="badge bg-light text-dark border">${l.customer_type === 'longterm' ? 'Long-term' : 'Account'}</span></td>
           <td class="fw-bold">${escapeHtml(l.account_name||'')}</td>
           <td>${monthName(l.month)} ${l.year}</td>
           <td class="small">${l.recipient_email||''}</td>
           <td>
-            <span class="badge ${l.status === 'sent' ? 'bg-success' : 'bg-danger'}">${l.status}</span>
+            <span class="badge ${l.status === 'sent' ? 'bg-success' : (l.status === 'skipped' ? 'bg-secondary' : 'bg-danger')}">${l.status}</span>
           </td>
           <td class="small text-danger">${l.error_msg||''}</td>
           <td class="small">
@@ -322,7 +323,7 @@
             </div>
           </td>
         </tr>
-      `).join('') : '<tr><td colspan="7" class="text-center text-muted">No emails sent yet</td></tr>';
+      `).join('') : '<tr><td colspan="8" class="text-center text-muted">No emails sent yet</td></tr>';
 
       document.querySelectorAll('.btn-log-delete').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -339,6 +340,7 @@
             const dateSent = l.sent_at ? new Date(l.sent_at).toLocaleString('en-NZ') : '—';
             document.getElementById('email-log-detail-body').innerHTML = `
               <div class="small"><strong>Date Sent:</strong> ${dateSent}</div>
+              <div class="small mt-1"><strong>Type:</strong> ${l.customer_type === 'longterm' ? 'Long-term' : 'Account'}</div>
               <div class="small mt-1"><strong>Account:</strong> ${l.account_name || '—'}</div>
               <div class="small mt-1"><strong>Month/Year:</strong> ${monthName(l.month)} ${l.year || ''}</div>
               <div class="small mt-1"><strong>Recipient:</strong> ${l.recipient_email || '—'}</div>

@@ -201,14 +201,30 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
             carparkId: carpark.id, accountIds: [account.id], startDate, endDate,
           });
 
-          if (statementData.allInvoices.length === 0) continue;
+          if (statementData.allInvoices.length === 0) {
+            await db.prepare(`INSERT INTO email_logs
+              (carpark_id, account_customer_id, account_name, month, year, status, error_msg, recipient_email, customer_type)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'account')`)
+              .run(carpark.id, account.id, account.company_name, month, year, 'skipped', 'No invoices this month', '');
+            continue;
+          }
           if (statementData.outstandingInvoices.length === 0) {
             console.log(`[month-end email] Skipping ${account.company_name} — already paid in full for ${monthName} ${year}.`);
+            await db.prepare(`INSERT INTO email_logs
+              (carpark_id, account_customer_id, account_name, month, year, status, error_msg, recipient_email, customer_type)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'account')`)
+              .run(carpark.id, account.id, account.company_name, month, year, 'skipped', 'Already paid in full', '');
             continue;
           }
 
           const emailTo = account.billing_email || account.email;
-          if (!emailTo) continue;
+          if (!emailTo) {
+            await db.prepare(`INSERT INTO email_logs
+              (carpark_id, account_customer_id, account_name, month, year, status, error_msg, recipient_email, customer_type)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'account')`)
+              .run(carpark.id, account.id, account.company_name, month, year, 'failed', 'No billing email', '');
+            continue;
+          }
 
           const invNo = `ACC-${year}${m}-${account.id}`;
           const html = buildAccountEmailHTML(carpark, account, statementData, monthName, year, m, dueDateYmd);
@@ -232,15 +248,15 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
               attachments,
             });
             await db.prepare(`INSERT INTO email_logs
-              (carpark_id, account_customer_id, account_name, month, year, sent_at, status, recipient_email)
-              VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`)
+              (carpark_id, account_customer_id, account_name, month, year, sent_at, status, recipient_email, customer_type)
+              VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, 'account')`)
               .run(carpark.id, account.id, account.company_name, month, year, 'sent', emailTo);
             console.log(`Sent account email to ${emailTo}`);
           } catch (err) {
             console.error(`Failed to send to ${emailTo}:`, err.message);
             await db.prepare(`INSERT INTO email_logs
-              (carpark_id, account_customer_id, account_name, month, year, status, error_msg, recipient_email)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+              (carpark_id, account_customer_id, account_name, month, year, status, error_msg, recipient_email, customer_type)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'account')`)
               .run(carpark.id, account.id, account.company_name, month, year, 'failed', err.message, emailTo);
           }
         }
@@ -251,11 +267,21 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
         const ltCustomers = await db.prepare('SELECT * FROM longterm_customers WHERE carpark_id = ? AND active = 1').all(carpark.id);
         for (const lt of ltCustomers) {
           const emailTo = String(lt.email || '').trim();
-          if (!emailTo) continue;
+          if (!emailTo) {
+            await db.prepare(`INSERT INTO email_logs
+              (carpark_id, longterm_customer_id, account_name, month, year, status, error_msg, recipient_email, customer_type)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'longterm')`)
+              .run(carpark.id, lt.id, lt.name, month, year, 'failed', 'No email on file', '');
+            continue;
+          }
 
           // Skip if the contract has already ended — no ongoing obligation to bill.
           if (lt.expiry_date && String(lt.expiry_date).slice(0, 10) < startDate) {
             console.log(`[month-end email] Skipping ${lt.name} — contract expired ${lt.expiry_date}.`);
+            await db.prepare(`INSERT INTO email_logs
+              (carpark_id, longterm_customer_id, account_name, month, year, status, error_msg, recipient_email, customer_type)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'longterm')`)
+              .run(carpark.id, lt.id, lt.name, month, year, 'skipped', `Contract expired ${lt.expiry_date}`, emailTo);
             continue;
           }
 
@@ -272,6 +298,10 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
           const paidForMonth = parseFloat(monthPaidRow?.paid || 0);
           if (paidForMonth >= monthlyRate - 0.01) {
             console.log(`[month-end email] Skipping ${lt.name} — already paid for ${monthName} ${year} ($${paidForMonth.toFixed(2)}).`);
+            await db.prepare(`INSERT INTO email_logs
+              (carpark_id, longterm_customer_id, account_name, month, year, status, error_msg, recipient_email, customer_type)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'longterm')`)
+              .run(carpark.id, lt.id, lt.name, month, year, 'skipped', `Already paid ($${paidForMonth.toFixed(2)})`, emailTo);
             continue;
           }
 
@@ -296,8 +326,17 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
               subject: `${carpark.name} - Long-term Monthly Invoice (${monthName} ${year})`,
               html
             });
+            await db.prepare(`INSERT INTO email_logs
+              (carpark_id, longterm_customer_id, account_name, month, year, sent_at, status, recipient_email, customer_type)
+              VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, 'longterm')`)
+              .run(carpark.id, lt.id, lt.name, month, year, 'sent', emailTo);
+            console.log(`Sent LT monthly email to ${emailTo}`);
           } catch (err) {
             console.error(`Failed LT monthly send to ${emailTo}:`, err.message);
+            await db.prepare(`INSERT INTO email_logs
+              (carpark_id, longterm_customer_id, account_name, month, year, status, error_msg, recipient_email, customer_type)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'longterm')`)
+              .run(carpark.id, lt.id, lt.name, month, year, 'failed', err.message, emailTo);
           }
         }
       }
