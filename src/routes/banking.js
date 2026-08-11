@@ -159,17 +159,21 @@ router.get('/pending-internet-banking', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
     const rows = await db.prepare(`
-      SELECT id, invoice_number, first_name, last_name, rego, date_in,
-        1 AS slot, payment_amount AS amount, staff_code_name
-      FROM invoices
-      WHERE carpark_id = ? AND void = 0 AND paid_status = 'Internet Banking'
-        AND COALESCE(ib_confirmed,0) = 0 AND COALESCE(payment_amount,0) > 0
+      SELECT i.id, i.invoice_number, i.first_name, i.last_name, i.rego, i.date_in,
+        1 AS slot, i.payment_amount AS amount, i.staff_code_name,
+        i.account_customer_id, ac.company_name AS account_name
+      FROM invoices i
+      LEFT JOIN account_customers ac ON i.account_customer_id = ac.id
+      WHERE i.carpark_id = ? AND i.void = 0 AND i.paid_status = 'Internet Banking'
+        AND COALESCE(i.ib_confirmed,0) = 0 AND COALESCE(i.payment_amount,0) > 0
       UNION ALL
-      SELECT id, invoice_number, first_name, last_name, rego, date_in,
-        2 AS slot, payment_amount_2 AS amount, staff_code_name
-      FROM invoices
-      WHERE carpark_id = ? AND void = 0 AND paid_status_2 = 'Internet Banking'
-        AND COALESCE(ib_confirmed_2,0) = 0 AND COALESCE(payment_amount_2,0) > 0
+      SELECT i.id, i.invoice_number, i.first_name, i.last_name, i.rego, i.date_in,
+        2 AS slot, i.payment_amount_2 AS amount, i.staff_code_name,
+        i.account_customer_id, ac.company_name AS account_name
+      FROM invoices i
+      LEFT JOIN account_customers ac ON i.account_customer_id = ac.id
+      WHERE i.carpark_id = ? AND i.void = 0 AND i.paid_status_2 = 'Internet Banking'
+        AND COALESCE(i.ib_confirmed_2,0) = 0 AND COALESCE(i.payment_amount_2,0) > 0
       ORDER BY date_in ASC
     `).all(carparkId, carparkId);
     res.json(rows);

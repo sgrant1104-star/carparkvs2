@@ -107,7 +107,7 @@
           <div class="table-responsive">
             <table class="table table-sm table-hover">
               <thead>
-                <tr><th>Invoice #</th><th>Customer</th><th>Rego</th><th>Date In</th><th>Logged By</th><th>Amount</th><th></th></tr>
+                <tr><th>Invoice #</th><th>Customer</th><th>Type</th><th>Rego</th><th>Date In</th><th>Logged By</th><th>Amount</th><th></th></tr>
               </thead>
               <tbody id="pending-ib-tbody">
                 <tr><td colspan="7" class="text-center text-muted"><div class="spinner-border spinner-border-sm"></div></td></tr>
@@ -269,13 +269,16 @@
         <tr>
           <td class="fw-bold">${r.invoice_number}</td>
           <td>${escapeHtml(`${r.first_name||''} ${r.last_name||''}`.trim())}</td>
+          <td>${r.account_customer_id
+              ? `<span class="badge bg-danger-subtle text-danger-emphasis">On Account: ${escapeHtml(r.account_name||'—')}</span>`
+              : `<span class="badge bg-secondary-subtle text-secondary-emphasis">General Customer</span>`}</td>
           <td>${escapeHtml(r.rego||'')}</td>
           <td>${r.date_in ? new Date(r.date_in).toLocaleDateString('en-NZ') : ''}</td>
           <td class="small text-muted">${escapeHtml(r.staff_code_name||'')}</td>
           <td class="fw-bold" style="color:#d68910">${formatCurrency(r.amount)}</td>
           <td><button class="btn btn-sm btn-success btn-confirm-ib" data-id="${r.id}" data-slot="${r.slot}">Confirm Received</button></td>
         </tr>
-      `).join('') : '<tr><td colspan="7" class="text-center text-muted">No pending Internet Banking payments</td></tr>';
+      `).join('') : '<tr><td colspan="8" class="text-center text-muted">No pending Internet Banking payments</td></tr>';
 
       document.querySelectorAll('.btn-confirm-ib').forEach(btn => {
         btn.addEventListener('click', async () => {
