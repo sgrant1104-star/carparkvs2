@@ -8,6 +8,8 @@ const {
   effectivePay2Day,
   l1PaidTotal,
   l2PaidTotal,
+  l1PendingTotal,
+  l2PendingTotal,
   l1Eftpos,
   l2Eftpos,
   l1Cash,
@@ -19,6 +21,8 @@ const {
   EFFECTIVE_PAY2_DAY,
   L1_PAID_TOTAL,
   L2_PAID_TOTAL,
+  L1_PENDING_TOTAL,
+  L2_PENDING_TOTAL,
   L1_EFTPOS,
   L2_EFTPOS,
   L1_CASH,
@@ -59,7 +63,8 @@ function sqlPaidLinesUnion() {
     ${l1PaidTotal('i')} AS line_total,
     ${l1Eftpos('i')} AS line_eftpos,
     ${l1Cash('i')} AS line_cash,
-    ${l1OnAcc('i')} AS line_onacc
+    ${l1OnAcc('i')} AS line_onacc,
+    ${l1PendingTotal('i')} AS line_pending
   FROM invoices i
   WHERE i.carpark_id = ? AND i.void = 0
   AND (${E1}) >= ? AND (${E1}) <= ?
@@ -69,7 +74,8 @@ function sqlPaidLinesUnion() {
     ${l2PaidTotal('i')},
     ${l2Eftpos('i')},
     ${l2Cash('i')},
-    ${l2OnAcc('i')}
+    ${l2OnAcc('i')},
+    ${l2PendingTotal('i')}
   FROM invoices i
   WHERE i.carpark_id = ? AND i.void = 0
   AND (${E2}) IS NOT NULL
@@ -104,7 +110,8 @@ router.get('/revenue', requireAuth, async (req, res) => {
         COALESCE(SUM(u.line_total), 0) AS total,
         COALESCE(SUM(u.line_eftpos), 0) AS eftpos,
         COALESCE(SUM(u.line_cash), 0) AS cash,
-        COALESCE(SUM(u.line_onacc), 0) AS on_account
+        COALESCE(SUM(u.line_onacc), 0) AS on_account,
+        COALESCE(SUM(u.line_pending), 0) AS pending
       FROM (${unionSql}) u
       GROUP BY period
       ORDER BY period DESC
@@ -138,7 +145,7 @@ router.get('/revenue', requireAuth, async (req, res) => {
     for (const r of invRevenue) byPeriod.set(String(r.period), { ...r, longterm: 0 });
     for (const r of ltRevenue) {
       const k = String(r.period);
-      const existing = byPeriod.get(k) || { period: r.period, invoices: 0, total: 0, eftpos: 0, cash: 0, on_account: 0, outstanding: 0, longterm: 0 };
+      const existing = byPeriod.get(k) || { period: r.period, invoices: 0, total: 0, eftpos: 0, cash: 0, on_account: 0, pending: 0, outstanding: 0, longterm: 0 };
       existing.longterm = (existing.longterm || 0) + (r.longterm_total || 0);
       existing.total = (existing.total || 0) + (r.longterm_total || 0);
       existing.lt_payments = (existing.lt_payments || 0) + (r.lt_payments || 0);
@@ -152,9 +159,11 @@ router.get('/revenue', requireAuth, async (req, res) => {
         (${sumBothLinesInRange(L1_EFTPOS, L2_EFTPOS)}) AS eftpos_total,
         (${sumBothLinesInRange(L1_CASH, L2_CASH)}) AS cash_total,
         (${sumBothLinesInRange(L1_ONACC, L2_ONACC)}) AS on_account_total,
+        (${sumBothLinesInRange(L1_PENDING_TOTAL, L2_PENDING_TOTAL)}) AS pending_total,
         COALESCE(SUM(CASE WHEN (${INV_DAY}) >= ? AND (${INV_DAY}) <= ? AND paid_status = 'To Pay' THEN total_price ELSE 0 END), 0) AS outstanding_total
       FROM invoices WHERE carpark_id = ? AND void = 0
     `).get(
+      fromDate, toDate, fromDate, toDate,
       fromDate, toDate, fromDate, toDate,
       fromDate, toDate, fromDate, toDate,
       fromDate, toDate, fromDate, toDate,
@@ -187,6 +196,7 @@ router.get('/revenue', requireAuth, async (req, res) => {
       eftpos_total: invSummary.eftpos_total || 0,
       cash_total: invSummary.cash_total || 0,
       on_account_total: invSummary.on_account_total || 0,
+      pending_total: invSummary.pending_total || 0,
       outstanding_total: invSummary.outstanding_total || 0,
       longterm_total: ltSummary.longterm_total || 0,
     };
@@ -312,9 +322,11 @@ router.get('/revenue/pdf', requireAuth, async (req, res) => {
         (${sumBothLinesInRange(L1_PAID_TOTAL, L2_PAID_TOTAL)}) AS total_revenue,
         (${sumBothLinesInRange(L1_EFTPOS, L2_EFTPOS)}) AS eftpos,
         (${sumBothLinesInRange(L1_CASH, L2_CASH)}) AS cash,
-        (${sumBothLinesInRange(L1_ONACC, L2_ONACC)}) AS on_account
+        (${sumBothLinesInRange(L1_ONACC, L2_ONACC)}) AS on_account,
+        (${sumBothLinesInRange(L1_PENDING_TOTAL, L2_PENDING_TOTAL)}) AS pending
       FROM invoices WHERE carpark_id = ? AND void = 0
     `).get(
+      fromDate, toDate, fromDate, toDate,
       fromDate, toDate, fromDate, toDate,
       fromDate, toDate, fromDate, toDate,
       fromDate, toDate, fromDate, toDate,
@@ -340,6 +352,7 @@ router.get('/revenue/pdf', requireAuth, async (req, res) => {
       eftpos: invSummary.eftpos || 0,
       cash: invSummary.cash || 0,
       on_account: invSummary.on_account || 0,
+      pending: invSummary.pending || 0,
       longterm_total: ltSummary.longterm_total || 0,
       total_revenue: (invSummary.total_revenue || 0) + (ltSummary.longterm_total || 0),
     };
@@ -380,6 +393,10 @@ router.get('/revenue/pdf', requireAuth, async (req, res) => {
     doc.text(`Cash: $${parseFloat(summary.cash).toFixed(2)}`);
     doc.text(`On Account: $${parseFloat(summary.on_account).toFixed(2)}`);
     doc.text(`Long Term Payments: $${parseFloat(summary.longterm_total || 0).toFixed(2)}`);
+    if ((summary.pending || 0) > 0.01) {
+      doc.fillColor('#d68910').text(`Pending confirmation (On Account / unconfirmed Internet Banking): $${parseFloat(summary.pending).toFixed(2)}`);
+      doc.fillColor('#000');
+    }
     doc.moveDown();
     doc.fontSize(13).font('Helvetica-Bold').text('Daily Breakdown');
     doc.moveDown(0.3);

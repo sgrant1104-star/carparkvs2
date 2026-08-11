@@ -31,24 +31,35 @@ router.get('/', requireAuth, async (req, res) => {
           COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Cash' THEN payment_amount ELSE 0 END, 0) +
           COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Cash' THEN payment_amount_2 ELSE 0 END, 0)
         ), 0) as cash,
+        -- Informational only — invoiced to account today, NOT cash received.
+        -- Excluded from total_revenue; only counts once actually paid off.
         COALESCE(SUM(
           COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'OnAcc' THEN payment_amount ELSE 0 END, 0) +
           COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'OnAcc' THEN payment_amount_2 ELSE 0 END, 0)
         ), 0) as on_account,
+        -- Only CONFIRMED transfers, attributed to the day they were confirmed
+        -- (bank statement checked) — not the day the booking was made.
         COALESCE(SUM(
-          COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Internet Banking' THEN payment_amount ELSE 0 END, 0) +
-          COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Internet Banking' THEN payment_amount_2 ELSE 0 END, 0)
+          COALESCE(CASE WHEN paid_status = 'Internet Banking' AND ib_confirmed = 1 AND substr(trim(COALESCE(ib_confirmed_at,'')),1,10) = ? THEN payment_amount ELSE 0 END, 0) +
+          COALESCE(CASE WHEN paid_status_2 = 'Internet Banking' AND ib_confirmed_2 = 1 AND substr(trim(COALESCE(ib_confirmed_2_at,'')),1,10) = ? THEN payment_amount_2 ELSE 0 END, 0)
         ), 0) as internet_banking,
         COALESCE(SUM(
           COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Customer Credit' THEN payment_amount ELSE 0 END, 0) +
           COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Customer Credit' THEN payment_amount_2 ELSE 0 END, 0)
         ), 0) as credit_redeemed,
+        -- Internet Banking recorded today but not yet confirmed — informational,
+        -- not counted in total_revenue until confirmed via Banking > Pending IB.
         COALESCE(SUM(
-          COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status != 'To Pay' THEN payment_amount ELSE 0 END, 0) +
-          COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 != 'To Pay' THEN payment_amount_2 ELSE 0 END, 0)
-        ), 0) as total_revenue
+          COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Internet Banking' AND COALESCE(ib_confirmed,0) = 0 THEN payment_amount ELSE 0 END, 0) +
+          COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Internet Banking' AND COALESCE(ib_confirmed_2,0) = 0 THEN payment_amount_2 ELSE 0 END, 0)
+        ), 0) as internet_banking_pending
       FROM invoices WHERE carpark_id = ? AND void = 0
     `).get(today, today, today, today, today, today, today, today, today, today, today, today, today, today, carparkId);
+    // total_revenue = actually confirmed money only (On Account and unconfirmed
+    // Internet Banking are deliberately excluded — computed here, not in SQL,
+    // so it can never drift from the individual confirmed buckets above).
+    stats.total_revenue = (stats.eftpos || 0) + (stats.cash || 0) + (stats.internet_banking || 0) + (stats.credit_redeemed || 0);
+    stats.pending = (stats.on_account || 0) + (stats.internet_banking_pending || 0);
     const carsInYard   = await db.prepare(`SELECT COUNT(*) as count FROM invoices WHERE carpark_id = ? AND void = 0 AND picked_up = 'Car In Yard'`).get(carparkId);
     const invoices     = await db.prepare(`SELECT i.*, u.name as staff_name FROM invoices i LEFT JOIN users u ON i.staff_id = u.id WHERE i.carpark_id = ? AND DATE(i.date_in) = ? AND i.void = 0 ORDER BY i.time_in`).all(carparkId, today);
     const returningToday = await db.prepare(`
@@ -102,10 +113,6 @@ router.post('/', requireAuth, async (req, res) => {
       SELECT
         COUNT(CASE WHEN DATE(date_in) = ? THEN 1 END) as cars_in,
         COALESCE(SUM(
-          COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status != 'To Pay' THEN payment_amount ELSE 0 END, 0) +
-          COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 != 'To Pay' THEN payment_amount_2 ELSE 0 END, 0)
-        ), 0) as total_revenue,
-        COALESCE(SUM(
           COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Eftpos' THEN payment_amount ELSE 0 END, 0) +
           COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Eftpos' THEN payment_amount_2 ELSE 0 END, 0)
         ), 0) as eftpos,
@@ -113,20 +120,31 @@ router.post('/', requireAuth, async (req, res) => {
           COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Cash' THEN payment_amount ELSE 0 END, 0) +
           COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Cash' THEN payment_amount_2 ELSE 0 END, 0)
         ), 0) as cash,
+        -- Informational only — invoiced to account today, NOT cash received.
         COALESCE(SUM(
           COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'OnAcc' THEN payment_amount ELSE 0 END, 0) +
           COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'OnAcc' THEN payment_amount_2 ELSE 0 END, 0)
         ), 0) as on_account,
+        -- Only CONFIRMED transfers, attributed to the day they were confirmed.
         COALESCE(SUM(
-          COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Internet Banking' THEN payment_amount ELSE 0 END, 0) +
-          COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Internet Banking' THEN payment_amount_2 ELSE 0 END, 0)
+          COALESCE(CASE WHEN paid_status = 'Internet Banking' AND ib_confirmed = 1 AND substr(trim(COALESCE(ib_confirmed_at,'')),1,10) = ? THEN payment_amount ELSE 0 END, 0) +
+          COALESCE(CASE WHEN paid_status_2 = 'Internet Banking' AND ib_confirmed_2 = 1 AND substr(trim(COALESCE(ib_confirmed_2_at,'')),1,10) = ? THEN payment_amount_2 ELSE 0 END, 0)
         ), 0) as internet_banking,
         COALESCE(SUM(
           COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Customer Credit' THEN payment_amount ELSE 0 END, 0) +
           COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Customer Credit' THEN payment_amount_2 ELSE 0 END, 0)
-        ), 0) as credit_redeemed
+        ), 0) as credit_redeemed,
+        -- Recorded today but not yet confirmed — informational only.
+        COALESCE(SUM(
+          COALESCE(CASE WHEN (${EFFECTIVE_PAY1_DAY}) = ? AND paid_status = 'Internet Banking' AND COALESCE(ib_confirmed,0) = 0 THEN payment_amount ELSE 0 END, 0) +
+          COALESCE(CASE WHEN (${EFFECTIVE_PAY2_DAY}) IS NOT NULL AND (${EFFECTIVE_PAY2_DAY}) = ? AND paid_status_2 = 'Internet Banking' AND COALESCE(ib_confirmed_2,0) = 0 THEN payment_amount_2 ELSE 0 END, 0)
+        ), 0) as internet_banking_pending
       FROM invoices WHERE carpark_id = ? AND void = 0
     `).get(today, today, today, today, today, today, today, today, today, today, today, today, today, carparkId);
+    // total_revenue = actually confirmed money only — On Account and
+    // unconfirmed Internet Banking are excluded, computed here (not in SQL)
+    // so it can never drift from the individual confirmed buckets above.
+    stats.total_revenue = (stats.eftpos || 0) + (stats.cash || 0) + (stats.internet_banking || 0) + (stats.credit_redeemed || 0);
     const carsInYard = await db.prepare(`SELECT COUNT(*) as count FROM invoices WHERE carpark_id = ? AND void = 0 AND picked_up = 'Car In Yard'`).get(carparkId);
 
     const reconciliation = await getEftposReconciliation(db, { carparkId, date: today });

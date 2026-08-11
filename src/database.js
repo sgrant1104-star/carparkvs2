@@ -393,6 +393,16 @@ async function initializeDatabase() {
   try { x(`ALTER TABLE invoices ADD COLUMN staff_code_name TEXT`); } catch (_) {}
   try { x(`ALTER TABLE invoices ADD COLUMN return_staff_code TEXT`); } catch (_) {}
   try { x(`ALTER TABLE invoices ADD COLUMN return_staff_code_name TEXT`); } catch (_) {}
+  // Internet Banking isn't confirmed money the moment it's selected at
+  // check-in — a transfer takes time to actually land. Like On Account, it
+  // only counts as real revenue once a staff member checks the bank
+  // statement and confirms it (via Banking > Pending Internet Banking).
+  try { x(`ALTER TABLE invoices ADD COLUMN ib_confirmed INTEGER DEFAULT 0`); } catch (_) {}
+  try { x(`ALTER TABLE invoices ADD COLUMN ib_confirmed_at DATETIME`); } catch (_) {}
+  try { x(`ALTER TABLE invoices ADD COLUMN ib_confirmed_by TEXT`); } catch (_) {}
+  try { x(`ALTER TABLE invoices ADD COLUMN ib_confirmed_2 INTEGER DEFAULT 0`); } catch (_) {}
+  try { x(`ALTER TABLE invoices ADD COLUMN ib_confirmed_2_at DATETIME`); } catch (_) {}
+  try { x(`ALTER TABLE invoices ADD COLUMN ib_confirmed_2_by TEXT`); } catch (_) {}
 
   x(`CREATE TABLE IF NOT EXISTS staff_codes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

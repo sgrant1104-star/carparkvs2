@@ -36,12 +36,31 @@ function l1InternetBanking(alias = '') {
   const p = alias ? `${alias}.` : '';
   return `(CASE WHEN ${p}paid_status = 'Internet Banking' THEN COALESCE(${p}payment_amount,0) ELSE 0 END)`;
 }
+// Internet Banking is a promise, not a receipt — a transfer takes time to
+// land, so it only counts as real revenue once a staff member confirms it
+// arrived (ib_confirmed), same as On Account only counts once allocated.
+function l1InternetBankingConfirmed(alias = '') {
+  const p = alias ? `${alias}.` : '';
+  return `(CASE WHEN ${p}paid_status = 'Internet Banking' AND COALESCE(${p}ib_confirmed,0) = 1 THEN COALESCE(${p}payment_amount,0) ELSE 0 END)`;
+}
+function l1InternetBankingPending(alias = '') {
+  const p = alias ? `${alias}.` : '';
+  return `(CASE WHEN ${p}paid_status = 'Internet Banking' AND COALESCE(${p}ib_confirmed,0) = 0 THEN COALESCE(${p}payment_amount,0) ELSE 0 END)`;
+}
 function l1CustomerCredit(alias = '') {
   const p = alias ? `${alias}.` : '';
   return `(CASE WHEN ${p}paid_status = 'Customer Credit' THEN COALESCE(${p}payment_amount,0) ELSE 0 END)`;
 }
+// "Paid" = actually confirmed money in hand: Eftpos/Cash/Customer Credit
+// always, Internet Banking only once confirmed. On Account is NEVER counted
+// here — it only becomes real money via the Accounts payment ledger.
 function l1PaidTotal(alias = '') {
-  return `(${l1Eftpos(alias)} + ${l1Cash(alias)} + ${l1OnAcc(alias)} + ${l1InternetBanking(alias)} + ${l1CustomerCredit(alias)})`;
+  return `(${l1Eftpos(alias)} + ${l1Cash(alias)} + ${l1InternetBankingConfirmed(alias)} + ${l1CustomerCredit(alias)})`;
+}
+// "Pending" = recorded but not yet confirmed received: On Account (until
+// allocated) + Internet Banking awaiting confirmation.
+function l1PendingTotal(alias = '') {
+  return `(${l1OnAcc(alias)} + ${l1InternetBankingPending(alias)})`;
 }
 function l2Eftpos(alias = '') {
   const p = alias ? `${alias}.` : '';
@@ -59,12 +78,23 @@ function l2InternetBanking(alias = '') {
   const p = alias ? `${alias}.` : '';
   return `(CASE WHEN ${p}paid_status_2 = 'Internet Banking' THEN COALESCE(${p}payment_amount_2,0) ELSE 0 END)`;
 }
+function l2InternetBankingConfirmed(alias = '') {
+  const p = alias ? `${alias}.` : '';
+  return `(CASE WHEN ${p}paid_status_2 = 'Internet Banking' AND COALESCE(${p}ib_confirmed_2,0) = 1 THEN COALESCE(${p}payment_amount_2,0) ELSE 0 END)`;
+}
+function l2InternetBankingPending(alias = '') {
+  const p = alias ? `${alias}.` : '';
+  return `(CASE WHEN ${p}paid_status_2 = 'Internet Banking' AND COALESCE(${p}ib_confirmed_2,0) = 0 THEN COALESCE(${p}payment_amount_2,0) ELSE 0 END)`;
+}
 function l2CustomerCredit(alias = '') {
   const p = alias ? `${alias}.` : '';
   return `(CASE WHEN ${p}paid_status_2 = 'Customer Credit' THEN COALESCE(${p}payment_amount_2,0) ELSE 0 END)`;
 }
 function l2PaidTotal(alias = '') {
-  return `(${l2Eftpos(alias)} + ${l2Cash(alias)} + ${l2OnAcc(alias)} + ${l2InternetBanking(alias)} + ${l2CustomerCredit(alias)})`;
+  return `(${l2Eftpos(alias)} + ${l2Cash(alias)} + ${l2InternetBankingConfirmed(alias)} + ${l2CustomerCredit(alias)})`;
+}
+function l2PendingTotal(alias = '') {
+  return `(${l2OnAcc(alias)} + ${l2InternetBankingPending(alias)})`;
 }
 
 const EFFECTIVE_PAY1_DAY = effectivePay1Day();
@@ -72,13 +102,19 @@ const EFFECTIVE_PAY2_DAY = effectivePay2Day();
 const L1_EFTPOS = l1Eftpos();
 const L1_CASH = l1Cash();
 const L1_ONACC = l1OnAcc();
+const L1_IB_CONFIRMED = l1InternetBankingConfirmed();
+const L1_IB_PENDING = l1InternetBankingPending();
 const L1_CUSTOMER_CREDIT = l1CustomerCredit();
 const L1_PAID_TOTAL = l1PaidTotal();
+const L1_PENDING_TOTAL = l1PendingTotal();
 const L2_EFTPOS = l2Eftpos();
 const L2_CASH = l2Cash();
 const L2_ONACC = l2OnAcc();
+const L2_IB_CONFIRMED = l2InternetBankingConfirmed();
+const L2_IB_PENDING = l2InternetBankingPending();
 const L2_CUSTOMER_CREDIT = l2CustomerCredit();
 const L2_PAID_TOTAL = l2PaidTotal();
+const L2_PENDING_TOTAL = l2PendingTotal();
 
 function sumLine1InRange(amountExpr) {
   return `COALESCE(SUM(CASE WHEN (${EFFECTIVE_PAY1_DAY}) >= ? AND (${EFFECTIVE_PAY1_DAY}) <= ? THEN (${amountExpr}) ELSE 0 END), 0)`;
@@ -100,26 +136,38 @@ module.exports = {
   l1Cash,
   l1OnAcc,
   l1InternetBanking,
+  l1InternetBankingConfirmed,
+  l1InternetBankingPending,
   l1CustomerCredit,
   l1PaidTotal,
+  l1PendingTotal,
   l2Eftpos,
   l2Cash,
   l2OnAcc,
   l2InternetBanking,
+  l2InternetBankingConfirmed,
+  l2InternetBankingPending,
   l2CustomerCredit,
   l2PaidTotal,
+  l2PendingTotal,
   EFFECTIVE_PAY1_DAY,
   EFFECTIVE_PAY2_DAY,
   L1_EFTPOS,
   L1_CASH,
   L1_ONACC,
+  L1_IB_CONFIRMED,
+  L1_IB_PENDING,
   L1_CUSTOMER_CREDIT,
   L1_PAID_TOTAL,
+  L1_PENDING_TOTAL,
   L2_EFTPOS,
   L2_CASH,
   L2_ONACC,
+  L2_IB_CONFIRMED,
+  L2_IB_PENDING,
   L2_CUSTOMER_CREDIT,
   L2_PAID_TOTAL,
+  L2_PENDING_TOTAL,
   sumLine1InRange,
   sumLine2InRange,
   sumBothLinesInRange,

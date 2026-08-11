@@ -2,7 +2,7 @@ const express = require('express');
 const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
-const { getAccountStatementData } = require('../utils/paymentAllocation');
+const { getAccountStatementData, computeInvoicePaymentStatus } = require('../utils/paymentAllocation');
 const { buildInvoicePdfBuffer } = require('../utils/invoicePdf');
 const { getTransporter, emailFrom, smtpErrorMessage, SMTP_MISSING_MSG } = require('../utils/mailer');
 const router = express.Router();
@@ -513,16 +513,23 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     `;
 
     // Clear paid/owing status — the same "at a glance" banner used on the PDF.
-    const amountPaid = Math.round((
-      (parseFloat(invoice.payment_amount) || 0) +
-      (parseFloat(invoice.payment_amount_2) || 0) +
-      (parseFloat(invoice.credit_applied) || 0)
-    ) * 100) / 100;
-    const amountOwing = Math.max(0, Math.round(((parseFloat(invoice.total_price) || 0) - amountPaid) * 100) / 100);
-    const isPaidInFull = amountOwing <= 0.01 && (invoice.paid_status && invoice.paid_status !== 'To Pay');
+    // On Account and unconfirmed Internet Banking are NOT counted as paid —
+    // they're money owed/promised, not money received.
+    const { isPaidInFull, pending, owing } = computeInvoicePaymentStatus(invoice);
+    let bannerColor, bannerText;
+    if (isPaidInFull) {
+      bannerColor = '#1e8449'; bannerText = 'PAID IN FULL';
+    } else if (pending > 0.01) {
+      bannerColor = '#d68910';
+      bannerText = owing > 0.01
+        ? `PENDING ${currency(pending)} + DUE ${currency(owing)}`
+        : `PAYMENT PENDING CONFIRMATION: ${currency(pending)}`;
+    } else {
+      bannerColor = '#c0392b'; bannerText = `AMOUNT DUE: ${currency(owing)}`;
+    }
     const statusBannerHtml = `
-      <div style="background:${isPaidInFull ? '#1e8449' : '#c0392b'};color:#fff;text-align:center;padding:12px;border-radius:6px;margin:16px 0;font-size:16px;font-weight:bold;">
-        ${isPaidInFull ? 'PAID IN FULL' : `AMOUNT DUE: ${currency(amountOwing)}`}
+      <div style="background:${bannerColor};color:#fff;text-align:center;padding:12px;border-radius:6px;margin:16px 0;font-size:16px;font-weight:bold;">
+        ${bannerText}
       </div>`;
 
     const transporterEarly = getTransporter();
@@ -582,11 +589,23 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
   </div>
 </body></html>`;
 
+    // Attach the actual PDF receipt — the HTML above is a nice inline
+    // preview, but staff/customers expect a real printable/forwardable
+    // attachment, not just an email body.
+    const attachments = [];
+    try {
+      const pdfBuf = await buildInvoicePdfBuffer(invoice, carpark || {});
+      attachments.push({ filename: `Receipt-${invoice.invoice_number}.pdf`, content: pdfBuf });
+    } catch (pdfErr) {
+      console.error(`[email receipt] Failed to build PDF for invoice #${invoice.invoice_number}:`, pdfErr.message);
+    }
+
     await transporterEarly.sendMail({
       from: emailFrom(),
       to: emailTo,
       subject: `Receipt – ${carpark ? carpark.name : 'Car Storage'} – Invoice #${invoice.invoice_number}`,
       html,
+      attachments,
     });
 
     res.json({ success: true, message: `Receipt sent to ${emailTo}` });

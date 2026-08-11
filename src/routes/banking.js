@@ -67,8 +67,12 @@ router.get('/autofill', requireAuth, async (req, res) => {
       if (amount <= 0) return;
       if (status === 'Eftpos') eftpos += amount;
       else if (status === 'Cash') cash += amount;
-      else if (status === 'OnAcc') account += amount;
-      else if (status === 'Internet Banking') other += amount;
+      // Not real money received on the day the invoice was made — On Account
+      // only counts once actually paid (via account_payments below), and
+      // Internet Banking only once confirmed (see ibRows below). Counting
+      // either here too would double-count once the real payment lands.
+      else if (status === 'OnAcc') return;
+      else if (status === 'Internet Banking') return;
       // Customer Credit isn't physical money received today — it's value the
       // customer already paid for on an earlier visit. Track separately so
       // it doesn't inflate what actually needs to go to the bank/till.
@@ -106,13 +110,29 @@ router.get('/autofill', requireAuth, async (req, res) => {
     `).all(carparkId, day);
     for (const r of ltRows) addByStatus(r.payment_method, r.amount_ex_gst);
 
-    // Account-customer payments — attribute by payment_date.
+    // Account-customer payments — attribute by payment_date. Creating this
+    // row IS the confirmation (staff only records it once they've actually
+    // received it), so no separate confirmation step needed here.
     const acctRows = await db.prepare(`
       SELECT payment_method, amount, payment_date
       FROM account_payments
       WHERE carpark_id = ? AND substr(trim(COALESCE(payment_date, '')), 1, 10) = ?
     `).all(carparkId, day);
     for (const r of acctRows) addByStatus(r.payment_method, r.amount);
+
+    // Confirmed Internet Banking — attributed to the day a staff member
+    // actually confirmed it landed (ib_confirmed_at), not the day the
+    // booking was made. Unconfirmed IB never appears here at all.
+    const ibRows = await db.prepare(`
+      SELECT
+        (CASE WHEN paid_status = 'Internet Banking' AND ib_confirmed = 1 AND substr(trim(COALESCE(ib_confirmed_at,'')),1,10) = ? THEN COALESCE(payment_amount,0) ELSE 0 END) +
+        (CASE WHEN paid_status_2 = 'Internet Banking' AND ib_confirmed_2 = 1 AND substr(trim(COALESCE(ib_confirmed_2_at,'')),1,10) = ? THEN COALESCE(payment_amount_2,0) ELSE 0 END)
+        AS amt
+      FROM invoices
+      WHERE carpark_id = ? AND void = 0
+        AND ((paid_status = 'Internet Banking' AND ib_confirmed = 1) OR (paid_status_2 = 'Internet Banking' AND ib_confirmed_2 = 1))
+    `).all(day, day, carparkId);
+    for (const r of ibRows) other += parseFloat(r.amt) || 0;
 
     const round2 = (n) => Math.round((n || 0) * 100) / 100;
     res.json({
@@ -127,6 +147,62 @@ router.get('/autofill', requireAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/banking/pending-internet-banking
+// Every Internet Banking payment recorded on an invoice that hasn't been
+// confirmed yet (i.e. nobody has checked the bank statement and verified it
+// actually landed). One row per pending slot — an invoice split across two
+// payment methods could have both, rarely, so they're confirmed independently.
+router.get('/pending-internet-banking', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const rows = await db.prepare(`
+      SELECT id, invoice_number, first_name, last_name, rego, date_in,
+        1 AS slot, payment_amount AS amount, staff_code_name
+      FROM invoices
+      WHERE carpark_id = ? AND void = 0 AND paid_status = 'Internet Banking'
+        AND COALESCE(ib_confirmed,0) = 0 AND COALESCE(payment_amount,0) > 0
+      UNION ALL
+      SELECT id, invoice_number, first_name, last_name, rego, date_in,
+        2 AS slot, payment_amount_2 AS amount, staff_code_name
+      FROM invoices
+      WHERE carpark_id = ? AND void = 0 AND paid_status_2 = 'Internet Banking'
+        AND COALESCE(ib_confirmed_2,0) = 0 AND COALESCE(payment_amount_2,0) > 0
+      ORDER BY date_in ASC
+    `).all(carparkId, carparkId);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/banking/confirm-internet-banking/:invoiceId  { slot: 1|2 }
+// Marks one Internet Banking payment slot as confirmed — the moment staff
+// verify the transfer actually arrived in the bank statement. From this
+// point on it counts as real revenue everywhere (Dashboard, Reports, Banking,
+// End Day), attributed to today's date, not the original booking date.
+router.post('/confirm-internet-banking/:invoiceId', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const invoiceId = req.params.invoiceId;
+    const slot = parseInt(req.body.slot, 10) === 2 ? 2 : 1;
+    const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ? AND carpark_id = ?').get(invoiceId, carparkId);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    const status = slot === 2 ? invoice.paid_status_2 : invoice.paid_status;
+    if (String(status || '').trim() !== 'Internet Banking') {
+      return res.status(400).json({ error: `Payment slot ${slot} on this invoice is not Internet Banking` });
+    }
+
+    const staffName = (req.session.name || req.session.username || 'Unknown').trim();
+    if (slot === 2) {
+      await db.prepare(`UPDATE invoices SET ib_confirmed_2 = 1, ib_confirmed_2_at = CURRENT_TIMESTAMP, ib_confirmed_2_by = ? WHERE id = ?`)
+        .run(staffName, invoiceId);
+    } else {
+      await db.prepare(`UPDATE invoices SET ib_confirmed = 1, ib_confirmed_at = CURRENT_TIMESTAMP, ib_confirmed_by = ? WHERE id = ?`)
+        .run(staffName, invoiceId);
+    }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.get('/petty-cash', requireAuth, async (req, res) => {

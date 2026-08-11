@@ -94,6 +94,22 @@
           </div>
         </div>
 
+        <!-- Pending Internet Banking -->
+        <div class="form-card mb-4">
+          <div class="form-section-title"><i class="bi bi-hourglass-split me-2"></i>Pending Internet Banking</div>
+          <p class="text-muted small mb-2">Internet Banking payments recorded at check-in don't count as received revenue until you check the bank statement and confirm them here — they won't appear in Revenue, Reports, or this Banking record until then.</p>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover">
+              <thead>
+                <tr><th>Invoice #</th><th>Customer</th><th>Rego</th><th>Date In</th><th>Logged By</th><th>Amount</th><th></th></tr>
+              </thead>
+              <tbody id="pending-ib-tbody">
+                <tr><td colspan="7" class="text-center text-muted"><div class="spinner-border spinner-border-sm"></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Filter -->
         <div class="row g-2 mb-3">
           <div class="col-md-2">
@@ -239,6 +255,43 @@
       `).join('') || '<tr><td colspan="8" class="text-center text-muted">No banking records</td></tr>';
     }
 
+    async function loadPendingIB() {
+      const res = await fetch('/api/banking/pending-internet-banking');
+      if (!res.ok) return;
+      const rows = await res.json();
+      document.getElementById('pending-ib-tbody').innerHTML = rows.length > 0 ? rows.map(r => `
+        <tr>
+          <td class="fw-bold">${r.invoice_number}</td>
+          <td>${escapeHtml(`${r.first_name||''} ${r.last_name||''}`.trim())}</td>
+          <td>${escapeHtml(r.rego||'')}</td>
+          <td>${r.date_in ? new Date(r.date_in).toLocaleDateString('en-NZ') : ''}</td>
+          <td class="small text-muted">${escapeHtml(r.staff_code_name||'')}</td>
+          <td class="fw-bold" style="color:#d68910">${formatCurrency(r.amount)}</td>
+          <td><button class="btn btn-sm btn-success btn-confirm-ib" data-id="${r.id}" data-slot="${r.slot}">Confirm Received</button></td>
+        </tr>
+      `).join('') : '<tr><td colspan="7" class="text-center text-muted">No pending Internet Banking payments</td></tr>';
+
+      document.querySelectorAll('.btn-confirm-ib').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          const res = await fetch(`/api/banking/confirm-internet-banking/${btn.dataset.id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slot: parseInt(btn.dataset.slot, 10) })
+          });
+          if (res.ok) {
+            showAlert('Payment confirmed — now counted as received', 'success');
+            loadPendingIB();
+            loadBanking();
+          } else {
+            const err = await res.json().catch(() => ({}));
+            showAlert(err.error || 'Failed to confirm', 'danger');
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
     document.getElementById('btn-save-banking').addEventListener('click', async () => {
       const payload = {
         date: document.getElementById('banking-date').value,
@@ -349,6 +402,7 @@
     async function init() {
       await checkAuth();
       await loadBanking();
+      await loadPendingIB();
       await loadPettyCash();
       updateNavCarsCount();
     }

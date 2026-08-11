@@ -56,7 +56,13 @@
           <div class="col-md-3">
             <div class="stat-card success">
               <div class="stat-value" id="rev-total">$0</div>
-              <div class="stat-label">Total Revenue</div>
+              <div class="stat-label">Confirmed Revenue</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card" style="border-left-color:#d68910">
+              <div class="stat-value" id="rev-pending" style="color:#d68910">$0</div>
+              <div class="stat-label">Pending (On Acc / IB)</div>
             </div>
           </div>
           <div class="col-md-3">
@@ -216,6 +222,7 @@
       const data = await res.json();
 
       document.getElementById('rev-total').textContent = formatCurrency(data.summary.total_revenue);
+      document.getElementById('rev-pending').textContent = formatCurrency(data.summary.pending_total || 0);
       document.getElementById('rev-longterm').textContent = formatCurrency(data.summary.longterm_total || 0);
       document.getElementById('rev-eftpos').textContent = formatCurrency(data.summary.eftpos_total);
       document.getElementById('rev-cash').textContent = formatCurrency(data.summary.cash_total);

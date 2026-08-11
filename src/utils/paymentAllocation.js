@@ -23,16 +23,58 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
  * the customer paid by card at pickup — as opposed to via the account's
  * bulk monthly payment process (which shows up in payment_allocations
  * instead). 'OnAcc' and 'To Pay' don't count here; those mean "relies on
- * the account being paid later," not "already settled."
+ * the account being paid later," not "already settled." Internet Banking
+ * is a promise, not a receipt — a transfer takes time to land, so it only
+ * counts once a staff member has confirmed it (ib_confirmed), the same way
+ * OnAcc only counts once it's actually allocated.
  */
 function directlyPaidAmount(inv) {
   let paid = 0;
-  const DIRECT_METHODS = new Set(['Eftpos', 'Cash', 'Internet Banking', 'Customer Credit']);
+  const ALWAYS_CONFIRMED = new Set(['Eftpos', 'Cash', 'Customer Credit']);
   const s1 = String(inv.paid_status || '').trim();
-  if (DIRECT_METHODS.has(s1)) paid += parseFloat(inv.payment_amount) || 0;
+  if (ALWAYS_CONFIRMED.has(s1)) paid += parseFloat(inv.payment_amount) || 0;
+  else if (s1 === 'Internet Banking' && inv.ib_confirmed) paid += parseFloat(inv.payment_amount) || 0;
   const s2 = String(inv.paid_status_2 || '').trim();
-  if (DIRECT_METHODS.has(s2)) paid += parseFloat(inv.payment_amount_2) || 0;
+  if (ALWAYS_CONFIRMED.has(s2)) paid += parseFloat(inv.payment_amount_2) || 0;
+  else if (s2 === 'Internet Banking' && inv.ib_confirmed_2) paid += parseFloat(inv.payment_amount_2) || 0;
   return round2(paid);
+}
+
+/**
+ * The flip side of directlyPaidAmount: money recorded on the invoice that
+ * is NOT yet confirmed — On Account (always, until allocated via the
+ * Accounts ledger) plus Internet Banking that hasn't been confirmed yet.
+ * Used to show "pending" figures instead of silently treating this money
+ * as already in hand.
+ */
+function pendingDirectAmount(inv) {
+  let pending = 0;
+  const s1 = String(inv.paid_status || '').trim();
+  if (s1 === 'OnAcc') pending += parseFloat(inv.payment_amount) || 0;
+  else if (s1 === 'Internet Banking' && !inv.ib_confirmed) pending += parseFloat(inv.payment_amount) || 0;
+  const s2 = String(inv.paid_status_2 || '').trim();
+  if (s2 === 'OnAcc') pending += parseFloat(inv.payment_amount_2) || 0;
+  else if (s2 === 'Internet Banking' && !inv.ib_confirmed_2) pending += parseFloat(inv.payment_amount_2) || 0;
+  return round2(pending);
+}
+
+/**
+ * Single source of truth for "is this invoice actually paid" — used by the
+ * receipt PDF and receipt email so they can never again independently
+ * decide On Account or unconfirmed Internet Banking counts as settled.
+ */
+function computeInvoicePaymentStatus(invoice) {
+  const total = parseFloat(invoice.total_price) || 0;
+  const confirmedPaid = round2(directlyPaidAmount(invoice) + (parseFloat(invoice.credit_applied) || 0));
+  const pending = pendingDirectAmount(invoice);
+  const owing = round2(Math.max(0, total - confirmedPaid - pending));
+  const hasPaymentStatus = !!(invoice.paid_status && invoice.paid_status !== 'To Pay');
+  // NOT "owing <= 0.01" — owing already subtracts pending money too, so a
+  // fully-pending invoice (all On Account / unconfirmed IB) would otherwise
+  // read as "nothing left owing" and get mislabelled paid. Paid in full
+  // means confirmed money alone covers the total — pending never counts.
+  const isPaidInFull = hasPaymentStatus && confirmedPaid >= total - 0.01;
+  return { total, confirmedPaid, pending, owing, isPaidInFull };
 }
 
 /**
@@ -207,4 +249,7 @@ module.exports = {
   deallocatePayment,
   deallocateInvoice,
   getAccountStatementData,
+  directlyPaidAmount,
+  pendingDirectAmount,
+  computeInvoicePaymentStatus,
 };

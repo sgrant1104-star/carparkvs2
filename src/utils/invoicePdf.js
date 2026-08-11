@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const { computeInvoicePaymentStatus } = require('./paymentAllocation');
 
 /** Draws the receipt/invoice content onto an already-created PDFDocument and ends it. */
 function drawInvoicePdf(doc, invoice, carpark) {
@@ -50,20 +51,26 @@ function drawInvoicePdf(doc, invoice, carpark) {
 
   // Clear paid/owing status — this is the thing a customer actually needs
   // to know at a glance, not something to infer from raw payment fields.
-  const amountPaid = Math.round((
-    (parseFloat(invoice.payment_amount) || 0) +
-    (parseFloat(invoice.payment_amount_2) || 0) +
-    (parseFloat(invoice.credit_applied) || 0)
-  ) * 100) / 100;
-  const amountOwing = Math.max(0, Math.round(((parseFloat(invoice.total_price) || 0) - amountPaid) * 100) / 100);
-  const isPaidInFull = amountOwing <= 0.01 && (invoice.paid_status && invoice.paid_status !== 'To Pay');
+  // On Account and unconfirmed Internet Banking are NOT counted as paid
+  // here — they're money owed/promised, not money received.
+  const { isPaidInFull, pending, owing } = computeInvoicePaymentStatus(invoice);
+
+  let bannerLabel, bannerColor;
+  if (isPaidInFull) {
+    bannerLabel = 'PAID IN FULL'; bannerColor = '#1e8449';
+  } else if (pending > 0.01) {
+    bannerLabel = owing > 0.01
+      ? `PENDING ${currency(pending)} + DUE ${currency(owing)}`
+      : `PAYMENT PENDING CONFIRMATION: ${currency(pending)}`;
+    bannerColor = '#d68910';
+  } else {
+    bannerLabel = `AMOUNT DUE: ${currency(owing)}`; bannerColor = '#c0392b';
+  }
 
   const bannerY = doc.y;
-  const bannerColor = isPaidInFull ? '#1e8449' : '#c0392b';
   doc.rect(36, bannerY, 347, 26).fill(bannerColor);
   doc.fillColor('#ffffff').fontSize(12).font('Helvetica-Bold').text(
-    isPaidInFull ? 'PAID IN FULL' : `AMOUNT DUE: ${currency(amountOwing)}`,
-    36, bannerY + 7, { width: 347, align: 'center' }
+    bannerLabel, 36, bannerY + 7, { width: 347, align: 'center' }
   );
   doc.y = bannerY + 34;
 
@@ -71,8 +78,12 @@ function drawInvoicePdf(doc, invoice, carpark) {
   if (invoice.credit_applied > 0) doc.text(`Credit applied: ${currency(invoice.credit_applied)}`);
   doc.text(`Payment: ${invoice.paid_status} — ${currency(invoice.payment_amount)}`);
   if (invoice.payment_amount_2 > 0) doc.text(`2nd payment: ${invoice.paid_status_2} — ${currency(invoice.payment_amount_2)}`);
-  if (!isPaidInFull && amountOwing > 0.01) {
-    doc.font('Helvetica-Bold').fillColor('#c0392b').text(`Balance still owing: ${currency(amountOwing)}`);
+  if (pending > 0.01) {
+    doc.font('Helvetica-Bold').fillColor('#d68910').text(`Awaiting confirmation: ${currency(pending)}`);
+    doc.font('Helvetica').fillColor('#333');
+  }
+  if (owing > 0.01) {
+    doc.font('Helvetica-Bold').fillColor('#c0392b').text(`Balance still owing: ${currency(owing)}`);
     doc.font('Helvetica').fillColor('#333');
   }
   line();

@@ -32,6 +32,7 @@
         <div class="stat-card">
           <div class="stat-value" id="stat-revenue-today">--</div>
           <div class="stat-label"><i class="bi bi-cash"></i> Revenue Today</div>
+          <div class="small mt-1" id="stat-pending-today" style="color:#d68910;display:none"></div>
         </div>
       </div>
       <div class="col-6 col-md-3">
@@ -145,13 +146,25 @@
     <div class="form-card mt-3">
       <div class="form-section-title"><i class="bi bi-graph-up me-2"></i>This Month's Revenue</div>
       <div class="row g-2 align-items-center">
-        <div class="col-md-3">
+        <div class="col-6 col-md-2">
           <div class="text-center">
             <div style="font-size:1.6rem; font-weight:700; color:var(--success)" id="month-revenue">--</div>
-            <div class="small text-muted">Total Revenue</div>
+            <div class="small text-muted">Confirmed Revenue</div>
           </div>
         </div>
-        <div class="col-md-9">
+        <div class="col-6 col-md-2">
+          <div class="text-center">
+            <div style="font-size:1.6rem; font-weight:700; color:#d68910" id="month-pending">--</div>
+            <div class="small text-muted">Pending (On Acc / IB)</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-2">
+          <div class="text-center">
+            <div style="font-size:1.6rem; font-weight:700; color:#d68910" id="on-account-balance">--</div>
+            <div class="small text-muted">On Account Balance</div>
+          </div>
+        </div>
+        <div class="col-md-6">
           <div id="revenue-breakdown">
             <div class="text-center text-muted py-2"><div class="spinner-border spinner-border-sm"></div></div>
           </div>
@@ -191,6 +204,15 @@
       document.getElementById('stat-occupancy').textContent = `${occ.toFixed(1)}%`;
       document.getElementById('nav-cars-count').textContent = stats.carsInYard + ' Cars';
       document.getElementById('month-revenue').textContent = formatCurrency(stats.revenueMonth);
+      document.getElementById('month-pending').textContent = formatCurrency(stats.pendingMonth || 0);
+      document.getElementById('on-account-balance').textContent = formatCurrency(stats.onAccountBalance || 0);
+      const pendingTodayEl = document.getElementById('stat-pending-today');
+      if ((stats.pendingToday || 0) > 0.005) {
+        pendingTodayEl.textContent = `+${formatCurrency(stats.pendingToday)} pending`;
+        pendingTodayEl.style.display = '';
+      } else {
+        pendingTodayEl.style.display = 'none';
+      }
 
       // Revenue breakdown
       const methodHtml = (stats.revenueByMethod || []).map(m => `
