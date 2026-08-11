@@ -21,8 +21,8 @@ const {
   EFFECTIVE_PAY2_DAY,
   L1_PAID_TOTAL,
   L2_PAID_TOTAL,
-  L1_PENDING_TOTAL,
-  L2_PENDING_TOTAL,
+  L1_IB_PENDING,
+  L2_IB_PENDING,
   L1_EFTPOS,
   L2_EFTPOS,
   L1_CASH,
@@ -159,7 +159,7 @@ router.get('/revenue', requireAuth, async (req, res) => {
         (${sumBothLinesInRange(L1_EFTPOS, L2_EFTPOS)}) AS eftpos_total,
         (${sumBothLinesInRange(L1_CASH, L2_CASH)}) AS cash_total,
         (${sumBothLinesInRange(L1_ONACC, L2_ONACC)}) AS on_account_total,
-        (${sumBothLinesInRange(L1_PENDING_TOTAL, L2_PENDING_TOTAL)}) AS pending_total,
+        (${sumBothLinesInRange(L1_IB_PENDING, L2_IB_PENDING)}) AS internet_banking_pending_total,
         COALESCE(SUM(CASE WHEN (${INV_DAY}) >= ? AND (${INV_DAY}) <= ? AND paid_status = 'To Pay' THEN total_price ELSE 0 END), 0) AS outstanding_total
       FROM invoices WHERE carpark_id = ? AND void = 0
     `).get(
@@ -196,7 +196,7 @@ router.get('/revenue', requireAuth, async (req, res) => {
       eftpos_total: invSummary.eftpos_total || 0,
       cash_total: invSummary.cash_total || 0,
       on_account_total: invSummary.on_account_total || 0,
-      pending_total: invSummary.pending_total || 0,
+      internet_banking_pending_total: invSummary.internet_banking_pending_total || 0,
       outstanding_total: invSummary.outstanding_total || 0,
       longterm_total: ltSummary.longterm_total || 0,
     };
@@ -323,7 +323,7 @@ router.get('/revenue/pdf', requireAuth, async (req, res) => {
         (${sumBothLinesInRange(L1_EFTPOS, L2_EFTPOS)}) AS eftpos,
         (${sumBothLinesInRange(L1_CASH, L2_CASH)}) AS cash,
         (${sumBothLinesInRange(L1_ONACC, L2_ONACC)}) AS on_account,
-        (${sumBothLinesInRange(L1_PENDING_TOTAL, L2_PENDING_TOTAL)}) AS pending
+        (${sumBothLinesInRange(L1_IB_PENDING, L2_IB_PENDING)}) AS internet_banking_pending
       FROM invoices WHERE carpark_id = ? AND void = 0
     `).get(
       fromDate, toDate, fromDate, toDate,
@@ -352,7 +352,7 @@ router.get('/revenue/pdf', requireAuth, async (req, res) => {
       eftpos: invSummary.eftpos || 0,
       cash: invSummary.cash || 0,
       on_account: invSummary.on_account || 0,
-      pending: invSummary.pending || 0,
+      internet_banking_pending: invSummary.internet_banking_pending || 0,
       longterm_total: ltSummary.longterm_total || 0,
       total_revenue: (invSummary.total_revenue || 0) + (ltSummary.longterm_total || 0),
     };
@@ -393,8 +393,8 @@ router.get('/revenue/pdf', requireAuth, async (req, res) => {
     doc.text(`Cash: $${parseFloat(summary.cash).toFixed(2)}`);
     doc.text(`On Account: $${parseFloat(summary.on_account).toFixed(2)}`);
     doc.text(`Long Term Payments: $${parseFloat(summary.longterm_total || 0).toFixed(2)}`);
-    if ((summary.pending || 0) > 0.01) {
-      doc.fillColor('#d68910').text(`Pending confirmation (On Account / unconfirmed Internet Banking): $${parseFloat(summary.pending).toFixed(2)}`);
+    if ((summary.internet_banking_pending || 0) > 0.01) {
+      doc.fillColor('#d68910').text(`Internet Banking (Pending confirmation): $${parseFloat(summary.internet_banking_pending).toFixed(2)}`);
       doc.fillColor('#000');
     }
     doc.moveDown();

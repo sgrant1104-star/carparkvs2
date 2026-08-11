@@ -2,7 +2,7 @@ const express = require('express');
 const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { businessDateYmd, addCalendarDaysYmd } = require('../utils/businessDate');
-const { sumBothLinesInRange, L1_PAID_TOTAL, L2_PAID_TOTAL, L1_PENDING_TOTAL, L2_PENDING_TOTAL } = require('../utils/invoicePaymentDates');
+const { sumBothLinesInRange, L1_PAID_TOTAL, L2_PAID_TOTAL, L1_IB_PENDING, L2_IB_PENDING } = require('../utils/invoicePaymentDates');
 const { getAccountInvoicesWithOutstanding } = require('../utils/paymentAllocation');
 const router = express.Router();
 
@@ -24,15 +24,16 @@ router.get('/stats', requireAuth, async (req, res) => {
       SELECT (${sumBothLinesInRange(L1_PAID_TOTAL, L2_PAID_TOTAL)}) AS total
       FROM invoices WHERE carpark_id = ? AND void = 0
     `).get(firstOfMonth, today, firstOfMonth, today, carparkId);
-    // Pending = recorded but not yet confirmed received (On Account until
-    // allocated, Internet Banking until confirmed) — shown separately so it
-    // never gets silently blended into "Revenue" as if it were cash in hand.
-    const invPendingToday = await db.prepare(`
-      SELECT (${sumBothLinesInRange(L1_PENDING_TOTAL, L2_PENDING_TOTAL)}) AS total
+    // Internet Banking pending confirmation — shown separately (never
+    // blended into "Revenue") and named specifically rather than lumped
+    // with On Account, which already has its own clearly-labeled balance
+    // tile below (onAccountBalance).
+    const invIBPendingToday = await db.prepare(`
+      SELECT (${sumBothLinesInRange(L1_IB_PENDING, L2_IB_PENDING)}) AS total
       FROM invoices WHERE carpark_id = ? AND void = 0
     `).get(today, today, today, today, carparkId);
-    const invPendingMonth = await db.prepare(`
-      SELECT (${sumBothLinesInRange(L1_PENDING_TOTAL, L2_PENDING_TOTAL)}) AS total
+    const invIBPendingMonth = await db.prepare(`
+      SELECT (${sumBothLinesInRange(L1_IB_PENDING, L2_IB_PENDING)}) AS total
       FROM invoices WHERE carpark_id = ? AND void = 0
     `).get(firstOfMonth, today, firstOfMonth, today, carparkId);
     // Long-term payments are stored ex GST; dashboard revenue is shown inc GST (same as invoice totals).
@@ -41,8 +42,8 @@ router.get('/stats', requireAuth, async (req, res) => {
     const ltRevenueMonth  = await db.prepare(`SELECT COALESCE(SUM(amount_ex_gst * 1.15), 0) as total FROM longterm_payments WHERE carpark_id = ? AND ${ltDay} >= ? AND ${ltDay} <= ?`).get(carparkId, firstOfMonth, today);
     const revenueTodayTotal = (invRevenueToday.total || 0) + (ltRevenueToday.total || 0);
     const revenueMonthTotal = (invRevenueMonth.total || 0) + (ltRevenueMonth.total || 0);
-    const pendingTodayTotal = invPendingToday.total || 0;
-    const pendingMonthTotal = invPendingMonth.total || 0;
+    const ibPendingTodayTotal = invIBPendingToday.total || 0;
+    const ibPendingMonthTotal = invIBPendingMonth.total || 0;
     const carpark        = await db.prepare('SELECT capacity FROM carparks WHERE id = ?').get(carparkId);
     const carparkCapacity = carpark ? carpark.capacity : 100;
     // Short-term occupancy: same basis as Key Box — standard slots only (not LT), % = in_use / total slots
@@ -121,7 +122,7 @@ router.get('/stats', requireAuth, async (req, res) => {
       capacity: totalSlots,
       occupancyRate,
       revenueToday: revenueTodayTotal, revenueMonth: revenueMonthTotal,
-      pendingToday: pendingTodayTotal, pendingMonth: pendingMonthTotal,
+      ibPendingToday: ibPendingTodayTotal, ibPendingMonth: ibPendingMonthTotal,
       carsInToday: carsInToday.count || 0, carsReturnToday: carsReturnToday.count || 0,
       revenueByMethod, recentInvoices, last7Days,
       onAccountBalance: onAccountBalance.total || 0, availableKeys: availableKeys.count || 0

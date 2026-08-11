@@ -155,7 +155,7 @@
         <div class="col-6 col-md-2">
           <div class="text-center">
             <div style="font-size:1.6rem; font-weight:700; color:#d68910" id="month-pending">--</div>
-            <div class="small text-muted">Pending (On Acc / IB)</div>
+            <div class="small text-muted">Internet Banking <span class="d-block">(Pending)</span></div>
           </div>
         </div>
         <div class="col-6 col-md-2">
@@ -204,11 +204,11 @@
       document.getElementById('stat-occupancy').textContent = `${occ.toFixed(1)}%`;
       document.getElementById('nav-cars-count').textContent = stats.carsInYard + ' Cars';
       document.getElementById('month-revenue').textContent = formatCurrency(stats.revenueMonth);
-      document.getElementById('month-pending').textContent = formatCurrency(stats.pendingMonth || 0);
+      document.getElementById('month-pending').textContent = formatCurrency(stats.ibPendingMonth || 0);
       document.getElementById('on-account-balance').textContent = formatCurrency(stats.onAccountBalance || 0);
       const pendingTodayEl = document.getElementById('stat-pending-today');
-      if ((stats.pendingToday || 0) > 0.005) {
-        pendingTodayEl.textContent = `+${formatCurrency(stats.pendingToday)} pending`;
+      if ((stats.ibPendingToday || 0) > 0.005) {
+        pendingTodayEl.textContent = `+${formatCurrency(stats.ibPendingToday)} Internet Banking pending`;
         pendingTodayEl.style.display = '';
       } else {
         pendingTodayEl.style.display = 'none';
