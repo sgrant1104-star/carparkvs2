@@ -95,6 +95,36 @@ async function getInvoiceOutstanding(db, invoiceId) {
 }
 
 /**
+ * An invoice can carry an unconfirmed Internet Banking slot while ALSO
+ * being an account-customer invoice that the account has since paid off in
+ * full via the normal allocation process. When that happens, the money has
+ * already been verified received through a different, already-trusted
+ * channel — requiring a separate "Confirm Received" click on top of that
+ * would just be redundant. Auto-confirms in that case only; a genuinely
+ * outstanding or partially-paid invoice is left alone for a real human
+ * check against the bank statement.
+ */
+async function autoConfirmIBIfAccountPaid(db, { carparkId, invoiceId }) {
+  const inv = await db.prepare('SELECT * FROM invoices WHERE id = ? AND carpark_id = ?').get(invoiceId, carparkId);
+  if (!inv || inv.void) return false;
+  const slot1Pending = String(inv.paid_status || '').trim() === 'Internet Banking' && !inv.ib_confirmed;
+  const slot2Pending = String(inv.paid_status_2 || '').trim() === 'Internet Banking' && !inv.ib_confirmed_2;
+  if (!slot1Pending && !slot2Pending) return false;
+
+  const outstanding = await getInvoiceOutstanding(db, invoiceId);
+  if (outstanding > 0.01) return false;
+
+  const by = 'Auto-confirmed (paid via Account)';
+  if (slot1Pending) {
+    await db.prepare(`UPDATE invoices SET ib_confirmed = 1, ib_confirmed_at = CURRENT_TIMESTAMP, ib_confirmed_by = ? WHERE id = ?`).run(by, invoiceId);
+  }
+  if (slot2Pending) {
+    await db.prepare(`UPDATE invoices SET ib_confirmed_2 = 1, ib_confirmed_2_at = CURRENT_TIMESTAMP, ib_confirmed_2_by = ? WHERE id = ?`).run(by, invoiceId);
+  }
+  return true;
+}
+
+/**
  * All non-void invoices for an account, each annotated with allocated /
  * outstanding amounts, oldest first.
  */
@@ -170,6 +200,12 @@ async function allocateAccountPayment(db, { carparkId, accountCustomerId, paymen
     await insert.run(carparkId, paymentId, inv.id, take);
     splits.push({ invoice_id: inv.id, invoice_number: inv.invoice_number, amount_allocated: take });
     remaining = round2(remaining - take);
+    // Fully covering this invoice — if it also carries an unconfirmed
+    // Internet Banking slot, that money's now independently verified via
+    // the account ledger, so it shouldn't keep sitting in Pending IB.
+    if (take >= inv.outstanding_amount - 0.001) {
+      await autoConfirmIBIfAccountPaid(db, { carparkId, invoiceId: inv.id });
+    }
   }
 
   return { splits, unallocated: round2(Math.max(0, remaining)) };
@@ -252,4 +288,5 @@ module.exports = {
   directlyPaidAmount,
   pendingDirectAmount,
   computeInvoicePaymentStatus,
+  autoConfirmIBIfAccountPaid,
 };

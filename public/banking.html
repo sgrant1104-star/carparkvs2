@@ -96,8 +96,14 @@
 
         <!-- Pending Internet Banking -->
         <div class="form-card mb-4">
-          <div class="form-section-title"><i class="bi bi-hourglass-split me-2"></i>Pending Internet Banking</div>
-          <p class="text-muted small mb-2">Internet Banking payments recorded at check-in don't count as received revenue until you check the bank statement and confirm them here — they won't appear in Revenue, Reports, or this Banking record until then.</p>
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div class="form-section-title mb-0"><i class="bi bi-hourglass-split me-2"></i>Pending Internet Banking</div>
+            <button class="btn btn-outline-secondary btn-sm" id="btn-check-auto-confirm">
+              <i class="bi bi-search me-1"></i>Check for already-paid via Account
+            </button>
+          </div>
+          <p class="text-muted small mb-2 mt-2">Internet Banking payments recorded at check-in don't count as received revenue until you check the bank statement and confirm them here — they won't appear in Revenue, Reports, or this Banking record until then.</p>
+          <div id="auto-confirm-preview" class="alert alert-info small mb-3" style="display:none"></div>
           <div class="table-responsive">
             <table class="table table-sm table-hover">
               <thead>
@@ -291,6 +297,49 @@
         });
       });
     }
+
+    document.getElementById('btn-check-auto-confirm').addEventListener('click', async () => {
+      const box = document.getElementById('auto-confirm-preview');
+      box.style.display = '';
+      box.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Checking against the Accounts ledger...';
+
+      const res = await fetch('/api/banking/pending-internet-banking/auto-confirm-preview');
+      if (!res.ok) { box.className = 'alert alert-danger small mb-3'; box.textContent = 'Could not check.'; return; }
+      const data = await res.json();
+
+      if (data.qualifying.length === 0) {
+        box.className = 'alert alert-secondary small mb-3';
+        box.textContent = `Checked ${data.checked} pending Internet Banking payment(s) tied to an account — none are already paid off via the Accounts ledger yet.`;
+        return;
+      }
+
+      box.className = 'alert alert-info small mb-3';
+      box.innerHTML = `
+        <strong>${data.qualifying.length} of ${data.checked}</strong> account-linked pending payments (totalling <strong>${formatCurrency(data.total)}</strong>)
+        already show as fully paid off in the Accounts ledger — that money's already been verified through account payment allocation, just not marked confirmed here.
+        <ul class="mb-2 mt-2">
+          ${data.qualifying.map(r => `<li>#${r.invoice_number} — ${escapeHtml(`${r.first_name||''} ${r.last_name||''}`.trim())} — ${formatCurrency(r.amount)}</li>`).join('')}
+        </ul>
+        <button class="btn btn-sm btn-success" id="btn-run-auto-confirm">Auto-confirm these ${data.qualifying.length}</button>
+      `;
+
+      document.getElementById('btn-run-auto-confirm').addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        e.target.textContent = 'Confirming...';
+        const runRes = await fetch('/api/banking/pending-internet-banking/auto-confirm', { method: 'POST' });
+        if (runRes.ok) {
+          const result = await runRes.json();
+          showAlert(`Auto-confirmed ${result.confirmed} payment(s)`, 'success');
+          box.style.display = 'none';
+          loadPendingIB();
+          loadBanking();
+        } else {
+          showAlert('Failed to auto-confirm', 'danger');
+          e.target.disabled = false;
+          e.target.textContent = `Auto-confirm these ${data.qualifying.length}`;
+        }
+      });
+    });
 
     document.getElementById('btn-save-banking').addEventListener('click', async () => {
       const payload = {

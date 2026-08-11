@@ -2,7 +2,9 @@ const express = require('express');
 const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { EFFECTIVE_PAY1_DAY, EFFECTIVE_PAY2_DAY } = require('../utils/invoicePaymentDates');
+const { getInvoiceOutstanding, autoConfirmIBIfAccountPaid } = require('../utils/paymentAllocation');
 const router = express.Router();
+const round2 = (n) => Math.round((n || 0) * 100) / 100;
 
 router.get('/', requireAuth, async (req, res) => {
   try {
@@ -134,7 +136,6 @@ router.get('/autofill', requireAuth, async (req, res) => {
     `).all(day, day, carparkId);
     for (const r of ibRows) other += parseFloat(r.amt) || 0;
 
-    const round2 = (n) => Math.round((n || 0) * 100) / 100;
     res.json({
       date,
       eftpos: round2(eftpos),
@@ -172,6 +173,65 @@ router.get('/pending-internet-banking', requireAuth, async (req, res) => {
       ORDER BY date_in ASC
     `).all(carparkId, carparkId);
     res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/banking/pending-internet-banking/auto-confirm-preview
+// Read-only: which currently-pending Internet Banking slots would be
+// auto-confirmed because the invoice is also an account-customer invoice
+// that's already been fully paid off via the Accounts allocation ledger.
+// Shown to staff before they trigger the actual sweep below.
+router.get('/pending-internet-banking/auto-confirm-preview', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const rows = await db.prepare(`
+      SELECT id, invoice_number, first_name, last_name, rego, date_in,
+        1 AS slot, payment_amount AS amount, account_customer_id
+      FROM invoices
+      WHERE carpark_id = ? AND void = 0 AND paid_status = 'Internet Banking'
+        AND COALESCE(ib_confirmed,0) = 0 AND COALESCE(payment_amount,0) > 0
+        AND account_customer_id IS NOT NULL
+      UNION ALL
+      SELECT id, invoice_number, first_name, last_name, rego, date_in,
+        2 AS slot, payment_amount_2 AS amount, account_customer_id
+      FROM invoices
+      WHERE carpark_id = ? AND void = 0 AND paid_status_2 = 'Internet Banking'
+        AND COALESCE(ib_confirmed_2,0) = 0 AND COALESCE(payment_amount_2,0) > 0
+        AND account_customer_id IS NOT NULL
+      ORDER BY date_in ASC
+    `).all(carparkId, carparkId);
+
+    const qualifying = [];
+    for (const r of rows) {
+      const outstanding = await getInvoiceOutstanding(db, r.id);
+      if (outstanding <= 0.01) qualifying.push(r);
+    }
+    const total = round2(qualifying.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0));
+    res.json({ qualifying, total, checked: rows.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/banking/pending-internet-banking/auto-confirm
+// Actually runs the sweep: auto-confirms every pending Internet Banking
+// slot that qualifies (see preview above). Safe to re-run — anything that
+// no longer qualifies (or is already confirmed) is simply skipped.
+router.post('/pending-internet-banking/auto-confirm', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const rows = await db.prepare(`
+      SELECT DISTINCT id FROM invoices
+      WHERE carpark_id = ? AND void = 0 AND account_customer_id IS NOT NULL
+        AND (
+          (paid_status = 'Internet Banking' AND COALESCE(ib_confirmed,0) = 0 AND COALESCE(payment_amount,0) > 0)
+          OR (paid_status_2 = 'Internet Banking' AND COALESCE(ib_confirmed_2,0) = 0 AND COALESCE(payment_amount_2,0) > 0)
+        )
+    `).all(carparkId);
+    let confirmedCount = 0;
+    for (const r of rows) {
+      const did = await autoConfirmIBIfAccountPaid(db, { carparkId, invoiceId: r.id });
+      if (did) confirmedCount++;
+    }
+    res.json({ success: true, checked: rows.length, confirmed: confirmedCount });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
