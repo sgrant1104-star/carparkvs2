@@ -386,6 +386,22 @@ router.put('/:id', requireAuth, async (req, res) => {
       today
     );
 
+    // Staff shortening the return date on a paid booking (e.g. customer calls
+    // to say they're back sooner than booked) is itself a confirmed early
+    // return — bank the credit now rather than waiting for a separate
+    // "picked up" transition. Must run BEFORE the UPDATE below, since
+    // checkAndCreateEarlyReturnCredit re-reads the invoice's current
+    // return_date from the DB as the "booked" date being compared against.
+    let earlyReturnCreditFromDateEdit = null;
+    const oldReturnDate = String(existing.return_date || '').slice(0, 10);
+    const newReturnDate = String(return_date || '').slice(0, 10);
+    if (newReturnDate && oldReturnDate && newReturnDate < oldReturnDate) {
+      const { userId, userName } = actorFromReq(req);
+      earlyReturnCreditFromDateEdit = await checkAndCreateEarlyReturnCredit(db, {
+        carparkId, invoiceId: Number(id), actualReturnDate: newReturnDate, userId, userName,
+      });
+    }
+
     await db.prepare(`
       UPDATE invoices SET
         key_number = ?, no_key = ?, rego = ?, first_name = ?, last_name = ?,
@@ -442,7 +458,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       });
     }
 
-    res.json({ ...updated, earlyReturnCredit });
+    res.json({ ...updated, earlyReturnCredit: earlyReturnCreditFromDateEdit || earlyReturnCredit });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
