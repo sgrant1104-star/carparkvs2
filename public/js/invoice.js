@@ -591,6 +591,10 @@ function applyInvoiceFromPreviousVisit(inv, options = {}) {
     if (acct) applyAccountCustomerPricingFromLookup(acct);
     else setOnAccountPaymentLock('On Account', true);
   }
+  // Phone/last-name were just set programmatically above, which doesn't fire
+  // the blur events checkCustomerCredit() normally listens for — re-check
+  // explicitly so a prefilled repeat customer's available credit still shows.
+  checkCustomerCredit();
 }
 
 function applyAccountCustomerPricingFromLookup(acct) {
@@ -930,6 +934,21 @@ async function calculatePriceNow() {
   if (longTermPricingActive) {
     showAlert('Long-term booking detected: price is auto-filled from Long Term settings.', 'info');
     return;
+  }
+  // On a saved invoice that's already (at least partly) paid, recalculating
+  // silently overwrites the actual paid total with a fresh nights x rate
+  // figure — which then feeds the early-return credit math on save. Confirm
+  // first so staff don't lose track of what was really charged.
+  if (currentInvoiceId) {
+    const paidStatus = document.getElementById('inv-paid-status').value;
+    const paidStatus2El = document.getElementById('inv-paid-status-2');
+    const paidStatus2 = paidStatus2El ? paidStatus2El.value : '';
+    const alreadyPaid = (paidStatus && paidStatus !== 'To Pay') || (paidStatus2 && paidStatus2 !== 'To Pay');
+    if (alreadyPaid) {
+      const currentTotal = document.getElementById('inv-total-price').value || '0.00';
+      const proceed = confirm(`This booking already shows $${currentTotal} as paid. Recalculating will replace that with a fresh nights x rate price — the actual paid amount won't update unless you save. Continue?`);
+      if (!proceed) return;
+    }
   }
   const nights = parseInt(document.getElementById('inv-nights').value) || 1;
   const accountId = document.getElementById('inv-account-customer').value;
