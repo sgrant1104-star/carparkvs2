@@ -227,15 +227,21 @@ async function deallocatePayment(db, { carparkId, paymentSource, paymentId }) {
  * amounts from the allocation system. Shared by the PDF download, the manual
  * "send accounts" email, and the automated month-end cron, so all three
  * always agree with each other and with the Accounts page itself.
+ *
+ * Deliberately NOT lower-bounded by startDate — an unpaid booking from two
+ * months ago is still owed and still belongs on this statement. startDate is
+ * only used below to split out "this period" for the invoiced/paid summary
+ * line; endDate is the only real cutoff (don't pull in future bookings that
+ * haven't happened yet as of this billing run).
  */
 async function getAccountStatementData(db, { carparkId, accountIds, startDate, endDate }) {
   const ph = accountIds.map(() => '?').join(',');
   const invoicesRaw = await db.prepare(`
     SELECT * FROM invoices
     WHERE account_customer_id IN (${ph}) AND void = 0
-      AND substr(trim(COALESCE(date_in,'')),1,10) >= ? AND substr(trim(COALESCE(date_in,'')),1,10) <= ?
+      AND substr(trim(COALESCE(date_in,'')),1,10) <= ?
     ORDER BY date_in ASC
-  `).all(...accountIds, startDate, endDate);
+  `).all(...accountIds, endDate);
 
   const outstandingByInvoiceId = new Map();
   for (const accountId of accountIds) {

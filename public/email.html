@@ -103,6 +103,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
+          <p class="small text-muted" id="test-email-context"></p>
           <label class="form-label">Send test email to:</label>
           <input type="email" class="form-control" id="test-email-addr" placeholder="your@email.com">
         </div>
@@ -162,6 +163,7 @@
   <script>
     document.getElementById('navbar-container').innerHTML = renderNavbar('email');
     const pendingLogDeletes = new Map(); // logId -> { timeout, interval }
+    let testEmailAccountIds = ''; // set when "Send Test" is opened from a specific account row; empty = generic SMTP ping
 
     // Set current month
     document.getElementById('email-month').value = new Date().getMonth() + 1;
@@ -179,7 +181,7 @@
         container.innerHTML = `
           <div class="text-center text-muted py-4">
             <i class="bi bi-inbox" style="font-size:2rem;"></i>
-            <p>No account invoices found for ${data.monthName} ${data.year}</p>
+            <p>No outstanding account invoices to send</p>
           </div>`;
         return;
       }
@@ -190,7 +192,7 @@
           <h3 style="color: #2c3e50; font-style: italic;">
             <i class="bi bi-building me-2"></i>${escapeHtml(data.carpark.name)} - ${data.monthName} ${data.year} Accounts
           </h3>
-          <p class="text-muted mb-0">Preview of monthly account invoices to be emailed. Payment due date: 20th of next month (${data.dueDate || 'N/A'}).</p>
+          <p class="text-muted mb-0">Preview of account invoices to be emailed — every outstanding booking regardless of when it was booked, not just this month's. Payment due date: 20th of next month (${data.dueDate || 'N/A'}).</p>
         </div>
       `;
 
@@ -203,7 +205,9 @@
               <td class="small">${dIn} - ${dOut}</td>
               <td>${escapeHtml(inv.first_name||'')} ${escapeHtml(inv.last_name||'')}</td>
               <td class="fw-bold">${escapeHtml(inv.rego||'')}</td>
-              <td class="text-success fw-bold">${formatCurrency(inv.payment_amount)}</td>
+              <td>${formatCurrency(inv.total_price)}</td>
+              <td class="text-success">${formatCurrency(inv.allocated_amount)}</td>
+              <td class="text-danger fw-bold">${formatCurrency(inv.outstanding_amount)}</td>
             </tr>`;
         }).join('');
 
@@ -217,17 +221,21 @@
                   data-account-ids="${(account_ids && account_ids.length ? account_ids : [account.id]).join(',')}">
                   <i class="bi bi-file-earmark-pdf"></i> PDF
                 </button>
+                <button type="button" class="btn btn-sm btn-outline-warning me-2 btn-test-account-email"
+                  data-account-ids="${(account_ids && account_ids.length ? account_ids : [account.id]).join(',')}">
+                  <i class="bi bi-envelope-paper"></i> Send Test
+                </button>
                 <input type="checkbox" class="form-check-input account-select-cb"
                   data-account-ids="${(account_ids && account_ids.length ? account_ids : [account.id]).join(',')}" checked>
               </div>
             </div>
             <table class="table table-sm table-bordered">
               <thead class="table-light">
-                <tr><th>Stay</th><th>Name</th><th>Car Rego</th><th>Cost</th></tr>
+                <tr><th>Stay</th><th>Name</th><th>Car Rego</th><th>Cost</th><th>Paid</th><th>Outstanding</th></tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
-            <div class="account-total">Total: ${formatCurrency(total)}</div>
+            <div class="account-total">Total Outstanding: ${formatCurrency(total)}</div>
             ${account.payment_link ? `<div class="mt-1 small"><i class="bi bi-link-45deg me-1"></i>Payment link: <a href="${account.payment_link}" target="_blank">${account.payment_link}</a></div>` : ''}
           </div>`;
       });
@@ -243,6 +251,16 @@
           if (!ids) { showAlert('No account ids for PDF', 'warning'); return; }
           const url = `/api/email/account-invoice.pdf?month=${encodeURIComponent(mm)}&year=${encodeURIComponent(yy)}&account_ids=${encodeURIComponent(ids)}`;
           window.open(url, '_blank');
+        });
+      });
+
+      // Send a real test copy of this account's statement to an address you choose
+      document.querySelectorAll('.btn-test-account-email').forEach(btn => {
+        btn.addEventListener('click', () => {
+          testEmailAccountIds = btn.dataset.accountIds || '';
+          document.getElementById('test-email-addr').value = '';
+          document.getElementById('test-email-context').textContent = 'Sends the real statement + real invoice PDFs for this account — redirected to the address below instead of their billing email.';
+          new bootstrap.Modal('#testEmailModal').show();
         });
       });
     }
@@ -435,22 +453,45 @@
       if (modal) modal.hide();
     });
     document.getElementById('btn-test-email').addEventListener('click', () => {
+      testEmailAccountIds = ''; // generic SMTP connectivity ping, not a real statement
+      document.getElementById('test-email-addr').value = '';
+      document.getElementById('test-email-context').textContent = 'Sends a generic connectivity check — not a real statement. To preview an actual account\'s statement, use "Send Test" on that account below instead.';
       new bootstrap.Modal('#testEmailModal').show();
     });
 
     document.getElementById('btn-confirm-test').addEventListener('click', async () => {
       const email = document.getElementById('test-email-addr').value;
       if (!email) { showAlert('Enter an email address', 'warning'); return; }
-      const res = await fetch('/api/email/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showAlert('Test email sent successfully!', 'success');
+
+      let res, data;
+      if (testEmailAccountIds) {
+        // Real statement (real data, real PDFs) redirected to this address —
+        // not just a connectivity ping.
+        const month = document.getElementById('email-month').value;
+        const year = document.getElementById('email-year').value;
+        res = await fetch('/api/email/send-accounts-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ month, year, account_ids: testEmailAccountIds, test_email: email })
+        });
+        data = await res.json();
+        if (res.ok) {
+          showAlert(`Test statement sent to ${email} (${data.invoiceCount} invoice(s) attached)`, 'success', 6000);
+        } else {
+          showAlert('Failed: ' + data.error, 'danger', 6000);
+        }
       } else {
-        showAlert('Failed: ' + data.error, 'danger', 6000);
+        res = await fetch('/api/email/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        data = await res.json();
+        if (res.ok) {
+          showAlert('Test email sent successfully!', 'success');
+        } else {
+          showAlert('Failed: ' + data.error, 'danger', 6000);
+        }
       }
       bootstrap.Modal.getInstance('#testEmailModal').hide();
     });

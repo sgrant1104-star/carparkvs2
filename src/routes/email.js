@@ -104,7 +104,7 @@ function buildAccountEmailHTML(carpark, account, statementData, monthName, year,
     <h2 style="color:#2c3e50;font-style:italic;">${carpark.name} – GST – ${monthName} ${year} Account Statement</h2>
     <hr style="border:2px solid #3498db;">
     <h3 style="color:#e74c3c;">${account.company_name}</h3>
-    <p style="color:#555;font-size:13px;">Showing bookings with an outstanding balance. Fully paid bookings from this period aren't listed below.</p>
+    <p style="color:#555;font-size:13px;">Showing every booking with an outstanding balance, including unpaid amounts carried over from earlier months. Fully paid bookings aren't listed below.</p>
     <table style="width:100%;border-collapse:collapse;margin-top:10px;">
       <thead><tr style="background:#f8f9fa;">
         <th style="padding:8px 10px;text-align:left;border-bottom:2px solid #dee2e6;">Stay</th>
@@ -116,7 +116,7 @@ function buildAccountEmailHTML(carpark, account, statementData, monthName, year,
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <p style="margin-top:10px;color:#666;">Total invoiced this period: $${grossInvoiced.toFixed(2)} · Paid: $${totalPaid.toFixed(2)}</p>
+    <p style="margin-top:10px;color:#666;">Total invoiced to date: $${grossInvoiced.toFixed(2)} · Paid to date: $${totalPaid.toFixed(2)}</p>
     <p style="margin-top:4px;"><strong>Amount Outstanding: <span style="color:#c0392b;font-size:18px;">$${totalOutstanding.toFixed(2)}</span></strong></p>
     <p style="margin-top:4px;"><strong>Payment due date:</strong> 20th of next month (${dueDateYmd})</p>
     ${payLink}
@@ -160,7 +160,7 @@ function buildAccountInvoicePDF({ res, carpark, account, statementData, monthNam
   line();
 
   doc.fontSize(14).fillColor('#c0392b').font('Helvetica-Bold').text(account.company_name || '');
-  doc.font('Helvetica').fontSize(9).fillColor('#666').text('Showing bookings with an outstanding balance. Fully paid bookings from this period are not listed.');
+  doc.font('Helvetica').fontSize(9).fillColor('#666').text('Showing every booking with an outstanding balance, including unpaid amounts carried over from earlier months. Fully paid bookings are not listed.');
   doc.moveDown(0.5);
 
   // Table header
@@ -202,7 +202,7 @@ function buildAccountInvoicePDF({ res, carpark, account, statementData, monthNam
   doc.y = y;
   doc.x = left;
   doc.moveDown(1);
-  doc.fontSize(9).fillColor('#666').text(`Total invoiced this period: ${currency(grossInvoiced)}   ·   Paid: ${currency(totalPaid)}`, left, doc.y, { width: fullWidth, align: 'right' });
+  doc.fontSize(9).fillColor('#666').text(`Total invoiced to date: ${currency(grossInvoiced)}   ·   Paid to date: ${currency(totalPaid)}`, left, doc.y, { width: fullWidth, align: 'right' });
   doc.moveDown(0.3);
   doc.x = left;
   doc.fontSize(14).fillColor('#c0392b').font('Helvetica-Bold').text(`Amount Outstanding: ${currency(totalOutstanding)}`, left, doc.y, { width: fullWidth, align: 'right' });
@@ -259,38 +259,31 @@ router.get('/preview', requireAuth, async (req, res) => {
 
     // Group accounts so the same recipient doesn't get multiple separate preview blocks.
     // Keyed by billing email (fallback: company name).
-    const byKey = new Map(); // key -> { account, account_ids: [], invoices: [], total }
+    const byKey = new Map(); // key -> { account, account_ids: [] }
 
     for (const account of accounts) {
-      const invoices = await db.prepare(`
-        SELECT * FROM invoices
-        WHERE account_customer_id = ?
-          AND void = 0
-          AND DATE(date_in) >= ?
-          AND DATE(date_in) <= ?
-        ORDER BY date_in ASC
-      `).all(account.id, startDate, endDate);
-
-      if (invoices.length === 0) continue;
-
       const key = recipientKey(account);
-      if (!byKey.has(key)) {
-        byKey.set(key, { account, account_ids: [account.id], invoices: [], total: 0 });
-      }
-
+      if (!byKey.has(key)) byKey.set(key, { account, account_ids: [] });
       const g = byKey.get(key);
       g.account_ids.push(account.id);
-      g.invoices.push(...invoices);
-      g.total += invoices.reduce((s, inv) => s + (inv.payment_amount || 0), 0);
-
       // Prefer an account that has a billing email for the same group.
       if (!billingEmail(g.account) && billingEmail(account)) g.account = account;
     }
 
-    const accountData = Array.from(byKey.values()).map(g => {
-      g.invoices.sort((a, b) => new Date(a.date_in).getTime() - new Date(b.date_in).getTime());
-      return { account: g.account, account_ids: g.account_ids, invoices: g.invoices, total: g.total };
-    });
+    // Preview must show exactly what send-accounts would actually send —
+    // all outstanding invoices regardless of which month they were booked
+    // in, not just this month's — so use the same shared query.
+    const accountData = [];
+    for (const g of byKey.values()) {
+      const statementData = await getAccountStatementData(db, { carparkId, accountIds: g.account_ids, startDate, endDate });
+      if (statementData.outstandingInvoices.length === 0) continue;
+      accountData.push({
+        account: g.account,
+        account_ids: g.account_ids,
+        invoices: statementData.outstandingInvoices,
+        total: statementData.totalOutstanding,
+      });
+    }
 
     res.json({ month: m, year: y, monthName, dueDate: dueDateYmd, carpark, accounts: accountData });
   } catch (err) { res.status(500).json({ error: smtpErrorMessage(err) }); }
@@ -438,6 +431,73 @@ router.post('/send-accounts', requireAuth, async (req, res) => {
     }
     res.json({ success: true, results });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/email/send-accounts-test  { month, year, account_ids, test_email }
+// Sends the REAL statement for these accounts — same query, same HTML, same
+// per-booking PDF attachments as a live send-accounts run — but redirected
+// to test_email instead of the account's real billing email, so staff can
+// see exactly what a customer would receive before it goes out for real.
+// Not written to email_logs: this must never look like (or count as) an
+// actual bill going out.
+router.post('/send-accounts-test', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const { month, year, account_ids, test_email } = req.body;
+    if (!test_email) return res.status(400).json({ error: 'test_email required' });
+    const m = String(month || new Date().getMonth() + 1).padStart(2, '0');
+    const y = year || new Date().getFullYear();
+    const startDate = `${y}-${m}-01`;
+    const endDate   = new Date(y, parseInt(m), 0).toISOString().split('T')[0];
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const monthName  = monthNames[parseInt(m) - 1];
+    const dueDateYmd = dueDate20thNextMonth(parseInt(m, 10), parseInt(y, 10));
+    const carpark    = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
+
+    const ids = Array.isArray(account_ids) ? account_ids : (typeof account_ids === 'string' ? account_ids.split(',') : []);
+    const normalizedIds = ids.map(x => parseInt(x, 10)).filter(n => Number.isFinite(n) && n > 0);
+    if (normalizedIds.length === 0) return res.status(400).json({ error: 'account_ids required' });
+    const ph = normalizedIds.map(() => '?').join(',');
+    const accounts = await db.prepare(`SELECT * FROM account_customers WHERE id IN (${ph}) AND carpark_id = ?`).all(...normalizedIds, carparkId);
+    if (!accounts || accounts.length === 0) return res.status(404).json({ error: 'Account not found' });
+    const account = accounts[0];
+
+    const transporter = getTransporter();
+    if (!transporter) return res.status(503).json({ error: SMTP_MISSING_MSG });
+
+    const statementData = await getAccountStatementData(db, { carparkId, accountIds: normalizedIds, startDate, endDate });
+    if (statementData.outstandingInvoices.length === 0) {
+      return res.status(404).json({ error: 'No outstanding invoices for this account — nothing to preview' });
+    }
+
+    const invNo = accountInvoiceNumber(y, m, account.id);
+    const banner = `<div style="background:#fff3cd;border:1px solid #ffe69c;padding:10px 14px;border-radius:6px;color:#664d03;margin-bottom:14px;font-family:Arial,sans-serif;">
+      <strong>TEST SEND</strong> — this is exactly what ${account.company_name || 'this account'} would receive for real. Not logged, not marked as billed.
+    </div>`;
+    const html = banner + buildAccountEmailHTML(carpark, account, statementData, monthName, y, m, dueDateYmd);
+
+    const attachments = [];
+    for (const inv of statementData.outstandingInvoices) {
+      try {
+        const buf = await buildInvoicePdfBuffer(inv, carpark);
+        attachments.push({ filename: `Invoice-${inv.invoice_number}.pdf`, content: buf });
+      } catch (pdfErr) {
+        console.error(`[send-accounts-test] Failed to build PDF for invoice #${inv.invoice_number}:`, pdfErr.message);
+      }
+    }
+
+    await transporter.sendMail({
+      from: emailFrom(),
+      to: test_email,
+      subject: `[TEST] ${carpark.name} – GST – ${monthName} ${y} Account Invoice (${invNo})`,
+      html,
+      attachments,
+    });
+
+    res.json({ success: true, message: `Test statement sent to ${test_email}`, invoiceCount: statementData.outstandingInvoices.length });
+  } catch (err) {
+    res.status(500).json({ error: smtpErrorMessage(err) });
+  }
 });
 
 // GET /api/email/logs
