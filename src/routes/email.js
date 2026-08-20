@@ -69,55 +69,34 @@ function referenceForAccountInvoice(carpark, account, invoiceNo) {
   return invoiceNo;
 }
 
+// Short cover note — the actual booking-by-booking breakdown now lives in
+// the attached statement PDF (and each unpaid booking's own invoice PDF),
+// so the email body just needs to point at the attachments and surface the
+// numbers someone needs to decide whether to open them: what's owed, by
+// when, and how to pay it.
 function buildAccountEmailHTML(carpark, account, statementData, monthName, year, month2, dueDateYmd) {
-  const { outstandingInvoices, grossInvoiced, totalPaid, totalOutstanding } = statementData;
-  const rows = outstandingInvoices.map(inv => {
-    const dIn  = inv.date_in     ? new Date(inv.date_in).toLocaleDateString('en-NZ',     { day: 'numeric', month: 'short', year: '2-digit' }) : '';
-    const dOut = inv.return_date ? new Date(inv.return_date).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' }) : '';
-    return `<tr>
-      <td style="padding:6px 10px;border-bottom:1px solid #eee;">${dIn} – ${dOut}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eee;">${inv.first_name || ''} ${inv.last_name || ''}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eee;">${inv.rego || ''}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">$${parseFloat(inv.total_price || 0).toFixed(2)}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;color:#27ae60;">$${inv.allocated_amount.toFixed(2)}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;color:#c0392b;font-weight:bold;">$${inv.outstanding_amount.toFixed(2)}</td>
-    </tr>`;
-  }).join('');
+  const { outstandingInvoices, totalOutstanding } = statementData;
 
   const payLink = account.payment_link
     ? `<p><a href="${account.payment_link}" style="background:#27ae60;color:#fff;padding:10px 20px;border-radius:5px;text-decoration:none;display:inline-block;margin-top:10px;">Pay Online</a></p>`
     : '';
 
+  const invNo = accountInvoiceNumber(year, month2, account.id);
+  const ref = referenceForAccountInvoice(carpark, account, invNo);
   const bank = [
     carpark.bank_name ? `<p><strong>Bank:</strong> ${carpark.bank_name}</p>` : '',
     carpark.bank_account_name ? `<p><strong>Account name:</strong> ${carpark.bank_account_name}</p>` : '',
     carpark.bank_account_number ? `<p><strong>Account number:</strong> ${carpark.bank_account_number}</p>` : '',
-    (() => {
-      const invNo = accountInvoiceNumber(year, month2, account.id);
-      const ref = referenceForAccountInvoice(carpark, account, invNo);
-      return `<p><strong>Invoice #:</strong> ${invNo}</p><p><strong>Reference:</strong> ${ref}</p>`;
-    })(),
+    `<p><strong>Invoice #:</strong> ${invNo}</p><p><strong>Reference:</strong> ${ref}</p>`,
   ].join('');
 
+  const invoiceWord = outstandingInvoices.length === 1 ? 'invoice' : 'invoices';
+
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
-  <body style="font-family:Arial,sans-serif;max-width:700px;margin:0 auto;padding:20px;color:#333;">
-    <h2 style="color:#2c3e50;font-style:italic;">${carpark.name} – GST – ${monthName} ${year} Account Statement</h2>
-    <hr style="border:2px solid #3498db;">
-    <h3 style="color:#e74c3c;">${account.company_name}</h3>
-    <p style="color:#555;font-size:13px;">Showing every booking with an outstanding balance, including unpaid amounts carried over from earlier months. Fully paid bookings aren't listed below.</p>
-    <table style="width:100%;border-collapse:collapse;margin-top:10px;">
-      <thead><tr style="background:#f8f9fa;">
-        <th style="padding:8px 10px;text-align:left;border-bottom:2px solid #dee2e6;">Stay</th>
-        <th style="padding:8px 10px;text-align:left;border-bottom:2px solid #dee2e6;">Name</th>
-        <th style="padding:8px 10px;text-align:left;border-bottom:2px solid #dee2e6;">Car Rego</th>
-        <th style="padding:8px 10px;text-align:right;border-bottom:2px solid #dee2e6;">Cost</th>
-        <th style="padding:8px 10px;text-align:right;border-bottom:2px solid #dee2e6;">Paid</th>
-        <th style="padding:8px 10px;text-align:right;border-bottom:2px solid #dee2e6;">Outstanding</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <p style="margin-top:10px;color:#666;">Total invoiced to date: $${grossInvoiced.toFixed(2)} · Paid to date: $${totalPaid.toFixed(2)}</p>
-    <p style="margin-top:4px;"><strong>Amount Outstanding: <span style="color:#c0392b;font-size:18px;">$${totalOutstanding.toFixed(2)}</span></strong></p>
+  <body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#333;">
+    <p>Hi ${account.company_name},</p>
+    <p>Please see attached the ${outstandingInvoices.length} unpaid ${invoiceWord} along with the account statement.</p>
+    <p style="margin-top:16px;"><strong>Amount Outstanding: <span style="color:#c0392b;font-size:18px;">$${totalOutstanding.toFixed(2)}</span></strong></p>
     <p style="margin-top:4px;"><strong>Payment due date:</strong> 20th of next month (${dueDateYmd})</p>
     ${payLink}
     ${bank ? `<hr style="margin-top:22px;"><h3 style="color:#2c3e50;font-size:15px;">Payment details</h3>${bank}` : ''}
@@ -134,10 +113,8 @@ function sanitizeFilename(s) {
     .slice(0, 80) || 'account';
 }
 
-function buildAccountInvoicePDF({ res, carpark, account, statementData, monthName, year, month2, dueDateYmd }) {
+function drawAccountStatementPdf(doc, { carpark, account, statementData, monthName, year, month2, dueDateYmd }) {
   const { outstandingInvoices, grossInvoiced, totalPaid, totalOutstanding } = statementData;
-  const doc = new PDFDocument({ size: 'A4', margin: 40 });
-  doc.pipe(res);
 
   const currency = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
   const line = () => { doc.moveDown(0.4); doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).strokeColor('#cccccc').stroke(); doc.moveDown(0.6); };
@@ -230,6 +207,27 @@ function buildAccountInvoicePDF({ res, carpark, account, statementData, monthNam
   doc.moveDown(1.2);
   doc.fontSize(9).fillColor('#777').text(`${carpark.address || ''}\n${carpark.phone || ''}`.trim());
   doc.end();
+}
+
+/** Streams the statement PDF directly to an HTTP response (browser download). */
+function streamAccountStatementPdf(res, opts) {
+  const doc = new PDFDocument({ size: 'A4', margin: 40 });
+  doc.pipe(res);
+  drawAccountStatementPdf(doc, opts);
+}
+
+/** Builds the statement PDF as a Buffer — for email attachments. */
+function buildAccountStatementPdfBuffer(opts) {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ size: 'A4', margin: 40 });
+      const chunks = [];
+      doc.on('data', (c) => chunks.push(c));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+      drawAccountStatementPdf(doc, opts);
+    } catch (err) { reject(err); }
+  });
 }
 
 function billingEmail(account) {
@@ -325,7 +323,7 @@ router.get('/account-invoice.pdf', requireAuth, async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
 
-    buildAccountInvoicePDF({ res, carpark: carpark || {}, account, statementData, monthName, year: y, month2: m, dueDateYmd });
+    streamAccountStatementPdf(res, { carpark: carpark || {}, account, statementData, monthName, year: y, month2: m, dueDateYmd });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -399,11 +397,17 @@ router.post('/send-accounts', requireAuth, async (req, res) => {
       try {
         const invNo = accountInvoiceNumber(y, m, g.account.id);
 
-        // Attach each outstanding booking's own invoice PDF alongside the
-        // statement, so the customer has a full paper trail per booking —
-        // not just the summary. A failure generating one attachment doesn't
-        // block the email — the statement itself is the essential part.
+        // Attach the statement PDF itself, plus each outstanding booking's
+        // own invoice PDF, so the customer has both the summary and a full
+        // paper trail per booking — the email body is just a cover note. A
+        // failure generating one attachment doesn't block the email.
         const attachments = [];
+        try {
+          const statementBuf = await buildAccountStatementPdfBuffer({ carpark, account: g.account, statementData, monthName, year: y, month2: m, dueDateYmd });
+          attachments.push({ filename: `Statement-${invNo}.pdf`, content: statementBuf });
+        } catch (pdfErr) {
+          console.error(`[send-accounts] Failed to build statement PDF for ${g.account.company_name}:`, pdfErr.message);
+        }
         for (const inv of statementData.outstandingInvoices) {
           try {
             const buf = await buildInvoicePdfBuffer(inv, carpark);
@@ -477,6 +481,12 @@ router.post('/send-accounts-test', requireAuth, async (req, res) => {
     const html = banner + buildAccountEmailHTML(carpark, account, statementData, monthName, y, m, dueDateYmd);
 
     const attachments = [];
+    try {
+      const statementBuf = await buildAccountStatementPdfBuffer({ carpark, account, statementData, monthName, year: y, month2: m, dueDateYmd });
+      attachments.push({ filename: `Statement-${invNo}.pdf`, content: statementBuf });
+    } catch (pdfErr) {
+      console.error(`[send-accounts-test] Failed to build statement PDF for ${account.company_name}:`, pdfErr.message);
+    }
     for (const inv of statementData.outstandingInvoices) {
       try {
         const buf = await buildInvoicePdfBuffer(inv, carpark);
