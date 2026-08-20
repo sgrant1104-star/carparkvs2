@@ -120,7 +120,11 @@
 
     async function loadKeyBox() {
       const res = await fetch('/api/keybox');
-      if (!res.ok) return;
+      if (!res.ok) {
+        document.getElementById('key-grid').innerHTML =
+          '<div class="text-center py-4 text-danger col-span-all"><i class="bi bi-exclamation-triangle fs-3"></i><p class="mt-2">Failed to load — try refreshing the page.</p></div>';
+        return;
+      }
       const data = await res.json();
 
       document.getElementById('available-count').textContent = `${data.available} Available`;

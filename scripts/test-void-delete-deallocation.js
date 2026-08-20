@@ -64,8 +64,13 @@
   const applyResult2 = await applyCreditToInvoice(db, { carparkId, invoiceId: inv2, amount: credit.amount, phone: '027-999-0001' });
   assert(applyResult2.applied > 0, `credit applied to invoice 2 ($${applyResult2.applied})`);
 
+  // inv2's total is only $50, so applyCreditToInvoice correctly caps what it
+  // takes at that — $100 of the $150 credit is expected to remain available,
+  // not $0. (This assertion previously expected full consumption, which
+  // doesn't match the documented "excess stays available" behavior.)
   let avail = await findAvailableCredit(db, { carparkId, phone: '027-999-0001' });
-  assert(avail.totalAvailable === 0, 'credit fully consumed, none available');
+  const expectedRemaining = credit.amount - applyResult2.applied;
+  assert(Math.abs(avail.totalAvailable - expectedRemaining) < 0.01, `credit partially consumed, $${expectedRemaining} still available (got $${avail.totalAvailable})`);
 
   // Now release it (simulating inv2 being voided)
   await releaseCreditForInvoice(db, { carparkId, invoiceId: inv2 });

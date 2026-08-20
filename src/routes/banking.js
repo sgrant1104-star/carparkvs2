@@ -3,6 +3,7 @@ const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { EFFECTIVE_PAY1_DAY, EFFECTIVE_PAY2_DAY } = require('../utils/invoicePaymentDates');
 const { getInvoiceOutstanding, autoConfirmIBIfAccountPaid } = require('../utils/paymentAllocation');
+const { logActivity, actorFromReq } = require('../utils/audit');
 const router = express.Router();
 const round2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -24,16 +25,25 @@ router.post('/', requireAuth, async (req, res) => {
     const carparkId = req.session.carparkId || 1;
     const { date, eftpos_total, cash_total, account_total, other_total, notes } = req.body;
     const d = date || new Date().toISOString().split('T')[0];
-    const existing = await db.prepare('SELECT id FROM banking WHERE carpark_id = ? AND date = ?').get(carparkId, d);
-    if (existing) {
+    const { userId, userName } = actorFromReq(req);
+    const existingFull = await db.prepare('SELECT * FROM banking WHERE carpark_id = ? AND date = ?').get(carparkId, d);
+    if (existingFull) {
       await db.prepare(`UPDATE banking SET eftpos_total=?, cash_total=?, account_total=?, other_total=?, notes=?, staff_id=? WHERE id=?`)
-        .run(eftpos_total || 0, cash_total || 0, account_total || 0, other_total || 0, notes, req.session.userId, existing.id);
-      const record = await db.prepare('SELECT * FROM banking WHERE id = ?').get(existing.id);
+        .run(eftpos_total || 0, cash_total || 0, account_total || 0, other_total || 0, notes, req.session.userId, existingFull.id);
+      const record = await db.prepare('SELECT * FROM banking WHERE id = ?').get(existingFull.id);
+      await logActivity(db, {
+        carparkId, tableName: 'banking', recordId: existingFull.id, action: 'update',
+        before: existingFull, after: record, userId, userName,
+      });
       return res.json(record);
     }
     const result = await db.prepare(`INSERT INTO banking (carpark_id, date, eftpos_total, cash_total, account_total, other_total, notes, staff_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(carparkId, d, eftpos_total || 0, cash_total || 0, account_total || 0, other_total || 0, notes, req.session.userId);
     const record = await db.prepare('SELECT * FROM banking WHERE id = ?').get(result.lastInsertRowid);
+    await logActivity(db, {
+      carparkId, tableName: 'banking', recordId: record.id, action: 'create',
+      before: null, after: record, userId, userName,
+    });
     res.status(201).json(record);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

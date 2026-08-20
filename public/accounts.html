@@ -200,7 +200,11 @@
 
     async function loadAccounts() {
       const res = await fetch('/api/accounts');
-      if (!res.ok) return;
+      if (!res.ok) {
+        document.getElementById('accounts-tbody').innerHTML =
+          '<tr><td colspan="10" class="text-center text-danger">Failed to load accounts — try refreshing the page.</td></tr>';
+        return;
+      }
       const accounts = await res.json();
       const tbody = document.getElementById('accounts-tbody');
 

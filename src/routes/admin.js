@@ -71,8 +71,12 @@ router.post('/users', requireAuth, requireAdmin, async (req, res) => {
 
 router.put('/users/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
+    const carparkId = req.session.carparkId || 1;
     const { username, name, email, role, active, password } = req.body;
     const isActive = active === true || active === 1 || active === '1';
+
+    const target = await db.prepare('SELECT id FROM users WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
+    if (!target) return res.status(404).json({ error: 'User not found' });
 
     // If username is being changed, ensure it is unique
     if (username) {
@@ -82,11 +86,11 @@ router.put('/users/:id', requireAuth, requireAdmin, async (req, res) => {
 
     if (password) {
       const hash = bcrypt.hashSync(password, 10);
-      await db.prepare('UPDATE users SET username=?, name=?, email=?, role=?, active=?, password=? WHERE id=?')
-        .run(username, name, email, role, isActive ? 1 : 0, hash, req.params.id);
+      await db.prepare('UPDATE users SET username=?, name=?, email=?, role=?, active=?, password=? WHERE id=? AND carpark_id=?')
+        .run(username, name, email, role, isActive ? 1 : 0, hash, req.params.id, carparkId);
     } else {
-      await db.prepare('UPDATE users SET username=?, name=?, email=?, role=?, active=? WHERE id=?')
-        .run(username, name, email, role, isActive ? 1 : 0, req.params.id);
+      await db.prepare('UPDATE users SET username=?, name=?, email=?, role=?, active=? WHERE id=? AND carpark_id=?')
+        .run(username, name, email, role, isActive ? 1 : 0, req.params.id, carparkId);
     }
     const user = await db.prepare('SELECT id, username, name, email, role, active FROM users WHERE id = ?').get(req.params.id);
     res.json(user);
@@ -95,18 +99,21 @@ router.put('/users/:id', requireAuth, requireAdmin, async (req, res) => {
 
 router.get('/carparks', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const carparks = await db.prepare('SELECT * FROM carparks').all();
+    const carparkId = req.session.carparkId || 1;
+    const carparks = await db.prepare('SELECT * FROM carparks WHERE id = ?').all(carparkId);
     res.json(carparks);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.put('/carparks/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
+    const carparkId = req.session.carparkId || 1;
+    if (Number(req.params.id) !== Number(carparkId)) return res.status(403).json({ error: 'Cannot edit another carpark' });
     const { name, address, phone, email, capacity, bank_name, bank_account_name, bank_account_number, bank_reference } = req.body;
     await db.prepare(`UPDATE carparks SET name=?, address=?, phone=?, email=?, capacity=?,
       bank_name=?, bank_account_name=?, bank_account_number=?, bank_reference=? WHERE id=?`)
-      .run(name, address, phone, email, capacity, bank_name||null, bank_account_name||null, bank_account_number||null, bank_reference||null, req.params.id);
-    const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(req.params.id);
+      .run(name, address, phone, email, capacity, bank_name||null, bank_account_name||null, bank_account_number||null, bank_reference||null, carparkId);
+    const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
     res.json(carpark);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -131,17 +138,21 @@ router.post('/pricing', requireAuth, requireAdmin, async (req, res) => {
 
 router.put('/pricing/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
+    const carparkId = req.session.carparkId || 1;
     const { days_from, days_to, daily_rate, description, active } = req.body;
-    await db.prepare('UPDATE pricing_rules SET days_from=?, days_to=?, daily_rate=?, description=?, active=? WHERE id=?')
-      .run(days_from, days_to || null, daily_rate, description, active ? 1 : 0, req.params.id);
-    const rule = await db.prepare('SELECT * FROM pricing_rules WHERE id = ?').get(req.params.id);
+    await db.prepare('UPDATE pricing_rules SET days_from=?, days_to=?, daily_rate=?, description=?, active=? WHERE id=? AND carpark_id=?')
+      .run(days_from, days_to || null, daily_rate, description, active ? 1 : 0, req.params.id, carparkId);
+    const rule = await db.prepare('SELECT * FROM pricing_rules WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
+    if (!rule) return res.status(404).json({ error: 'Pricing rule not found' });
     res.json(rule);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.delete('/pricing/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
-    await db.prepare('DELETE FROM pricing_rules WHERE id = ?').run(req.params.id);
+    const carparkId = req.session.carparkId || 1;
+    const result = await db.prepare('DELETE FROM pricing_rules WHERE id = ? AND carpark_id = ?').run(req.params.id, carparkId);
+    if (!result || !result.changes) return res.status(404).json({ error: 'Pricing rule not found' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

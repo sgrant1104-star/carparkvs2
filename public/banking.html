@@ -345,14 +345,32 @@
     });
 
     document.getElementById('btn-save-banking').addEventListener('click', async () => {
+      const date = document.getElementById('banking-date').value;
       const payload = {
-        date: document.getElementById('banking-date').value,
+        date,
         eftpos_total: document.getElementById('banking-eftpos').value || 0,
         cash_total: document.getElementById('banking-cash').value || 0,
         account_total: document.getElementById('banking-account').value || 0,
         other_total: document.getElementById('banking-other').value || 0,
         notes: document.getElementById('banking-notes').value
       };
+
+      // A record for this date may already exist (e.g. someone already
+      // reconciled today) — warn before silently overwriting it.
+      const checkRes = await fetch(`/api/banking?from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}`);
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        const existingRecord = (checkData.records || [])[0];
+        if (existingRecord) {
+          const ok = confirm(
+            `A banking record for ${date} already exists — Eftpos $${Number(existingRecord.eftpos_total || 0).toFixed(2)}, ` +
+            `Cash $${Number(existingRecord.cash_total || 0).toFixed(2)}, Account $${Number(existingRecord.account_total || 0).toFixed(2)}, ` +
+            `Other $${Number(existingRecord.other_total || 0).toFixed(2)}.\n\nSave anyway and overwrite it?`
+          );
+          if (!ok) return;
+        }
+      }
+
       const res = await fetch('/api/banking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

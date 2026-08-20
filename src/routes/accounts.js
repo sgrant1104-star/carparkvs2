@@ -53,9 +53,10 @@ router.get('/', requireAuth, async (req, res) => {
 
 router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const account = await db.prepare('SELECT * FROM account_customers WHERE id = ?').get(req.params.id);
+    const carparkId = req.session.carparkId || 1;
+    const account = await db.prepare('SELECT * FROM account_customers WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
     if (!account) return res.status(404).json({ error: 'Account not found' });
-    const invoices = await db.prepare(`SELECT * FROM invoices WHERE account_customer_id = ? AND void = 0 ORDER BY date_in DESC LIMIT 50`).all(req.params.id);
+    const invoices = await db.prepare(`SELECT * FROM invoices WHERE account_customer_id = ? AND carpark_id = ? AND void = 0 ORDER BY date_in DESC LIMIT 50`).all(req.params.id, carparkId);
     res.json({ ...account, invoices });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -235,9 +236,9 @@ router.delete('/:id/payments/:paymentId', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
-    const { company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, notes, rego_1, rego_2 } = req.body;
-    const result = await db.prepare(`INSERT INTO account_customers (company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, notes, rego_1, rego_2, carpark_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(company_name, contact_name, phone, email, billing_email, payment_link || '', discount_percent || 0, notes, rego_1 || null, rego_2 || null, carparkId);
+    const { company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2 } = req.body;
+    const result = await db.prepare(`INSERT INTO account_customers (company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2, carpark_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(company_name, contact_name, phone, email, billing_email, payment_link || '', discount_percent || 0, credit_balance || 0, notes, rego_1 || null, rego_2 || null, carparkId);
     const account = await db.prepare('SELECT * FROM account_customers WHERE id = ?').get(result.lastInsertRowid);
     const { userId, userName } = actorFromReq(req);
     await logActivity(db, { carparkId, tableName: 'account_customers', recordId: account.id, action: 'create', before: null, after: account, userId, userName });
@@ -248,10 +249,11 @@ router.post('/', requireAuth, async (req, res) => {
 router.put('/:id', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
-    const before = await db.prepare('SELECT * FROM account_customers WHERE id = ?').get(req.params.id);
+    const before = await db.prepare('SELECT * FROM account_customers WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
+    if (!before) return res.status(404).json({ error: 'Account not found' });
     const { company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2 } = req.body;
-    await db.prepare(`UPDATE account_customers SET company_name=?, contact_name=?, phone=?, email=?, billing_email=?, payment_link=?, discount_percent=?, credit_balance=?, notes=?, rego_1=?, rego_2=? WHERE id = ?`)
-      .run(company_name, contact_name, phone, email, billing_email, payment_link || '', discount_percent || 0, credit_balance || 0, notes, rego_1 || null, rego_2 || null, req.params.id);
+    await db.prepare(`UPDATE account_customers SET company_name=?, contact_name=?, phone=?, email=?, billing_email=?, payment_link=?, discount_percent=?, credit_balance=?, notes=?, rego_1=?, rego_2=? WHERE id = ? AND carpark_id = ?`)
+      .run(company_name, contact_name, phone, email, billing_email, payment_link || '', discount_percent || 0, credit_balance || 0, notes, rego_1 || null, rego_2 || null, req.params.id, carparkId);
     const account = await db.prepare('SELECT * FROM account_customers WHERE id = ?').get(req.params.id);
     const { userId, userName } = actorFromReq(req);
     await logActivity(db, { carparkId, tableName: 'account_customers', recordId: account.id, action: 'update', before, after: account, userId, userName });
@@ -262,8 +264,9 @@ router.put('/:id', requireAuth, async (req, res) => {
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
-    const before = await db.prepare('SELECT * FROM account_customers WHERE id = ?').get(req.params.id);
-    await db.prepare('UPDATE account_customers SET active = 0 WHERE id = ?').run(req.params.id);
+    const before = await db.prepare('SELECT * FROM account_customers WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
+    if (!before) return res.status(404).json({ error: 'Account not found' });
+    await db.prepare('UPDATE account_customers SET active = 0 WHERE id = ? AND carpark_id = ?').run(req.params.id, carparkId);
     const { userId, userName } = actorFromReq(req);
     await logActivity(db, { carparkId, tableName: 'account_customers', recordId: req.params.id, action: 'deactivate', before, after: { ...before, active: 0 }, userId, userName });
     res.json({ success: true });

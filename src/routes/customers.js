@@ -22,9 +22,10 @@ router.get('/', requireAuth, async (req, res) => {
 
 router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const customer = await db.prepare('SELECT * FROM customers WHERE id = ? AND active = 1').get(req.params.id);
+    const carparkId = req.session.carparkId || 1;
+    const customer = await db.prepare('SELECT * FROM customers WHERE id = ? AND carpark_id = ? AND active = 1').get(req.params.id, carparkId);
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
-    const invoices = await db.prepare('SELECT * FROM invoices WHERE customer_id = ? ORDER BY created_at DESC LIMIT 10').all(req.params.id);
+    const invoices = await db.prepare('SELECT * FROM invoices WHERE customer_id = ? AND carpark_id = ? ORDER BY created_at DESC LIMIT 10').all(req.params.id, carparkId);
     res.json({ ...customer, invoices });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -42,10 +43,12 @@ router.post('/', requireAuth, async (req, res) => {
 
 router.put('/:id', requireAuth, async (req, res) => {
   try {
+    const carparkId = req.session.carparkId || 1;
     const { first_name, last_name, phone, email, notes, alert_message } = req.body;
-    await db.prepare(`UPDATE customers SET first_name = ?, last_name = ?, phone = ?, email = ?, notes = ?, alert_message = ? WHERE id = ?`)
-      .run(first_name, last_name, phone, email, notes, alert_message, req.params.id);
-    const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+    await db.prepare(`UPDATE customers SET first_name = ?, last_name = ?, phone = ?, email = ?, notes = ?, alert_message = ? WHERE id = ? AND carpark_id = ?`)
+      .run(first_name, last_name, phone, email, notes, alert_message, req.params.id, carparkId);
+    const customer = await db.prepare('SELECT * FROM customers WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
     res.json(customer);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
