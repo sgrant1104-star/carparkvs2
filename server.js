@@ -14,6 +14,13 @@ const { autoCancelOverdueBookings } = require('./src/utils/autoCancelBookings');
 
 const app = express();
 
+// Railway (and Vercel) terminate TLS at the edge and proxy to this app over
+// plain HTTP internally, so without this Express never sees the connection
+// as secure — req.secure would always be false, and the Secure flag on the
+// auth cookies below would never get set even in production. This tells
+// Express to trust the X-Forwarded-Proto header from that first hop.
+app.set('trust proxy', 1);
+
 // ─── Lazy DB initialisation ──────────────────────────────────────────────────
 // On Vercel, module.exports is consumed before initializeDatabase() resolves,
 // so we gate every request behind a single shared init promise.

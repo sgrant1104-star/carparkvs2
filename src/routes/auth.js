@@ -6,11 +6,17 @@ const { getSessionSecret } = require('../utils/config');
 const router = express.Router();
 
 const JWT_SECRET  = () => getSessionSecret();
-const COOKIE_OPTS = {
+// `secure` is derived per-request from req.secure (true when the inbound
+// request was HTTPS — Railway terminates TLS at its edge and forwards
+// X-Forwarded-Proto, which Express only trusts once app.set('trust proxy')
+// is set in server.js). This marks the cookie Secure in production without
+// hardcoding it, so local plain-HTTP dev still works.
+const cookieOpts = (req) => ({
   httpOnly: true,
   sameSite: 'lax',
-  maxAge: 8 * 60 * 60 * 1000
-};
+  secure: req.secure,
+  maxAge: 8 * 60 * 60 * 1000,
+});
 
 // ─── Basic brute-force mitigation ──────────────────────────────────────────
 // In-memory only (resets on restart, not shared across serverless instances)
@@ -67,7 +73,7 @@ router.post('/login', async (req, res) => {
     JWT_SECRET(),
     { expiresIn: '8h' }
   );
-  res.cookie('auth_token', token, COOKIE_OPTS);
+  res.cookie('auth_token', token, cookieOpts(req));
   res.json({ success: true, user: { id: user.id, username: user.username, name: user.name, role: user.role, carparkId: user.carpark_id } });
 });
 

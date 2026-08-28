@@ -9,11 +9,15 @@ const router = express.Router();
 
 const JWT_SECRET  = () => getSessionSecret();
 const COOKIE_NAME = 'customer_auth_token';
-const COOKIE_OPTS = {
+// `secure` is derived per-request from req.secure (see the matching comment
+// in src/routes/auth.js) so this cookie is marked Secure in production
+// without breaking local plain-HTTP dev.
+const cookieOpts = (req) => ({
   httpOnly: true,
   sameSite: 'lax',
-  maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days — customers shouldn't need to re-login every 8h like staff
-};
+  secure: req.secure,
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days — customers shouldn't need to re-login every 8h like staff
+});
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 // ─── Basic brute-force mitigation (same shape as src/routes/auth.js) ───────
@@ -86,6 +90,13 @@ router.post('/register', async (req, res) => {
     if (!isValidEmail(email)) return res.status(400).json({ error: 'Enter a valid email address' });
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
+    // Same brute-force guard as login/forgot-password — without this, an
+    // attacker could hammer this endpoint to mass-enumerate which emails
+    // already have an account (via the 409 below) or spam-create accounts.
+    const key = attemptKey('register', req, email);
+    if (isLocked(key)) return res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' });
+    recordFailure(key);
+
     const existing = await db.prepare('SELECT id FROM customer_accounts WHERE email = ?').get(email);
     if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
 
@@ -97,7 +108,7 @@ router.post('/register', async (req, res) => {
 
     const customer = await db.prepare('SELECT * FROM customer_accounts WHERE id = ?').get(result.lastInsertRowid);
     const token = signCustomerToken(customer);
-    res.cookie(COOKIE_NAME, token, COOKIE_OPTS);
+    res.cookie(COOKIE_NAME, token, cookieOpts(req));
     res.status(201).json({ success: true, customer: publicProfile(customer) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -122,7 +133,7 @@ router.post('/login', async (req, res) => {
 
     clearAttempts(key);
     const token = signCustomerToken(customer);
-    res.cookie(COOKIE_NAME, token, COOKIE_OPTS);
+    res.cookie(COOKIE_NAME, token, cookieOpts(req));
     res.json({ success: true, customer: publicProfile(customer) });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -508,6 +508,33 @@ router.get('/backfill/check-account', requireAuth, requireAdmin, async (req, res
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/admin/customer-accounts?search=
+// Lists everyone who has signed up for the customer booking portal. Admin
+// only, and deliberately selects an explicit column list rather than
+// SELECT * — password_hash and reset_token must never leave this endpoint.
+router.get('/customer-accounts', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const { search } = req.query;
+    let query = `
+      SELECT ca.id, ca.first_name, ca.last_name, ca.email, ca.phone, ca.created_at,
+        (SELECT COUNT(*) FROM bookings b WHERE b.customer_account_id = ca.id) AS booking_count,
+        (SELECT MAX(b.created_at) FROM bookings b WHERE b.customer_account_id = ca.id) AS last_booking_at
+      FROM customer_accounts ca
+      WHERE ca.carpark_id = ?
+    `;
+    const params = [carparkId];
+    if (search) {
+      query += ` AND (ca.first_name LIKE ? OR ca.last_name LIKE ? OR ca.email LIKE ? OR ca.phone LIKE ?)`;
+      const s = `%${search}%`;
+      params.push(s, s, s, s);
+    }
+    query += ' ORDER BY ca.created_at DESC LIMIT 500';
+    const rows = await db.prepare(query).all(...params);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/admin/cleanup-customer-account
 // Admin-only maintenance tool: removes a customer portal account (and any
 // bookings tied to it) by exact email match. Goes through the app's normal
