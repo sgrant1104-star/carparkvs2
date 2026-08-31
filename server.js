@@ -150,7 +150,18 @@ app.post('/api/admin/reset-db', async (req, res) => {
 });
 
 // Root redirect
+// A request arriving on the customer-facing custom domain (PORTAL_HOSTNAMES,
+// e.g. boicarpark.co.nz / www.boicarpark.co.nz) lands on the portal landing
+// page — customers should never see the staff login just by visiting the
+// site. Any other host (the railway.app URL staff use, a future staff
+// subdomain, etc.) keeps the original staff behavior unchanged.
+const PORTAL_HOSTNAMES = (process.env.PORTAL_HOSTNAMES || '')
+  .split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+
 app.get('/', (req, res) => {
+  if (PORTAL_HOSTNAMES.includes((req.hostname || '').toLowerCase())) {
+    return res.redirect('/portal/landing.html');
+  }
   if (req.session && req.session.userId) {
     return res.redirect('/menu.html');
   }
