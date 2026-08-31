@@ -58,6 +58,26 @@
             </div>
           </div>
 
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="isLongTerm">
+            <label class="form-check-label" for="isLongTerm">
+              This is a long-term booking (28+ days)
+            </label>
+          </div>
+          <div id="longTermWarning" class="alert alert-warning small d-none mb-3"></div>
+
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="wantsAccount">
+            <label class="form-check-label" for="wantsAccount">
+              I have a business account with BOI Car Storage
+            </label>
+          </div>
+          <div id="accountBox" class="mb-3 d-none">
+            <label class="form-label">Account number</label>
+            <input type="text" class="form-control text-uppercase" id="accountNumber" placeholder="e.g. AB23CD">
+            <div class="small mt-2" id="accountStatus"></div>
+          </div>
+
           <div class="estimate-box mb-3">
             <div class="d-flex justify-content-between align-items-center">
               <span class="text-muted small">Estimated cost</span>
@@ -137,6 +157,78 @@
       return Math.max(1, Math.ceil(diffMs / dayMs));
     }
 
+    // Must match MIN_LONGTERM_DAYS in src/routes/bookings.js — the server is
+    // the real gate, this is just so the customer sees the problem before
+    // submitting instead of after.
+    const MIN_LONGTERM_DAYS = 28;
+    function calendarDaysBetween(dateIn, dateOut) {
+      if (!dateIn || !dateOut) return 0;
+      return Math.round((new Date(`${dateOut}T00:00:00Z`) - new Date(`${dateIn}T00:00:00Z`)) / 86400000);
+    }
+
+    let accountVerified = false;
+
+    function checkLongTermMinimum() {
+      const warnEl = document.getElementById('longTermWarning');
+      if (!document.getElementById('isLongTerm').checked) {
+        warnEl.classList.add('d-none');
+        return true;
+      }
+      const days = calendarDaysBetween(document.getElementById('dateIn').value, document.getElementById('dateOut').value);
+      if (days < MIN_LONGTERM_DAYS) {
+        warnEl.textContent = `Long-term bookings need to be at least ${MIN_LONGTERM_DAYS} days (currently ${days}). Uncheck long-term for a shorter stay, or extend your pick-up date.`;
+        warnEl.classList.remove('d-none');
+        return false;
+      }
+      warnEl.classList.add('d-none');
+      return true;
+    }
+
+    function isFormValid() {
+      if (!checkLongTermMinimum()) return false;
+      if (document.getElementById('wantsAccount').checked && !accountVerified) return false;
+      return true;
+    }
+
+    function updateSubmitState() {
+      document.getElementById('submitBtn').disabled = !isFormValid();
+    }
+
+    let accountLookupSeq = 0;
+    let accountLookupTimer = null;
+    async function checkAccountNumber() {
+      const statusEl = document.getElementById('accountStatus');
+      const raw = document.getElementById('accountNumber').value.trim();
+      accountVerified = false;
+      updateSubmitState();
+      if (!raw) { statusEl.innerHTML = ''; return; }
+
+      statusEl.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Checking...</span>';
+      const mySeq = ++accountLookupSeq;
+      try {
+        const res = await fetch(`/api/bookings/account-lookup?accountNumber=${encodeURIComponent(raw)}`, { credentials: 'include' });
+        if (mySeq !== accountLookupSeq) return; // stale response
+        const data = await res.json();
+        if (!res.ok) {
+          statusEl.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${data.error || 'Account number not recognized'}</span>`;
+          return;
+        }
+        accountVerified = true;
+        const balanceLine = data.outstandingBalance > 0
+          ? `<span class="text-danger fw-bold">$${data.outstandingBalance.toFixed(2)} currently owing</span>`
+          : '<span class="text-success">Account up to date — $0 owing</span>';
+        statusEl.innerHTML = `
+          <div class="text-success"><i class="bi bi-check-circle me-1"></i>Verified: <strong>${data.companyName}</strong></div>
+          <div>${balanceLine}</div>
+          <div class="text-muted mt-1">Invoiced monthly by email, due the 20th of the following month.</div>
+        `;
+      } catch (e) {
+        if (mySeq !== accountLookupSeq) return;
+        statusEl.innerHTML = '<span class="text-danger">Could not check that account number — try again.</span>';
+      }
+      updateSubmitState();
+    }
+
     let estimateSeq = 0;
     async function updateEstimate() {
       const dateIn = document.getElementById('dateIn').value;
@@ -147,10 +239,20 @@
       const breakdownEl = document.getElementById('estimate-breakdown');
       if (!dateIn || !dateOut) return;
 
+      if (document.getElementById('isLongTerm').checked) {
+        totalEl.textContent = 'Quoted individually';
+        breakdownEl.textContent = 'Long-term rates depend on length of stay — we\'ll confirm pricing when we get back to you.';
+        return;
+      }
+
       const nights = calcNights24h(dateIn, timeIn, dateOut, timeOut);
+      const accountNumber = (document.getElementById('wantsAccount').checked && accountVerified)
+        ? document.getElementById('accountNumber').value.trim() : '';
+      const qs = new URLSearchParams({ nights });
+      if (accountNumber) qs.set('accountNumber', accountNumber);
       const mySeq = ++estimateSeq;
       try {
-        const res = await fetch(`/api/bookings/estimate-price?nights=${nights}`, { credentials: 'include' });
+        const res = await fetch(`/api/bookings/estimate-price?${qs.toString()}`, { credentials: 'include' });
         if (mySeq !== estimateSeq) return; // a newer request has since started; ignore this stale response
         if (!res.ok) { totalEl.textContent = '—'; breakdownEl.textContent = 'Could not load pricing'; return; }
         const data = await res.json();
@@ -163,9 +265,36 @@
       }
     }
     ['dateIn', 'timeIn', 'dateOut', 'timeOut'].forEach((id) => {
-      document.getElementById(id).addEventListener('change', updateEstimate);
+      document.getElementById(id).addEventListener('change', () => {
+        updateEstimate();
+        checkLongTermMinimum();
+        updateSubmitState();
+      });
+    });
+    document.getElementById('isLongTerm').addEventListener('change', () => {
+      updateEstimate();
+      checkLongTermMinimum();
+      updateSubmitState();
+    });
+    document.getElementById('wantsAccount').addEventListener('change', (e) => {
+      document.getElementById('accountBox').classList.toggle('d-none', !e.target.checked);
+      if (!e.target.checked) {
+        document.getElementById('accountNumber').value = '';
+        document.getElementById('accountStatus').innerHTML = '';
+        accountVerified = false;
+        updateEstimate();
+      }
+      updateSubmitState();
+    });
+    document.getElementById('accountNumber').addEventListener('input', () => {
+      clearTimeout(accountLookupTimer);
+      accountLookupTimer = setTimeout(async () => {
+        await checkAccountNumber();
+        updateEstimate();
+      }, 400);
     });
     updateEstimate();
+    updateSubmitState();
 
     document.getElementById('bookForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -179,11 +308,22 @@
         vehicleModel: document.getElementById('vehicleModel').value,
         vehicleColor: document.getElementById('vehicleColor').value,
         notes: document.getElementById('notes').value,
+        isLongTerm: document.getElementById('isLongTerm').checked,
+        wantsAccount: document.getElementById('wantsAccount').checked,
+        accountNumber: document.getElementById('accountNumber').value.trim(),
       };
       const errEl = document.getElementById('formError');
       const okEl = document.getElementById('formSuccess');
       errEl.classList.add('d-none');
       okEl.classList.add('d-none');
+
+      if (!isFormValid()) {
+        errEl.textContent = document.getElementById('wantsAccount').checked && !accountVerified
+          ? 'Please enter and verify a valid account number before submitting.'
+          : `Long-term bookings need to be at least ${MIN_LONGTERM_DAYS} days.`;
+        errEl.classList.remove('d-none');
+        return;
+      }
 
       const btn = document.getElementById('submitBtn');
       btn.disabled = true;

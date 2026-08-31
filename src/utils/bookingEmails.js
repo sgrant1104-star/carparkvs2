@@ -56,8 +56,15 @@ async function notifyAdminNewBooking(booking) {
   const to = adminNotifyEmail();
   const base = appUrl();
   const link = base ? `<p style="margin-top:16px;"><a href="${base}/prebookings.html" style="color:#1a5276;">View in Pre-Bookings</a></p>` : '';
+  const flags = [];
+  if (booking.is_long_term) flags.push('LONG-TERM REQUEST — needs an individual quote, not standard pricing.');
+  if (booking.account_company_name) flags.push(`ON ACCOUNT: ${booking.account_company_name}`);
+  const banner = flags.length
+    ? `<p style="background:#fff3cd;border:1px solid #ffe69c;padding:10px 14px;border-radius:6px;color:#664d03;font-weight:bold;">${flags.join('<br>')}</p>`
+    : '';
   const html = wrap('New online booking request', `
     <p>A new booking request just came in.</p>
+    ${banner}
     ${detailsTable(booking)}
     ${link}
   `);

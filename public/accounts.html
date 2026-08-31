@@ -28,6 +28,7 @@
           <thead>
             <tr>
               <th>Company</th>
+              <th>Account #</th>
               <th>Rego 1 / 2</th>
               <th>Contact</th>
               <th>Phone</th>
@@ -40,7 +41,7 @@
             </tr>
           </thead>
           <tbody id="accounts-tbody">
-            <tr><td colspan="10" class="text-center"><div class="spinner-border spinner-border-sm"></div></td></tr>
+            <tr><td colspan="11" class="text-center"><div class="spinner-border spinner-border-sm"></div></td></tr>
           </tbody>
         </table>
       </div>
@@ -147,6 +148,10 @@
               <input type="text" class="form-control" id="acct-company" placeholder="Company Name" required>
             </div>
             <div class="col-md-4">
+              <label class="form-label">Account # <span class="text-muted small">(give this to the customer for online booking)</span></label>
+              <input type="text" class="form-control" id="acct-number" readonly disabled placeholder="Generated on save">
+            </div>
+            <div class="col-md-4">
               <label class="form-label">Contact Name</label>
               <input type="text" class="form-control" id="acct-contact" placeholder="Contact person">
             </div>
@@ -202,20 +207,21 @@
       const res = await fetch('/api/accounts');
       if (!res.ok) {
         document.getElementById('accounts-tbody').innerHTML =
-          '<tr><td colspan="10" class="text-center text-danger">Failed to load accounts — try refreshing the page.</td></tr>';
+          '<tr><td colspan="11" class="text-center text-danger">Failed to load accounts — try refreshing the page.</td></tr>';
         return;
       }
       const accounts = await res.json();
       const tbody = document.getElementById('accounts-tbody');
 
       if (accounts.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No account customers yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">No account customers yet</td></tr>';
         return;
       }
 
       tbody.innerHTML = accounts.map(a => `
         <tr>
           <td class="fw-bold">${escapeHtml(a.company_name)}</td>
+          <td class="small"><code>${escapeHtml(a.account_number || '—')}</code></td>
           <td class="small">${[a.rego_1, a.rego_2].filter(Boolean).join(' / ') || '—'}</td>
           <td>${escapeHtml(a.contact_name||'')}</td>
           <td>${escapeHtml(a.phone||'')}</td>
@@ -252,6 +258,7 @@
       document.getElementById('acct-id').value = a.id;
       document.getElementById('acct-modal-title').textContent = 'Edit Account';
       document.getElementById('acct-company').value = a.company_name;
+      document.getElementById('acct-number').value = a.account_number||'';
       document.getElementById('acct-contact').value = a.contact_name||'';
       document.getElementById('acct-phone').value = a.phone||'';
       document.getElementById('acct-email').value = a.email||'';
@@ -480,6 +487,7 @@
       document.getElementById('acct-id').value = '';
       document.getElementById('acct-modal-title').textContent = 'New Account Customer';
       document.getElementById('acct-company').value = '';
+      document.getElementById('acct-number').value = '';
       document.getElementById('acct-contact').value = '';
       document.getElementById('acct-phone').value = '';
       document.getElementById('acct-email').value = '';

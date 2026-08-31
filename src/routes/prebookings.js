@@ -28,6 +28,9 @@ function publicPrebooking(b, todayYmd) {
     invoiceId: b.invoice_id,
     createdAt: b.created_at,
     overdue: String(b.date_in).slice(0, 10) < todayYmd,
+    isLongTerm: !!b.is_long_term,
+    accountCustomerId: b.account_customer_id || null,
+    accountCompanyName: b.account_company_name || null,
   };
 }
 
@@ -40,8 +43,11 @@ router.get('/', requireAuth, async (req, res) => {
     const carparkId = req.session.carparkId || 1;
     const today = ymdToday();
     const bookings = await db.prepare(`
-      SELECT * FROM bookings WHERE carpark_id = ? AND status = 'pending'
-      ORDER BY date_in ASC, created_at ASC
+      SELECT b.*, ac.company_name as account_company_name
+      FROM bookings b
+      LEFT JOIN account_customers ac ON ac.id = b.account_customer_id
+      WHERE b.carpark_id = ? AND b.status = 'pending'
+      ORDER BY b.date_in ASC, b.created_at ASC
     `).all(carparkId);
     res.json(bookings.map((b) => publicPrebooking(b, today)));
   } catch (err) {
@@ -54,7 +60,12 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
-    const booking = await db.prepare('SELECT * FROM bookings WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
+    const booking = await db.prepare(`
+      SELECT b.*, ac.company_name as account_company_name
+      FROM bookings b
+      LEFT JOIN account_customers ac ON ac.id = b.account_customer_id
+      WHERE b.id = ? AND b.carpark_id = ?
+    `).get(req.params.id, carparkId);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
     res.json(publicPrebooking(booking, ymdToday()));
   } catch (err) {

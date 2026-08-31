@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const { businessDateYmd } = require('../utils/businessDate');
 const { allocateAccountPayment, deallocatePayment, getAccountInvoicesWithOutstanding } = require('../utils/paymentAllocation');
 const { logActivity, actorFromReq } = require('../utils/audit');
+const { generateAccountNumber } = require('../utils/accountNumber');
 const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
@@ -237,8 +238,9 @@ router.post('/', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
     const { company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2 } = req.body;
-    const result = await db.prepare(`INSERT INTO account_customers (company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2, carpark_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(company_name, contact_name, phone, email, billing_email, payment_link || '', discount_percent || 0, credit_balance || 0, notes, rego_1 || null, rego_2 || null, carparkId);
+    const accountNumber = await generateAccountNumber(db);
+    const result = await db.prepare(`INSERT INTO account_customers (company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2, carpark_id, account_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(company_name, contact_name, phone, email, billing_email, payment_link || '', discount_percent || 0, credit_balance || 0, notes, rego_1 || null, rego_2 || null, carparkId, accountNumber);
     const account = await db.prepare('SELECT * FROM account_customers WHERE id = ?').get(result.lastInsertRowid);
     const { userId, userName } = actorFromReq(req);
     await logActivity(db, { carparkId, tableName: 'account_customers', recordId: account.id, action: 'create', before: null, after: account, userId, userName });

@@ -254,6 +254,13 @@ async function initializeDatabase() {
   // Drop-off/pick-up times (HH:MM), matching the staff check-in form's granularity.
   try { x(`ALTER TABLE bookings ADD COLUMN time_in TEXT`); } catch (_) {}
   try { x(`ALTER TABLE bookings ADD COLUMN time_out TEXT`); } catch (_) {}
+  // Set when the customer verified a real account_customers.account_number at
+  // booking time (never trust a client-claimed company name — see
+  // account_number below). is_long_term flags a request made via the
+  // explicit long-term toggle, distinct from a short-stay booking that just
+  // happens to run long.
+  try { x(`ALTER TABLE bookings ADD COLUMN account_customer_id INTEGER`); } catch (_) {}
+  try { x(`ALTER TABLE bookings ADD COLUMN is_long_term INTEGER DEFAULT 0`); } catch (_) {}
 
   x(`CREATE TABLE IF NOT EXISTS longterm_customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -312,6 +319,19 @@ async function initializeDatabase() {
     active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+
+  // Staff-issued account number — see src/utils/accountNumber.js for why this
+  // doubles as the credit-vetting check for self-service on-account bookings.
+  try { x(`ALTER TABLE account_customers ADD COLUMN account_number TEXT`); } catch (_) {}
+  try { x(`CREATE UNIQUE INDEX IF NOT EXISTS account_customers_account_number ON account_customers (account_number)`); } catch (_) {}
+  {
+    const { generateAccountNumber } = require('./utils/accountNumber');
+    const missingNumber = await db.prepare(`SELECT id FROM account_customers WHERE account_number IS NULL OR account_number = ''`).all();
+    for (const row of missingNumber) {
+      const code = await generateAccountNumber(db);
+      await db.prepare('UPDATE account_customers SET account_number = ? WHERE id = ?').run(code, row.id);
+    }
+  }
 
   // Account payment records (for tracking paid vs outstanding on monthly invoices)
   x(`CREATE TABLE IF NOT EXISTS account_payments (

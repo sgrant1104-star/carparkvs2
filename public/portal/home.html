@@ -90,6 +90,8 @@
             <div>
               <strong>${escapeHtml(b.rego)}</strong>
               ${b.vehicleMake || b.vehicleModel ? `<span class="text-muted"> — ${escapeHtml(b.vehicleMake)} ${escapeHtml(b.vehicleModel)}</span>` : ''}
+              ${b.isLongTerm ? '<span class="badge bg-info text-dark ms-1">Long-term</span>' : ''}
+              ${b.accountCompanyName ? `<span class="badge bg-secondary ms-1">On account: ${escapeHtml(b.accountCompanyName)}</span>` : ''}
               <div class="small text-muted">${escapeHtml(b.dateIn)} ${escapeHtml(b.timeIn || '')} → ${escapeHtml(b.dateOut)} ${escapeHtml(b.timeOut || '')}</div>
             </div>
             <div class="text-end">

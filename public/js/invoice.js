@@ -279,11 +279,26 @@ async function prefillFromPrebooking(prebookingId) {
     const noteParts = [];
     if (vehicle) noteParts.push(`Vehicle: ${vehicle}`);
     if (b.notes) noteParts.push(b.notes);
+    if (b.isLongTerm) noteParts.push('Customer requested LONG-TERM parking via the portal — set up a Long Term contract for this customer rather than a standard invoice.');
     if (noteParts.length) document.getElementById('inv-notes').value = noteParts.join(' — ');
+
+    // Customer verified a real account number when booking — carry that
+    // straight into the account dropdown so staff don't have to re-pick it,
+    // and so pricing below reflects the account's actual rate.
+    if (b.accountCustomerId) {
+      document.getElementById('inv-account-customer').value = String(b.accountCustomerId);
+      const acct = accountCustomers.find(a => String(a.id) === String(b.accountCustomerId));
+      if (acct) applyAccountCustomerPricingFromLookup(acct);
+    }
 
     updateNightsAndDisplay();
     await calculatePriceNow();
-    showAlert('Pre-filled from an online booking — review before saving.', 'info');
+    showAlert(
+      b.isLongTerm
+        ? 'Pre-filled from an online LONG-TERM booking request — set this customer up on the Long Term page instead of saving as a standard invoice.'
+        : 'Pre-filled from an online booking — review before saving.',
+      b.isLongTerm ? 'warning' : 'info'
+    );
   } catch (err) {
     showAlert('Could not load that pre-booking — continuing with a blank form.', 'warning');
   }

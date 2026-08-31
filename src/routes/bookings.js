@@ -2,8 +2,48 @@ const express = require('express');
 const { db } = require('../database');
 const { requireCustomerAuth } = require('../middleware/customerAuth');
 const { calculateShortStayPrice } = require('../utils/pricing');
+const { getAccountInvoicesWithOutstanding } = require('../utils/paymentAllocation');
 const { notifyAdminNewBooking, notifyCustomerBookingSubmitted, notifyAdminBookingCancelledByCustomer } = require('../utils/bookingEmails');
 const router = express.Router();
+
+// A long-term request needs to actually be long-term — otherwise anyone
+// could tick the toggle hoping for a better (individually quoted) rate on
+// what's really a short stay. Staff can ask for this to change; it's a
+// single constant.
+const MIN_LONGTERM_DAYS = 28;
+
+// ─── Account-number lookup rate limiting ────────────────────────────────────
+// Same shape as the login/register limiters in src/routes/customerAuth.js.
+// This endpoint reveals a real business's outstanding balance, so it
+// shouldn't be brute-forceable against many candidate account numbers.
+const MAX_ATTEMPTS = 5;
+const WINDOW_MS = 15 * 60 * 1000;
+const lookupAttempts = new Map(); // key -> { count, lockedUntil }
+
+function attemptKey(req, accountNumber) {
+  return `${req.ip || 'unknown'}:${String(accountNumber || '').trim().toUpperCase()}`;
+}
+function isLocked(key) {
+  const rec = lookupAttempts.get(key);
+  if (!rec || !rec.lockedUntil) return false;
+  if (Date.now() > rec.lockedUntil) { lookupAttempts.delete(key); return false; }
+  return true;
+}
+function recordFailure(key) {
+  const rec = lookupAttempts.get(key) || { count: 0, lockedUntil: null };
+  rec.count += 1;
+  if (rec.count >= MAX_ATTEMPTS) rec.lockedUntil = Date.now() + WINDOW_MS;
+  lookupAttempts.set(key, rec);
+}
+
+/** Resolves a staff-issued account number to a real, active account_customers row (or null). */
+async function resolveAccountByNumber(carparkId, accountNumber) {
+  const code = String(accountNumber || '').trim().toUpperCase();
+  if (!code) return null;
+  return db.prepare(`
+    SELECT * FROM account_customers WHERE carpark_id = ? AND active = 1 AND UPPER(account_number) = ?
+  `).get(carparkId, code);
+}
 
 function isValidYmd(s) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
@@ -27,6 +67,12 @@ function calcNights24h(dateIn, timeIn, dateOut, timeOut) {
   return Math.max(1, Math.ceil(diffMs / dayMs));
 }
 
+function daysBetweenYmd(fromYmd, toYmd) {
+  const a = new Date(`${fromYmd}T00:00:00Z`);
+  const b = new Date(`${toYmd}T00:00:00Z`);
+  return Math.round((b - a) / 86400000);
+}
+
 function publicBooking(b) {
   return {
     id: b.id,
@@ -45,17 +91,61 @@ function publicBooking(b) {
     status: b.status,
     notes: b.notes,
     createdAt: b.created_at,
+    isLongTerm: !!b.is_long_term,
+    accountCompanyName: b.account_company_name || null,
   };
 }
 
-// GET /api/bookings/estimate-price?nights=N — informational only, so the
-// customer knows roughly what to expect. Short-stay pricing only (no
-// long-term or on-account customer types support self-service booking yet).
-// Uses the exact same pricing_rules lookup as staff check-in, so it can
-// never drift from what actually gets charged.
+// GET /api/bookings/account-lookup?accountNumber=X — used by the booking
+// form to show a real company name + outstanding balance before the
+// customer submits, so "on account" means something concrete rather than a
+// free-text claim. Never invents/reveals anything for a number that doesn't
+// match a real, active account.
+router.get('/account-lookup', requireCustomerAuth, async (req, res) => {
+  try {
+    const carparkId = 1;
+    const accountNumber = String(req.query.accountNumber || '').trim();
+    if (!accountNumber) return res.status(400).json({ error: 'accountNumber is required' });
+
+    const key = attemptKey(req, accountNumber);
+    if (isLocked(key)) return res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' });
+
+    const account = await resolveAccountByNumber(carparkId, accountNumber);
+    if (!account) {
+      recordFailure(key);
+      return res.status(404).json({ error: 'Account number not recognized — check the number or contact us' });
+    }
+
+    const invoices = await getAccountInvoicesWithOutstanding(db, { carparkId, accountCustomerId: account.id });
+    const outstandingBalance = Math.round(invoices.reduce((s, i) => s + i.outstanding_amount, 0) * 100) / 100;
+
+    res.json({ companyName: account.company_name, outstandingBalance });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/estimate-price?nights=N&accountNumber=&isLongTerm=
+// Informational only, so the customer knows roughly what to expect. Uses
+// the exact same pricing_rules lookup as staff check-in, so it can never
+// drift from what actually gets charged. Long-term rates are individually
+// quoted per contract (no published rate card exists), so this returns
+// { longTerm: true } instead of a number when isLongTerm is set — never a
+// made-up figure. accountNumber is re-resolved server-side (never trusts a
+// client-supplied internal id) so an on-account customer sees their real
+// contracted rate.
 router.get('/estimate-price', requireCustomerAuth, async (req, res) => {
   try {
-    const result = await calculateShortStayPrice(db, { carparkId: 1, nights: req.query.nights });
+    if (String(req.query.isLongTerm) === 'true') {
+      return res.json({ longTerm: true });
+    }
+    const carparkId = 1;
+    let accountCustomerId = null;
+    if (req.query.accountNumber) {
+      const account = await resolveAccountByNumber(carparkId, req.query.accountNumber);
+      if (account) accountCustomerId = account.id;
+    }
+    const result = await calculateShortStayPrice(db, { carparkId, nights: req.query.nights, accountCustomerId });
     res.json({ nights: result.nights, dailyRate: result.dailyRate, total: result.total });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -78,6 +168,8 @@ router.post('/', requireCustomerAuth, async (req, res) => {
     const dateOut = String(req.body?.dateOut || '').trim();
     const timeOut = String(req.body?.timeOut || '').trim();
     const notes = String(req.body?.notes || '').trim();
+    const isLongTerm = !!req.body?.isLongTerm;
+    const wantsAccount = !!req.body?.wantsAccount;
 
     if (!rego) return res.status(400).json({ error: 'Vehicle registration is required' });
     if (!isValidYmd(dateIn) || !isValidYmd(dateOut)) {
@@ -90,6 +182,18 @@ router.post('/', requireCustomerAuth, async (req, res) => {
     if (dateOut === dateIn && timeOut <= timeIn) {
       return res.status(400).json({ error: 'Pick-up time must be after drop-off time on the same day' });
     }
+    if (isLongTerm && daysBetweenYmd(dateIn, dateOut) < MIN_LONGTERM_DAYS) {
+      return res.status(400).json({ error: `Long-term bookings need to be at least ${MIN_LONGTERM_DAYS} days — for shorter stays, use standard booking.` });
+    }
+
+    let accountCustomerId = null;
+    let accountCompanyName = null;
+    if (wantsAccount) {
+      const account = await resolveAccountByNumber(carparkId, req.body?.accountNumber);
+      if (!account) return res.status(400).json({ error: 'Account number not recognized — check the number or contact us' });
+      accountCustomerId = account.id;
+      accountCompanyName = account.company_name;
+    }
 
     const customer = await db.prepare('SELECT * FROM customer_accounts WHERE id = ?').get(customerId);
     if (!customer) return res.status(401).json({ error: 'Not authenticated' });
@@ -97,14 +201,17 @@ router.post('/', requireCustomerAuth, async (req, res) => {
     const result = await db.prepare(`
       INSERT INTO bookings
         (carpark_id, customer_account_id, first_name, last_name, phone, email,
-         rego, vehicle_make, vehicle_model, vehicle_color, date_in, time_in, date_out, time_out, notes, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+         rego, vehicle_make, vehicle_model, vehicle_color, date_in, time_in, date_out, time_out, notes,
+         is_long_term, account_customer_id, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `).run(
       carparkId, customerId, customer.first_name, customer.last_name, customer.phone, customer.email,
-      rego, vehicleMake || null, vehicleModel || null, vehicleColor || null, dateIn, timeIn, dateOut, timeOut, notes || null
+      rego, vehicleMake || null, vehicleModel || null, vehicleColor || null, dateIn, timeIn, dateOut, timeOut, notes || null,
+      isLongTerm ? 1 : 0, accountCustomerId
     );
 
     const booking = await db.prepare('SELECT * FROM bookings WHERE id = ?').get(result.lastInsertRowid);
+    booking.account_company_name = accountCompanyName; // decorate in-memory only, for the admin notification banner
 
     await Promise.all([
       notifyCustomerBookingSubmitted(booking),
@@ -142,7 +249,10 @@ router.post('/:id/cancel', requireCustomerAuth, async (req, res) => {
 router.get('/mine', requireCustomerAuth, async (req, res) => {
   try {
     const bookings = await db.prepare(`
-      SELECT * FROM bookings WHERE customer_account_id = ? ORDER BY date_in DESC, created_at DESC
+      SELECT b.*, ac.company_name as account_company_name
+      FROM bookings b
+      LEFT JOIN account_customers ac ON ac.id = b.account_customer_id
+      WHERE b.customer_account_id = ? ORDER BY b.date_in DESC, b.created_at DESC
     `).all(req.customerSession.customerId);
     res.json(bookings.map(publicBooking));
   } catch (err) {

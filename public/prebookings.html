@@ -25,6 +25,7 @@
         <thead>
           <tr>
             <th>Customer</th>
+            <th>Type</th>
             <th>Phone</th>
             <th>Rego</th>
             <th>Vehicle</th>
@@ -35,7 +36,7 @@
           </tr>
         </thead>
         <tbody id="prebookings-tbody">
-          <tr><td colspan="8" class="text-center py-4"><div class="spinner-border"></div></td></tr>
+          <tr><td colspan="9" class="text-center py-4"><div class="spinner-border"></div></td></tr>
         </tbody>
       </table>
     </div>
@@ -67,7 +68,7 @@
 
       const tbody = document.getElementById('prebookings-tbody');
       if (bookings.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No pending bookings.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No pending bookings.</td></tr>';
         return;
       }
 
@@ -76,6 +77,11 @@
         return `
           <tr class="${b.overdue ? 'table-warning' : ''}">
             <td>${escapeHtml(b.firstName)} ${escapeHtml(b.lastName)}</td>
+            <td>
+              ${b.isLongTerm ? '<span class="badge bg-info text-dark d-block mb-1">Long-term</span>' : ''}
+              ${b.accountCompanyName ? `<span class="badge bg-secondary d-block">On account: ${escapeHtml(b.accountCompanyName)}</span>` : ''}
+              ${!b.isLongTerm && !b.accountCompanyName ? '<span class="text-muted small">Standard</span>' : ''}
+            </td>
             <td>${escapeHtml(b.phone || '—')}</td>
             <td class="fw-bold">${escapeHtml(b.rego)}</td>
             <td>${escapeHtml(vehicle)}</td>
