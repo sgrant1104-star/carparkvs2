@@ -63,12 +63,6 @@ function accountInvoiceNumber(year, month2, accountId) {
   return `ACC-${y}${m}-${accountId}`;
 }
 
-function referenceForAccountInvoice(carpark, account, invoiceNo) {
-  // Always use the generated invoice number as the bank reference.
-  // This keeps it unique + searchable and avoids static/duplicate references.
-  return invoiceNo;
-}
-
 // Short cover note — the actual booking-by-booking breakdown now lives in
 // the attached statement PDF (and each unpaid booking's own invoice PDF),
 // so the email body just needs to point at the attachments and surface the
@@ -82,12 +76,10 @@ function buildAccountEmailHTML(carpark, account, statementData, monthName, year,
     : '';
 
   const invNo = accountInvoiceNumber(year, month2, account.id);
-  const ref = referenceForAccountInvoice(carpark, account, invNo);
   const bank = [
     carpark.bank_name ? `<p><strong>Bank:</strong> ${carpark.bank_name}</p>` : '',
     carpark.bank_account_name ? `<p><strong>Account name:</strong> ${carpark.bank_account_name}</p>` : '',
     carpark.bank_account_number ? `<p><strong>Account number:</strong> ${carpark.bank_account_number}</p>` : '',
-    `<p><strong>Invoice #:</strong> ${invNo}</p><p><strong>Reference:</strong> ${ref}</p>`,
   ].join('');
 
   const invoiceWord = outstandingInvoices.length === 1 ? 'invoice' : 'invoices';
@@ -143,12 +135,13 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
   // Table header
   const startX = doc.page.margins.left;
   let y = doc.y;
-  const col = { stay: startX, name: startX + 120, rego: startX + 250, cost: startX + 320, paid: startX + 390, out: startX + 460 };
-  doc.fontSize(9).font('Helvetica-Bold').fillColor('#000').text('Stay', col.stay, y, { width: 110 });
-  doc.text('Name', col.name, y, { width: 125 });
-  doc.text('Rego', col.rego, y, { width: 65 });
-  doc.text('Cost', col.cost, y, { width: 65, align: 'right' });
-  doc.text('Paid', col.paid, y, { width: 65, align: 'right' });
+  const col = { invoice: startX, stay: startX + 50, name: startX + 140, rego: startX + 240, cost: startX + 295, paid: startX + 355, out: startX + 415 };
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#000').text('Invoice #', col.invoice, y, { width: 45 });
+  doc.text('Stay', col.stay, y, { width: 90 });
+  doc.text('Name', col.name, y, { width: 95 });
+  doc.text('Rego', col.rego, y, { width: 50 });
+  doc.text('Cost', col.cost, y, { width: 55, align: 'right' });
+  doc.text('Paid', col.paid, y, { width: 55, align: 'right' });
   doc.text('Outstanding', col.out, y, { width: 75, align: 'right' });
   doc.font('Helvetica');
   y += 14;
@@ -161,11 +154,12 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
     const name = `${inv.first_name || ''} ${inv.last_name || ''}`.trim();
     const rego = inv.rego || '';
 
-    doc.fontSize(8).fillColor('#111').text(stay, col.stay, y, { width: 110 });
-    doc.text(name, col.name, y, { width: 125 });
-    doc.text(rego, col.rego, y, { width: 65 });
-    doc.text(currency(inv.total_price), col.cost, y, { width: 65, align: 'right' });
-    doc.fillColor('#27ae60').text(currency(inv.allocated_amount), col.paid, y, { width: 65, align: 'right' });
+    doc.fontSize(8).fillColor('#111').text(String(inv.invoice_number || ''), col.invoice, y, { width: 45 });
+    doc.text(stay, col.stay, y, { width: 90 });
+    doc.text(name, col.name, y, { width: 95 });
+    doc.text(rego, col.rego, y, { width: 50 });
+    doc.text(currency(inv.total_price), col.cost, y, { width: 55, align: 'right' });
+    doc.fillColor('#27ae60').text(currency(inv.allocated_amount), col.paid, y, { width: 55, align: 'right' });
     doc.fillColor('#c0392b').font('Helvetica-Bold').text(currency(inv.outstanding_amount), col.out, y, { width: 75, align: 'right' });
     doc.font('Helvetica').fillColor('#111');
     y += 14;
@@ -193,13 +187,10 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
   doc.fontSize(12).fillColor('#2c3e50').text('Payment details', left, doc.y, { width: fullWidth, align: 'left' });
   doc.moveDown(0.4);
   doc.fontSize(10).fillColor('#111');
-  const ref = referenceForAccountInvoice(carpark, account, invNo);
   const rows = [
     carpark.bank_name ? `Bank: ${carpark.bank_name}` : null,
     carpark.bank_account_name ? `Account name: ${carpark.bank_account_name}` : null,
     carpark.bank_account_number ? `Account number: ${carpark.bank_account_number}` : null,
-    `Invoice #: ${invNo}`,
-    `Reference: ${ref}`,
   ].filter(Boolean);
   // Render full-width, left aligned (wraps naturally across the page).
   rows.forEach(r => doc.text(r, left, doc.y, { width: fullWidth, align: 'left' }));
