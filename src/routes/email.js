@@ -75,7 +75,6 @@ function buildAccountEmailHTML(carpark, account, statementData, monthName, year,
     ? `<p><a href="${account.payment_link}" style="background:#27ae60;color:#fff;padding:10px 20px;border-radius:5px;text-decoration:none;display:inline-block;margin-top:10px;">Pay Online</a></p>`
     : '';
 
-  const invNo = accountInvoiceNumber(year, month2, account.id);
   const bank = [
     carpark.bank_name ? `<p><strong>Bank:</strong> ${carpark.bank_name}</p>` : '',
     carpark.bank_account_name ? `<p><strong>Account name:</strong> ${carpark.bank_account_name}</p>` : '',
@@ -94,7 +93,7 @@ function buildAccountEmailHTML(carpark, account, statementData, monthName, year,
     ${bank ? `<hr style="margin-top:22px;"><h3 style="color:#2c3e50;font-size:15px;">Payment details</h3>${bank}` : ''}
     <hr style="margin-top:30px;">
     <p style="color:#7f8c8d;font-size:12px;">${carpark.name}<br>${carpark.address || ''}<br>${carpark.phone || ''}<br>
-    <em>This is an automated invoice. Please contact us if you have any queries.</em></p>
+    <em>This is an automated statement. Please contact us if you have any queries.</em></p>
   </body></html>`;
 }
 
@@ -114,8 +113,6 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
   const right = doc.page.width - doc.page.margins.right;
   const fullWidth = right - left;
 
-  const invNo = accountInvoiceNumber(year, month2, account.id);
-
   doc.rect(left, doc.y, fullWidth, 56).fill('#1a5276');
   const headerY = doc.y + 12;
   doc.fillColor('#ffffff').fontSize(16).font('Helvetica-Bold')
@@ -124,8 +121,7 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
     .text(`Account statement — ${monthName} ${year}`, left + 12, headerY + 22, { width: fullWidth - 24 });
   doc.y += 64;
 
-  doc.fillColor('#2c3e50').fontSize(10).text(`Invoice #: ${invNo}`);
-  doc.text(`Payment due: 20th of next month (${dueDateYmd})`);
+  doc.fillColor('#2c3e50').fontSize(10).text(`Payment due: 20th of next month (${dueDateYmd})`);
   line();
 
   doc.fontSize(14).fillColor('#c0392b').font('Helvetica-Bold').text(account.company_name || '');
@@ -135,14 +131,15 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
   // Table header
   const startX = doc.page.margins.left;
   let y = doc.y;
-  const col = { invoice: startX, stay: startX + 50, name: startX + 140, rego: startX + 240, cost: startX + 295, paid: startX + 355, out: startX + 415 };
-  doc.fontSize(9).font('Helvetica-Bold').fillColor('#000').text('Invoice #', col.invoice, y, { width: 45 });
-  doc.text('Stay', col.stay, y, { width: 90 });
-  doc.text('Name', col.name, y, { width: 95 });
-  doc.text('Rego', col.rego, y, { width: 50 });
-  doc.text('Cost', col.cost, y, { width: 55, align: 'right' });
-  doc.text('Paid', col.paid, y, { width: 55, align: 'right' });
-  doc.text('Outstanding', col.out, y, { width: 75, align: 'right' });
+  const col = { invoice: startX, stay: startX + 38, name: startX + 118, rego: startX + 196, due: startX + 238, cost: startX + 286, paid: startX + 336, out: startX + 386 };
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#000').text('Inv #', col.invoice, y, { width: 36 });
+  doc.text('Stay', col.stay, y, { width: 78 });
+  doc.text('Name', col.name, y, { width: 76 });
+  doc.text('Rego', col.rego, y, { width: 40 });
+  doc.text('Due', col.due, y, { width: 46 });
+  doc.text('Cost', col.cost, y, { width: 48, align: 'right' });
+  doc.text('Paid', col.paid, y, { width: 48, align: 'right' });
+  doc.text('Outstanding', col.out, y, { width: 80, align: 'right' });
   doc.font('Helvetica');
   y += 14;
   doc.moveTo(startX, y).lineTo(doc.page.width - doc.page.margins.right, y).strokeColor('#e0e0e0').stroke();
@@ -153,14 +150,20 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
     const stay = `${fmtShort(inv.date_in)} – ${fmtShort(inv.return_date)}`.trim();
     const name = `${inv.first_name || ''} ${inv.last_name || ''}`.trim();
     const rego = inv.rego || '';
+    // Each booking is due the 20th of the month AFTER it happened — not the
+    // 20th of the month this statement was sent for. A carried-over April
+    // booking is due 20 May regardless of which later statement it appears on.
+    const bookedYmd = String(inv.date_in || '').slice(0, 10);
+    const due = bookedYmd ? fmtShort(dueDate20thNextMonth(bookedYmd.slice(5, 7), bookedYmd.slice(0, 4))) : '';
 
-    doc.fontSize(8).fillColor('#111').text(String(inv.invoice_number || ''), col.invoice, y, { width: 45 });
-    doc.text(stay, col.stay, y, { width: 90 });
-    doc.text(name, col.name, y, { width: 95 });
-    doc.text(rego, col.rego, y, { width: 50 });
-    doc.text(currency(inv.total_price), col.cost, y, { width: 55, align: 'right' });
-    doc.fillColor('#27ae60').text(currency(inv.allocated_amount), col.paid, y, { width: 55, align: 'right' });
-    doc.fillColor('#c0392b').font('Helvetica-Bold').text(currency(inv.outstanding_amount), col.out, y, { width: 75, align: 'right' });
+    doc.fontSize(8).fillColor('#111').text(String(inv.invoice_number || ''), col.invoice, y, { width: 36 });
+    doc.text(stay, col.stay, y, { width: 78 });
+    doc.text(name, col.name, y, { width: 76 });
+    doc.text(rego, col.rego, y, { width: 40 });
+    doc.text(due, col.due, y, { width: 46 });
+    doc.text(currency(inv.total_price), col.cost, y, { width: 48, align: 'right' });
+    doc.fillColor('#27ae60').text(currency(inv.allocated_amount), col.paid, y, { width: 48, align: 'right' });
+    doc.fillColor('#c0392b').font('Helvetica-Bold').text(currency(inv.outstanding_amount), col.out, y, { width: 80, align: 'right' });
     doc.font('Helvetica').fillColor('#111');
     y += 14;
 
@@ -411,7 +414,7 @@ router.post('/send-accounts', requireAuth, async (req, res) => {
         await transporter.sendMail({
           from: emailFrom(),
           to: emailTo,
-          subject: `${carpark.name} – GST – ${monthName} ${y} Account Invoice (${invNo})`,
+          subject: `${carpark.name} – GST – ${monthName} ${y} Account Statement`,
           html,
           attachments,
         });
@@ -490,7 +493,7 @@ router.post('/send-accounts-test', requireAuth, async (req, res) => {
     await transporter.sendMail({
       from: emailFrom(),
       to: test_email,
-      subject: `[TEST] ${carpark.name} – GST – ${monthName} ${y} Account Invoice (${invNo})`,
+      subject: `[TEST] ${carpark.name} – GST – ${monthName} ${y} Account Statement`,
       html,
       attachments,
     });
