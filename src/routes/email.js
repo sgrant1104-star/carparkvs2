@@ -131,15 +131,25 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
   // Table header
   const startX = doc.page.margins.left;
   let y = doc.y;
-  const col = { invoice: startX, stay: startX + 38, name: startX + 118, rego: startX + 196, due: startX + 238, cost: startX + 286, paid: startX + 336, out: startX + 386 };
-  doc.fontSize(9).font('Helvetica-Bold').fillColor('#000').text('Inv #', col.invoice, y, { width: 36 });
-  doc.text('Stay', col.stay, y, { width: 78 });
-  doc.text('Name', col.name, y, { width: 76 });
-  doc.text('Rego', col.rego, y, { width: 40 });
-  doc.text('Due', col.due, y, { width: 46 });
-  doc.text('Cost', col.cost, y, { width: 48, align: 'right' });
-  doc.text('Paid', col.paid, y, { width: 48, align: 'right' });
-  doc.text('Outstanding', col.out, y, { width: 80, align: 'right' });
+  const w = { invoice: 32, stay: 100, name: 88, rego: 36, due: 42, cost: 40, paid: 40, out: 65 };
+  const col = {
+    invoice: startX,
+    stay: startX + 34,
+    name: startX + 34 + 104,
+    rego: startX + 34 + 104 + 92,
+    due: startX + 34 + 104 + 92 + 40,
+    cost: startX + 34 + 104 + 92 + 40 + 46,
+    paid: startX + 34 + 104 + 92 + 40 + 46 + 44,
+    out: startX + 34 + 104 + 92 + 40 + 46 + 44 + 44,
+  };
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#000').text('Inv #', col.invoice, y, { width: w.invoice });
+  doc.text('Stay', col.stay, y, { width: w.stay });
+  doc.text('Name', col.name, y, { width: w.name });
+  doc.text('Rego', col.rego, y, { width: w.rego });
+  doc.text('Due', col.due, y, { width: w.due });
+  doc.text('Cost', col.cost, y, { width: w.cost, align: 'right' });
+  doc.text('Paid', col.paid, y, { width: w.paid, align: 'right' });
+  doc.text('Outstanding', col.out, y, { width: w.out, align: 'right' });
   doc.font('Helvetica');
   y += 14;
   doc.moveTo(startX, y).lineTo(doc.page.width - doc.page.margins.right, y).strokeColor('#e0e0e0').stroke();
@@ -156,16 +166,28 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
     const bookedYmd = String(inv.date_in || '').slice(0, 10);
     const due = bookedYmd ? fmtShort(dueDate20thNextMonth(bookedYmd.slice(5, 7), bookedYmd.slice(0, 4))) : '';
 
-    doc.fontSize(8).fillColor('#111').text(String(inv.invoice_number || ''), col.invoice, y, { width: 36 });
-    doc.text(stay, col.stay, y, { width: 78 });
-    doc.text(name, col.name, y, { width: 76 });
-    doc.text(rego, col.rego, y, { width: 40 });
-    doc.text(due, col.due, y, { width: 46 });
-    doc.text(currency(inv.total_price), col.cost, y, { width: 48, align: 'right' });
-    doc.fillColor('#27ae60').text(currency(inv.allocated_amount), col.paid, y, { width: 48, align: 'right' });
-    doc.fillColor('#c0392b').font('Helvetica-Bold').text(currency(inv.outstanding_amount), col.out, y, { width: 80, align: 'right' });
+    // A long name or date range can still wrap onto a second line even with
+    // generous column widths — size the row to whichever cell needs the most
+    // room instead of a fixed height, so wrapped text never overlaps the row
+    // below it.
+    doc.fontSize(8);
+    const rowH = Math.max(
+      12,
+      doc.heightOfString(stay, { width: w.stay }),
+      doc.heightOfString(name, { width: w.name }),
+      doc.heightOfString(rego, { width: w.rego })
+    );
+
+    doc.fillColor('#111').text(String(inv.invoice_number || ''), col.invoice, y, { width: w.invoice });
+    doc.text(stay, col.stay, y, { width: w.stay });
+    doc.text(name, col.name, y, { width: w.name });
+    doc.text(rego, col.rego, y, { width: w.rego });
+    doc.text(due, col.due, y, { width: w.due });
+    doc.text(currency(inv.total_price), col.cost, y, { width: w.cost, align: 'right' });
+    doc.fillColor('#27ae60').text(currency(inv.allocated_amount), col.paid, y, { width: w.paid, align: 'right' });
+    doc.fillColor('#c0392b').font('Helvetica-Bold').text(currency(inv.outstanding_amount), col.out, y, { width: w.out, align: 'right' });
     doc.font('Helvetica').fillColor('#111');
-    y += 14;
+    y += rowH + 6;
 
     if (y > doc.page.height - doc.page.margins.bottom - 140) {
       doc.addPage();
