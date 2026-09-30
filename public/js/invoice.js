@@ -591,10 +591,12 @@ function applyInvoiceFromPreviousVisit(inv, options = {}) {
     const el = document.getElementById('inv-flight-type');
     if (el && (!mergeOnlyMissing || !String(el.value || '').trim())) el.value = inv.flight_type;
   }
-  if (inv.notes != null && String(inv.notes).trim() !== '') {
-    const el = document.getElementById('inv-notes');
-    if (el && (!mergeOnlyMissing || !String(el.value || '').trim())) el.value = inv.notes;
-  }
+  // Deliberately NOT carrying notes over — unlike name/phone/flight info,
+  // notes are booking-specific (e.g. "$75 credit", "call on arrival") and
+  // stay true only for the stay they were written on. Copying them onto
+  // every future booking for the same rego makes stale, one-off context
+  // look like a standing instruction (this is exactly how a note about one
+  // early-return credit kept resurfacing on that customer's next booking).
   if (inv.customer_id) {
     document.getElementById('inv-customer-id').value = inv.customer_id;
   }
