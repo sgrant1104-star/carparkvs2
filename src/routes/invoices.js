@@ -25,6 +25,47 @@ router.get('/credits/lookup', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/invoices/credits?search=&includeUsed=true
+// Full list of customers with an early-return credit on file — so staff can
+// see at a glance who's owed something, without having to already know a
+// name/phone to look up. Defaults to only rows with a remaining balance;
+// includeUsed=true also shows fully-consumed history for reference.
+router.get('/credits', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const { search, includeUsed } = req.query;
+
+    let query = `
+      SELECT cc.*,
+        si.invoice_number AS source_invoice_number,
+        ui.invoice_number AS used_invoice_number
+      FROM customer_credits cc
+      LEFT JOIN invoices si ON si.id = cc.source_invoice_id
+      LEFT JOIN invoices ui ON ui.id = cc.used_invoice_id
+      WHERE cc.carpark_id = ?
+    `;
+    const params = [carparkId];
+    if (search) {
+      query += ` AND (cc.first_name LIKE ? OR cc.last_name LIKE ? OR cc.phone LIKE ?)`;
+      const s = `%${search}%`;
+      params.push(s, s, s);
+    }
+    query += ' ORDER BY cc.created_at DESC';
+
+    const rows = await db.prepare(query).all(...params);
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const withRemaining = rows.map(r => ({
+      ...r,
+      remaining: round2((parseFloat(r.amount) || 0) - (parseFloat(r.amount_used) || 0)),
+    }));
+
+    const filtered = includeUsed === 'true' ? withRemaining : withRemaining.filter(r => r.remaining > 0.01);
+    const totalRemaining = round2(withRemaining.reduce((s, r) => s + (r.remaining > 0.01 ? r.remaining : 0), 0));
+
+    res.json({ credits: filtered, totalRemaining });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/invoices/:id/apply-credit  { amount, phone, first_name, last_name }
 // Applies up to `amount` of the customer's available credit to this invoice.
 router.post('/:id/apply-credit', requireAuth, async (req, res) => {

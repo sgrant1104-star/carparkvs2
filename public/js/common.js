@@ -241,6 +241,7 @@ function renderNavbar(activePage) {
     { href: '/returns.html', label: 'Returns', icon: 'bi-car-front', key: 'returns' },
     { href: '/longterm.html', label: 'Long Term', icon: 'bi-calendar-check', key: 'longterm' },
     { href: '/accounts.html', label: 'Accounts', icon: 'bi-building', key: 'accounts' },
+    { href: '/credits.html', label: 'Customer Credits', icon: 'bi-piggy-bank', key: 'credits' },
     { href: '/keybox.html', label: 'Key Box', icon: 'bi-key', key: 'keybox' },
     { href: '/reports.html', label: 'Reports', icon: 'bi-bar-chart', key: 'reports' },
     { href: '/banking.html', label: 'Banking', icon: 'bi-bank', key: 'banking' },

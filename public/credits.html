@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Credits - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <h2><i class="bi bi-piggy-bank me-2"></i>Customer Credits</h2>
+    </div>
+
+    <div class="alert alert-secondary small mb-3">
+      Credit from customers who picked up early and paid for unused nights — matched automatically by phone (or name)
+      the next time they book. <strong>Total available: <span id="credits-total">—</span></strong>
+    </div>
+
+    <div class="row g-2 mb-3">
+      <div class="col-md-4">
+        <input type="text" class="form-control form-control-sm" id="credits-search" placeholder="Search name or phone...">
+      </div>
+      <div class="col-md-4 d-flex align-items-center">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="credits-show-used">
+          <label class="form-check-label small" for="credits-show-used">Also show fully-used credits</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Phone</th>
+              <th class="text-end">Credit</th>
+              <th class="text-end">Used</th>
+              <th class="text-end">Remaining</th>
+              <th>Status</th>
+              <th>From Invoice</th>
+              <th>Used On</th>
+              <th>Reason</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="credits-tbody">
+            <tr><td colspan="10" class="text-center"><div class="spinner-border spinner-border-sm"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('credits');
+
+    function fmtDate(s) {
+      if (!s) return '—';
+      const d = new Date(String(s).replace(' ', 'T'));
+      return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    let searchTimer = null;
+    async function loadCredits() {
+      const search = document.getElementById('credits-search').value.trim();
+      const includeUsed = document.getElementById('credits-show-used').checked;
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (includeUsed) params.set('includeUsed', 'true');
+
+      const res = await fetch(`/api/invoices/credits?${params.toString()}`);
+      const tbody = document.getElementById('credits-tbody');
+      if (!res.ok) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger">Failed to load credits — try refreshing the page.</td></tr>';
+        return;
+      }
+      const data = await res.json();
+      document.getElementById('credits-total').textContent = formatCurrency(data.totalRemaining || 0);
+
+      if (data.credits.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted">${includeUsed ? 'No credits on file.' : 'No customers currently have credit available.'}</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = data.credits.map(c => `
+        <tr>
+          <td class="fw-bold">${escapeHtml(c.first_name || '')} ${escapeHtml(c.last_name || '')}</td>
+          <td class="small">${escapeHtml(c.phone || '—')}</td>
+          <td class="text-end">${formatCurrency(c.amount)}</td>
+          <td class="text-end text-muted">${formatCurrency(c.amount_used)}</td>
+          <td class="text-end fw-bold ${c.remaining > 0.01 ? 'text-success' : 'text-muted'}">${formatCurrency(c.remaining)}</td>
+          <td>${c.status === 'used'
+            ? '<span class="badge bg-secondary">Used</span>'
+            : '<span class="badge bg-success">Available</span>'}</td>
+          <td class="small">${c.source_invoice_number ? `#${c.source_invoice_number}` : '—'}</td>
+          <td class="small">${c.used_invoice_number ? `#${c.used_invoice_number}` : '—'}</td>
+          <td class="small text-muted" style="max-width:280px;">${escapeHtml(c.reason || '')}</td>
+          <td class="small">${fmtDate(c.created_at)}</td>
+        </tr>
+      `).join('');
+    }
+
+    document.getElementById('credits-search').addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(loadCredits, 300);
+    });
+    document.getElementById('credits-show-used').addEventListener('change', loadCredits);
+
+    async function init() {
+      await checkAuth();
+      await loadCredits();
+      updateNavCarsCount();
+    }
+    init();
+  </script>
+</body>
+</html>
