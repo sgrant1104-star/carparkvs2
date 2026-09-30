@@ -713,39 +713,6 @@ async function initializeDatabase() {
     await db.prepare("UPDATE key_box SET status = 'in_use', invoice_id = 3, longterm_customer_id = NULL, holder_type = 'invoice' WHERE carpark_id = 1 AND key_number = 22").run();
   }
 
-  // ── One-time data correction (2026-10-01) ───────────────────────────────
-  // Invoice #20491 was marked paid via "Customer Credit" ($60) but the
-  // actual credit-consumption step never ran — the credit ledger still
-  // showed the full $60 as available/unused, meaning it could have been
-  // applied a second time to a future booking. Confirmed with Shane and
-  // fixed by running the exact same applyCreditToInvoice() logic the app
-  // itself uses for a normal credit application, rather than hand-editing
-  // rows directly. Idempotent (checks credit_applied first) and narrowly
-  // scoped to this one invoice — safe to leave running on every startup
-  // until removed once confirmed applied in production.
-  try {
-    const targetInvoice = await db.prepare('SELECT * FROM invoices WHERE invoice_number = ? AND carpark_id = ?').get(20491, 1);
-    if (targetInvoice && Number(targetInvoice.credit_applied || 0) === 0) {
-      const { applyCreditToInvoice } = require('./utils/customerCredit');
-      const result = await applyCreditToInvoice(db, {
-        carparkId: 1,
-        invoiceId: targetInvoice.id,
-        amount: 60,
-        phone: targetInvoice.phone,
-        firstName: targetInvoice.first_name,
-        lastName: targetInvoice.last_name,
-        userName: 'Correction: invoice #20491 credit was never actually applied (Claude, per Shane 2026-10-01)',
-      });
-      if (result.applied > 0) {
-        console.log(`[DB] One-time correction: applied $${result.applied} credit to invoice #20491`);
-      } else {
-        console.warn('[DB] One-time correction: invoice #20491 found but no credit was applied (already consumed elsewhere?)');
-      }
-    }
-  } catch (err) {
-    console.error('[DB] One-time invoice #20491 credit correction failed:', err.message);
-  }
-
   saveToDisk();
   console.log('[DB] Database ready');
 }
