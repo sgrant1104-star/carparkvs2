@@ -551,7 +551,12 @@ router.get('/:id/pdf', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const carparkId = req.session.carparkId || 1;
-    const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ? AND carpark_id = ?').get(id, carparkId);
+    const invoice = await db.prepare(`
+      SELECT i.*, ac.company_name as account_name
+      FROM invoices i
+      LEFT JOIN account_customers ac ON ac.id = i.account_customer_id
+      WHERE i.id = ? AND i.carpark_id = ?
+    `).get(id, carparkId);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
     streamInvoicePdf(res, invoice, carpark);

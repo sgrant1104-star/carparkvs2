@@ -22,6 +22,16 @@ function drawInvoicePdf(doc, invoice, carpark) {
   doc.moveDown(0.3);
   line();
 
+  // On-account bookings should be made out to the paying company, not just
+  // the individual who dropped the car off — the Customer/Phone grid below
+  // still shows their details for operational purposes (whose car, who to
+  // call), this just makes clear who's actually being billed.
+  if (invoice.account_name) {
+    doc.fontSize(10).font('Helvetica-Bold').fillColor('#1a5276')
+      .text(`Billed to: ${invoice.account_name}`, { align: 'center', width: 347 });
+    doc.moveDown(0.3);
+  }
+
   const dateIn     = invoice.date_in     ? new Date(invoice.date_in).toLocaleDateString('en-NZ')     : '';
   const returnDate = invoice.return_date ? new Date(invoice.return_date).toLocaleDateString('en-NZ') : '';
 

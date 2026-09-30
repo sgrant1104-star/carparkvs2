@@ -237,10 +237,12 @@ async function deallocatePayment(db, { carparkId, paymentSource, paymentId }) {
 async function getAccountStatementData(db, { carparkId, accountIds, startDate, endDate }) {
   const ph = accountIds.map(() => '?').join(',');
   const invoicesRaw = await db.prepare(`
-    SELECT * FROM invoices
-    WHERE account_customer_id IN (${ph}) AND void = 0
-      AND substr(trim(COALESCE(date_in,'')),1,10) <= ?
-    ORDER BY date_in ASC
+    SELECT i.*, ac.company_name as account_name
+    FROM invoices i
+    LEFT JOIN account_customers ac ON ac.id = i.account_customer_id
+    WHERE i.account_customer_id IN (${ph}) AND i.void = 0
+      AND substr(trim(COALESCE(i.date_in,'')),1,10) <= ?
+    ORDER BY i.date_in ASC
   `).all(...accountIds, endDate);
 
   const outstandingByInvoiceId = new Map();

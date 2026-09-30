@@ -564,7 +564,12 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
   const { invoiceId } = req.params;
   const carparkId = req.session.carparkId || 1;
   try {
-    const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ? AND carpark_id = ?').get(invoiceId, carparkId);
+    const invoice = await db.prepare(`
+      SELECT i.*, ac.company_name as account_name
+      FROM invoices i
+      LEFT JOIN account_customers ac ON ac.id = i.account_customer_id
+      WHERE i.id = ? AND i.carpark_id = ?
+    `).get(invoiceId, carparkId);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
     const emailTo = invoice.email;
