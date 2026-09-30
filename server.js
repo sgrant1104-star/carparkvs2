@@ -367,11 +367,14 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
   }
 }
 
-// ─── Scheduled job: send month-end account/LT emails at 8 AM ──────────────────
+// ─── Scheduled job: send month-end account emails at 8 AM ──────────────────
 // Runs on days 28-31, but only executes on the last calendar day of the month.
+// Long-term customers are deliberately excluded from this automatic run —
+// staff chase those up manually instead. includeLongTerm: true is still
+// available via the manual admin trigger below if that ever changes.
 cron.schedule('0 8 28-31 * *', async () => {
   try {
-    await runMonthEndEmailJob({ force: false });
+    await runMonthEndEmailJob({ force: false, includeAccounts: true, includeLongTerm: false });
   } catch (_) {
     // already logged in runMonthEndEmailJob
   }
