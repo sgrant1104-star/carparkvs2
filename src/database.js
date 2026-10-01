@@ -713,42 +713,6 @@ async function initializeDatabase() {
     await db.prepare("UPDATE key_box SET status = 'in_use', invoice_id = 3, longterm_customer_id = NULL, holder_type = 'invoice' WHERE carpark_id = 1 AND key_number = 22").run();
   }
 
-  // ── One-time data cleanup (2026-10-01) ──────────────────────────────────
-  // Removes 5 customer_credits rows found wrong during a manual audit:
-  // ids 2/3 are stale test entries ("Shane") referencing invoice ids that
-  // don't exist; ids 1/14 were 100%-refunded from 1-night bookings picked
-  // up same-day (the bug fixed above — at least 1 night should always stay
-  // chargeable); id 10 was generated from a same-day pickup that was then
-  // reversed by extending the stay back out, so nothing was ever actually
-  // left unused. Confirmed with Shane before removing. Guarded per-row (id
-  // + expected amount + amount_used still 0) so this can never touch a row
-  // that's changed since the audit, and is a no-op once already applied.
-  try {
-    const toRemove = [
-      { id: 2, amount: 45, why: 'stale test data (invoice #742 does not exist)' },
-      { id: 3, amount: 60, why: 'stale test data (invoice #743 does not exist)' },
-      { id: 1, amount: 18, why: '1-night booking picked up same-day — 100% refunded, should have been $0' },
-      { id: 14, amount: 18, why: '1-night booking picked up same-day — 100% refunded, should have been $0' },
-      { id: 10, amount: 54, why: 'stay was later extended rather than shortened — nothing was actually left unused' },
-    ];
-    const { logActivity } = require('./utils/audit');
-    for (const { id, amount, why } of toRemove) {
-      const row = await db.prepare('SELECT * FROM customer_credits WHERE id = ? AND carpark_id = 1').get(id);
-      if (row && Number(row.amount) === amount && Number(row.amount_used || 0) === 0) {
-        await db.prepare('DELETE FROM customer_credits WHERE id = ?').run(id);
-        await logActivity(db, {
-          carparkId: 1, tableName: 'customer_credits', recordId: id, action: 'delete',
-          before: row, after: null,
-          notes: `Removed during audit — ${why}`,
-          userName: 'Correction (Claude, per Shane 2026-10-01 credit audit)',
-        });
-        console.log(`[DB] One-time cleanup: removed customer_credits id ${id} ($${amount}) — ${why}`);
-      }
-    }
-  } catch (err) {
-    console.error('[DB] One-time customer_credits cleanup failed:', err.message);
-  }
-
   saveToDisk();
   console.log('[DB] Database ready');
 }
