@@ -260,6 +260,92 @@ router.post('/:id/payments', requireAuth, async (req, res) => {
   }
 });
 
+// PUT /api/longterm/:id/payments/:idOrBatch
+// Edits an existing payment. A single-month entry (or a legacy row from
+// before batch ids existed) can have every field corrected directly — date,
+// amount, method, reference. A multi-month prepay spread can only have its
+// shared metadata corrected here (method, reference, when the cash actually
+// came in) — NOT the total amount or the per-month date split, since
+// changing the total would require re-running the proration math over
+// again. That's exactly what delete-the-batch + re-add already does safely,
+// so a wrong total on a spread still goes through that flow.
+router.put('/:id/payments/:idOrBatch', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const ltId = parseInt(req.params.id, 10);
+    const idOrBatch = req.params.idOrBatch;
+    if (!Number.isFinite(ltId)) return res.status(400).json({ error: 'Invalid id' });
+
+    const isBatch = /^ltb-/.test(idOrBatch);
+    const rows = isBatch
+      ? await db.prepare(`
+          SELECT * FROM longterm_payments
+          WHERE carpark_id = ? AND longterm_customer_id = ? AND payment_batch_id = ?
+        `).all(carparkId, ltId, idOrBatch)
+      : await (async () => {
+          const rowId = parseInt(idOrBatch, 10);
+          if (!Number.isFinite(rowId)) return [];
+          const row = await db.prepare(`
+            SELECT * FROM longterm_payments WHERE id = ? AND carpark_id = ? AND longterm_customer_id = ?
+          `).get(rowId, carparkId, ltId);
+          return row ? [row] : [];
+        })();
+    if (rows.length === 0) return res.status(404).json({ error: 'Payment not found' });
+
+    const { payment_date, amount_ex_gst, payment_method, transaction_reference, notes } = req.body || {};
+    const method = payment_method ? String(payment_method).trim() : null;
+    const txRef = transaction_reference ? String(transaction_reference).trim() : null;
+    const payNotes = notes ? String(notes).trim() : null;
+    const before = rows.map(r => ({ ...r }));
+
+    if (rows.length === 1) {
+      const pDate = payment_date ? String(payment_date).slice(0, 10) : String(rows[0].payment_date).slice(0, 10);
+      const amt = amount_ex_gst != null && amount_ex_gst !== '' ? parseFloat(amount_ex_gst) : parseFloat(rows[0].amount_ex_gst);
+      if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'amount_ex_gst must be > 0' });
+      await db.prepare(`
+        UPDATE longterm_payments
+        SET payment_date = ?, amount_ex_gst = ?, payment_method = ?, transaction_reference = ?, notes = ?, cash_received_date = ?
+        WHERE id = ?
+      `).run(pDate, amt, method, txRef, payNotes, pDate, rows[0].id);
+    } else {
+      const cashDate = payment_date ? String(payment_date).slice(0, 10) : null;
+      for (const r of rows) {
+        await db.prepare(`
+          UPDATE longterm_payments
+          SET payment_method = ?, transaction_reference = ?, cash_received_date = COALESCE(?, cash_received_date)
+          WHERE id = ?
+        `).run(method, txRef, cashDate, r.id);
+      }
+    }
+
+    const paidRow = await db.prepare(`
+      SELECT COALESCE(SUM(amount_ex_gst), 0) AS paid_ex_gst
+      FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ?
+    `).get(carparkId, ltId);
+    const lt = await db.prepare(`SELECT contract_amount FROM longterm_customers WHERE id = ? AND carpark_id = ?`).get(ltId, carparkId);
+    const paidExGst = parseFloat(paidRow?.paid_ex_gst || 0);
+    const contractExGst = lt && lt.contract_amount != null && lt.contract_amount !== '' ? parseFloat(lt.contract_amount) : 0;
+    let nextStatus = 'Unpaid';
+    if (contractExGst > 0) {
+      nextStatus = paidExGst <= 0 ? 'Unpaid' : (paidExGst >= contractExGst ? 'Paid' : 'Partial');
+    } else {
+      nextStatus = paidExGst > 0 ? 'Partial' : 'Unpaid';
+    }
+    await db.prepare(`UPDATE longterm_customers SET payment_status = ? WHERE id = ? AND carpark_id = ?`).run(nextStatus, ltId, carparkId);
+
+    const { userId, userName } = actorFromReq(req);
+    await logActivity(db, {
+      carparkId, tableName: 'longterm_payments', recordId: ltId, action: 'update',
+      before, after: rows.length === 1 ? { id: rows[0].id, payment_date, amount_ex_gst, payment_method: method, transaction_reference: txRef } : null,
+      notes: rows.length > 1 ? 'Edited shared metadata on a prepay spread' : 'Edited payment', userId, userName,
+    });
+
+    res.json({ success: true, payment_status: nextStatus, paidExGst, editedRows: rows.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/longterm/:id/payments/:paymentId
 // Removes a single payment ROW. For a prorated batch, this only removes the
 // one month/leg selected — to reverse an entire mis-entered batch, delete

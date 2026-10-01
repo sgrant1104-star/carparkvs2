@@ -134,9 +134,9 @@
               <div class="small text-muted mt-1">Prepay for 3/6/12 months is <strong>auto-spread</strong> across the contract for monthly reports.</div>
             </div>
             <div class="col-md-4">
-              <label class="form-label">Contract term total $</label>
-              <input type="number" step="0.01" class="form-control" id="lt-contract-amount" placeholder="e.g. 360.00">
-              <div class="small text-muted mt-1">Enter ex GST amount. LT invoices/emails add 15% GST automatically.</div>
+              <label class="form-label">Contract term total $ <span class="text-muted fw-normal">(inc GST)</span></label>
+              <input type="number" step="0.01" class="form-control" id="lt-contract-amount" placeholder="e.g. 414.00">
+              <div class="small text-muted mt-1">Enter the amount including GST — what the customer actually pays. Stored ex GST internally to match reports.</div>
             </div>
             <div class="col-md-4">
               <label class="form-label">This term paid?</label>
@@ -162,8 +162,8 @@
             </div>
             <div class="row g-2 align-items-end">
               <div class="col-md-4">
-                <label class="form-label">Amount (ex GST)</label>
-                <input type="number" step="0.01" class="form-control" id="lt-payment-amount" placeholder="e.g. 200.00">
+                <label class="form-label">Amount (inc GST)</label>
+                <input type="number" step="0.01" class="form-control" id="lt-payment-amount" placeholder="e.g. 230.00">
               </div>
               <div class="col-md-4">
                 <label class="form-label">Payment date</label>
@@ -196,7 +196,7 @@
                   <thead>
                     <tr>
                       <th>Date</th>
-                      <th>Amount (ex GST)</th>
+                      <th>Amount (inc GST)</th>
                       <th>Method</th>
                       <th>Reference</th>
                       <th class="text-end"></th>
@@ -244,13 +244,19 @@
   <script src="/js/common.js"></script>
   <script>
     document.getElementById('navbar-container').innerHTML = renderNavbar('longterm');
-    // Agreed long-term pricing schedule (ex GST)
-    // Monthly: $200.00
-    // 3 Months: $500.00
-    // 6 Months: $1000.00
-    // Annual: $1650.00
+    // Agreed long-term pricing schedule (ex GST) — amounts are STORED and
+    // reported ex GST to match the rest of the app's revenue figures, but
+    // every staff-facing display/input on this page shows GST-inclusive
+    // (what the customer actually pays), via toInc()/toExGst() below.
+    // Monthly: $200.00 ex GST ($230.00 inc)
+    // 3 Months: $500.00 ex GST ($575.00 inc)
+    // 6 Months: $1000.00 ex GST ($1150.00 inc)
+    // Annual: $1650.00 ex GST ($1897.50 inc)
     const LT_MONTHLY_RATE = 200.00;
     const LT_TERM_TOTALS = { 1: 200.00, 3: 500.00, 6: 1000.00, 12: 1650.00 };
+    const GST_RATE = 0.15;
+    const toInc = (exGst) => Math.round(Number(exGst || 0) * (1 + GST_RATE) * 100) / 100;
+    const toExGst = (incGst) => Math.round(Number(incGst || 0) / (1 + GST_RATE) * 100) / 100;
 
     function addMonthsYmd(ymd, months) {
       const base = ymd ? new Date(`${ymd}T00:00:00`) : new Date();
@@ -265,10 +271,20 @@
     }
 
     function applyTermMonths(months) {
-      document.getElementById('lt-expiry').value = addMonthsYmd(localDateStr(new Date()), months);
+      const expiryEl = document.getElementById('lt-expiry');
+      const startEl = document.getElementById('lt-start-date');
+      const isExisting = !!document.getElementById('lt-id').value;
+      // Renewing an existing contract extends from whatever expiry is
+      // already on file (so renewing early doesn't reset the clock back to
+      // today); a brand-new contract counts the term from its start date.
+      const base = (isExisting && expiryEl.value) ? expiryEl.value : (startEl.value || localDateStr(new Date()));
+      expiryEl.value = addMonthsYmd(base, months);
       const total = termTotalAmount(months);
       const el = document.getElementById('lt-contract-amount');
-      if (el) el.value = total > 0 ? total.toFixed(2) : '';
+      if (el) el.value = total > 0 ? toInc(total).toFixed(2) : '';
+      if (isExisting) {
+        showAlert(`Expiry set to ${expiryEl.value} (${base === startEl.value ? 'from contract start' : 'extended from current expiry'})`, 'info', 4000);
+      }
     }
 
     function updateLtEmailButtons() {
@@ -451,7 +467,7 @@
       if (dateEl) dateEl.value = localDateStr(new Date());
 
       const amtEl = document.getElementById('lt-payment-amount');
-      if (amtEl) amtEl.value = LT_MONTHLY_RATE.toFixed(2);
+      if (amtEl) amtEl.value = toInc(LT_MONTHLY_RATE).toFixed(2);
 
       const methodEl = document.getElementById('lt-payment-method');
       if (methodEl) methodEl.value = 'Internet Bank';
@@ -489,8 +505,8 @@
 
         summary.textContent =
           contract > 0
-            ? `Paid: $${paid.toFixed(2)} ex GST · Remaining: $${remaining.toFixed(2)} ex GST`
-            : `Paid: $${paid.toFixed(2)} ex GST`;
+            ? `Paid: $${toInc(paid).toFixed(2)} · Remaining: $${toInc(remaining).toFixed(2)} (inc GST)`
+            : `Paid: $${toInc(paid).toFixed(2)} (inc GST)`;
 
         const display = data.displayPayments || data.payments || [];
         if (display.length === 0) {
@@ -498,19 +514,26 @@
           return;
         }
 
+        const PAYMENT_METHODS = ['Internet Bank', 'Cash', 'Eftpos', 'Other'];
+        const methodOptionsHtml = (current) => PAYMENT_METHODS
+          .map(m => `<option value="${m}" ${m === current ? 'selected' : ''}>${m}</option>`).join('');
+
         tbody.innerHTML = display.map(p => {
           const d = p.payment_date ? String(p.payment_date).slice(0, 10) : '—';
           const prorated = p.is_prorated && p.months > 1;
           const allocHint = prorated && p.allocations
-            ? `<div class="text-muted" style="font-size:0.7rem;">Spread: ${p.allocations.map(a => `${String(a.payment_date).slice(0, 7)} $${Number(a.amount_ex_gst).toFixed(2)}`).join(' · ')}</div>`
+            ? `<div class="text-muted" style="font-size:0.7rem;">Spread: ${p.allocations.map(a => `${String(a.payment_date).slice(0, 7)} $${toInc(a.amount_ex_gst).toFixed(2)}`).join(' · ')}</div>`
             : '';
           return `
-            <tr class="${prorated ? 'table-info' : ''}">
-              <td class="small">${d}${prorated ? `<br><span class="badge bg-info text-dark">${p.months} mo</span>` : ''}</td>
-              <td class="small fw-bold">$${Number(p.amount_ex_gst || 0).toFixed(2)}${prorated ? ' <span class="text-muted fw-normal">total</span>' : ''}</td>
-              <td class="small">${p.payment_method || ''}</td>
-              <td class="small">${escapeHtml(p.transaction_reference || (p.notes ? p.notes.slice(0, 40) : '—'))}${allocHint}</td>
-              <td class="text-end">
+            <tr class="${prorated ? 'table-info' : ''}" data-row-id="${p.id}" data-prorated="${prorated ? '1' : '0'}" data-amount-ex-gst="${Number(p.amount_ex_gst || 0)}" data-date="${d}" data-method="${escapeAttr(p.payment_method || '')}" data-reference="${escapeAttr(p.transaction_reference || '')}">
+              <td class="small lt-pay-view-date">${d}${prorated ? `<br><span class="badge bg-info text-dark">${p.months} mo</span>` : ''}</td>
+              <td class="small fw-bold lt-pay-view-amount">$${toInc(p.amount_ex_gst).toFixed(2)}${prorated ? ' <span class="text-muted fw-normal">total</span>' : ''}</td>
+              <td class="small lt-pay-view-method">${p.payment_method || ''}</td>
+              <td class="small lt-pay-view-ref">${escapeHtml(p.transaction_reference || (p.notes ? p.notes.slice(0, 40) : '—'))}${allocHint}</td>
+              <td class="text-end lt-pay-view-actions">
+                <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-lt-payment" data-id="${p.id}" title="Edit this payment">
+                  <i class="bi bi-pencil"></i>
+                </button>
                 <button type="button" class="btn btn-sm btn-outline-danger btn-delete-lt-payment"
                   data-id="${p.id}" data-prorated="${prorated ? '1' : '0'}"
                   title="${prorated ? 'Delete this entire prepay spread' : 'Delete this payment'}">
@@ -520,6 +543,58 @@
             </tr>
           `;
         }).join('');
+
+        tbody.querySelectorAll('.btn-edit-lt-payment').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const tr = btn.closest('tr');
+            const prorated = tr.dataset.prorated === '1';
+            const amountExGst = Number(tr.dataset.amountExGst || 0);
+            const currentDate = tr.dataset.date;
+            const currentMethod = tr.dataset.method;
+            const currentRef = tr.dataset.reference;
+
+            tr.querySelector('.lt-pay-view-date').innerHTML =
+              `<input type="date" class="form-control form-control-sm lt-edit-date" value="${currentDate !== '—' ? currentDate : ''}">`;
+            tr.querySelector('.lt-pay-view-amount').innerHTML = prorated
+              ? `<span class="text-muted">$${toInc(amountExGst).toFixed(2)}</span><div class="text-muted" style="font-size:0.68rem;">Total locked — delete spread to change</div>`
+              : `<input type="number" step="0.01" class="form-control form-control-sm lt-edit-amount" value="${toInc(amountExGst).toFixed(2)}">`;
+            tr.querySelector('.lt-pay-view-method').innerHTML =
+              `<select class="form-select form-select-sm lt-edit-method">${methodOptionsHtml(currentMethod)}</select>`;
+            tr.querySelector('.lt-pay-view-ref').innerHTML =
+              `<input type="text" class="form-control form-control-sm lt-edit-ref" value="${escapeAttr(currentRef)}">`;
+            tr.querySelector('.lt-pay-view-actions').innerHTML = `
+              <button type="button" class="btn btn-sm btn-success btn-save-lt-payment" title="Save"><i class="bi bi-check-lg"></i></button>
+              <button type="button" class="btn btn-sm btn-outline-secondary btn-cancel-lt-payment" title="Cancel"><i class="bi bi-x-lg"></i></button>
+            `;
+
+            tr.querySelector('.btn-cancel-lt-payment').addEventListener('click', () => loadLtPayments(ltId));
+            tr.querySelector('.btn-save-lt-payment').addEventListener('click', async () => {
+              const newDate = tr.querySelector('.lt-edit-date').value;
+              if (!newDate) { showAlert('Pick a date', 'warning'); return; }
+              const payload = {
+                payment_date: newDate,
+                payment_method: tr.querySelector('.lt-edit-method').value,
+                transaction_reference: tr.querySelector('.lt-edit-ref').value.trim() || null,
+              };
+              if (!prorated) {
+                const newAmountInc = parseFloat(tr.querySelector('.lt-edit-amount').value);
+                if (!Number.isFinite(newAmountInc) || newAmountInc <= 0) { showAlert('Enter a valid amount', 'warning'); return; }
+                payload.amount_ex_gst = toExGst(newAmountInc);
+              }
+              const res = await fetch(`/api/longterm/${ltId}/payments/${btn.dataset.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              });
+              const result = await res.json().catch(() => ({}));
+              if (!res.ok) { showAlert(result.error || 'Could not save changes', 'danger'); return; }
+              const ps = document.getElementById('lt-payment-status');
+              if (ps && result.payment_status) ps.value = result.payment_status;
+              showAlert('Payment updated', 'success');
+              await loadLtPayments(ltId);
+            });
+          });
+        });
 
         tbody.querySelectorAll('.btn-delete-lt-payment').forEach((btn) => {
           btn.addEventListener('click', async () => {
@@ -567,7 +642,7 @@
       document.getElementById('lt-expiry').value = lt.expiry_date ? lt.expiry_date.split('T')[0] : '';
       document.getElementById('lt-notes').value = lt.notes || '';
       const ca = document.getElementById('lt-contract-amount');
-      if (ca) ca.value = lt.contract_amount != null && lt.contract_amount !== '' ? parseFloat(lt.contract_amount).toFixed(2) : '';
+      if (ca) ca.value = lt.contract_amount != null && lt.contract_amount !== '' ? toInc(parseFloat(lt.contract_amount)).toFixed(2) : '';
       const ps = document.getElementById('lt-payment-status');
       if (ps) ps.value = lt.payment_status || 'Unpaid';
       // openEditModal is used for both:
@@ -680,8 +755,9 @@
       const id = document.getElementById('lt-id').value;
       if (!id) { showAlert('Save the customer first', 'warning'); return; }
 
-      const amt = parseFloat(document.getElementById('lt-payment-amount').value);
-      if (!Number.isFinite(amt) || amt <= 0) { showAlert('Enter a valid payment amount (ex GST)', 'danger'); return; }
+      const amtInc = parseFloat(document.getElementById('lt-payment-amount').value);
+      if (!Number.isFinite(amtInc) || amtInc <= 0) { showAlert('Enter a valid payment amount (inc GST)', 'danger'); return; }
+      const amt = toExGst(amtInc);
 
       const paymentDate = document.getElementById('lt-payment-date').value || localDateStr(new Date());
       const paymentMethod = (document.getElementById('lt-payment-method').value || 'Other').trim();
@@ -709,7 +785,7 @@
 
       showAlert(
         data.prorated
-          ? `Payment recorded — $${amt.toFixed(2)} spread over ${data.months} months for reporting`
+          ? `Payment recorded — $${amtInc.toFixed(2)} spread over ${data.months} months for reporting`
           : 'Payment recorded',
         'success',
         data.prorated ? 8000 : 4000
@@ -730,7 +806,9 @@
         contract_start_date: (document.getElementById('lt-start-date')?.value || null),
         expiry_date: document.getElementById('lt-expiry').value || null,
         notes: document.getElementById('lt-notes').value,
-        contract_amount: document.getElementById('lt-contract-amount').value || null,
+        contract_amount: document.getElementById('lt-contract-amount').value
+          ? toExGst(document.getElementById('lt-contract-amount').value)
+          : null,
         payment_status: document.getElementById('lt-payment-status').value || 'Unpaid'
       };
 
