@@ -50,7 +50,16 @@ async function checkAndCreateEarlyReturnCredit(db, { carparkId, invoiceId, actua
   const bookedNights = Number(invoice.stay_nights) > 0
     ? Number(invoice.stay_nights)
     : Math.max(1, daysBetween(String(invoice.date_in || '').slice(0, 10), bookedReturn));
-  const unusedNights = daysBetween(actual, bookedReturn);
+  // Capped at bookedNights - 1: the yard was occupied for at least the
+  // drop-off itself, so at least 1 night is always chargeable, matching the
+  // 1-night-minimum billing rule used everywhere else in the app. Without
+  // this, a same-day drop-off-and-pickup against a short booking could
+  // credit back 100% (or more) of what was paid — there's always at least
+  // one night's worth of real usage to account for. A genuine "never
+  // actually used it at all" case (e.g. a cancelled flight) isn't an early
+  // RETURN and should be handled as a manual credit instead, not through
+  // this automatic calculation.
+  const unusedNights = Math.min(daysBetween(actual, bookedReturn), bookedNights - 1);
   if (unusedNights <= 0) return null;
 
   const totalPrice = parseFloat(invoice.total_price) || 0;
@@ -196,8 +205,37 @@ async function releaseCreditForInvoice(db, { carparkId, invoiceId, userId = null
   return rows;
 }
 
+/**
+ * Staff-created credit for situations the automatic early-return formula
+ * can't judge for itself — e.g. a cancelled flight means the customer never
+ * actually used the yard at all, which isn't the same as "picked up early"
+ * and can fairly warrant a full refund-as-credit. Deliberately a thin
+ * wrapper (no formula) so staff keep full discretion; sourceInvoiceId is
+ * optional since a manual credit isn't always tied to one specific booking.
+ */
+async function createManualCredit(db, { carparkId, phone, firstName, lastName, amount, reason, sourceInvoiceId = null, userId = null, userName = null }) {
+  const amt = round2(amount);
+  if (!(amt > 0)) throw new Error('amount must be > 0');
+  if (!phone && !(firstName && lastName)) throw new Error('phone or first+last name is required');
+
+  const result = await db.prepare(`
+    INSERT INTO customer_credits (carpark_id, phone, first_name, last_name, amount, source_invoice_id, reason, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'available')
+  `).run(carparkId, phone || null, firstName || null, lastName || null, amt, sourceInvoiceId, reason || 'Manual credit');
+
+  await logActivity(db, {
+    carparkId, tableName: 'customer_credits', recordId: result.lastInsertRowid, action: 'create_manual',
+    before: null,
+    after: { customer: `${firstName || ''} ${lastName || ''}`.trim(), phone, amount: amt, reason, sourceInvoiceId },
+    notes: reason || 'Manual credit', userId, userName,
+  });
+
+  return { id: result.lastInsertRowid, amount: amt, reason };
+}
+
 module.exports = {
   checkAndCreateEarlyReturnCredit,
+  createManualCredit,
   findAvailableCredit,
   applyCreditToInvoice,
   releaseCreditForInvoice,

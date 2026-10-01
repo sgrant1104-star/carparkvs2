@@ -4,7 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const { releaseKey, syncKeyBoxForPickedUp, checkKeyConflict } = require('../utils/keyBoxSync');
 const { businessDateYmd } = require('../utils/businessDate');
 const { logActivity, actorFromReq } = require('../utils/audit');
-const { checkAndCreateEarlyReturnCredit, findAvailableCredit, applyCreditToInvoice, releaseCreditForInvoice } = require('../utils/customerCredit');
+const { checkAndCreateEarlyReturnCredit, createManualCredit, findAvailableCredit, applyCreditToInvoice, releaseCreditForInvoice } = require('../utils/customerCredit');
 const { deallocateInvoice } = require('../utils/paymentAllocation');
 const { streamInvoicePdf } = require('../utils/invoicePdf');
 const { calculateShortStayPrice } = require('../utils/pricing');
@@ -63,6 +63,54 @@ router.get('/credits', requireAuth, async (req, res) => {
     const totalRemaining = round2(withRemaining.reduce((s, r) => s + (r.remaining > 0.01 ? r.remaining : 0), 0));
 
     res.json({ credits: filtered, totalRemaining });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/invoices/credits  { phone, first_name, last_name, amount, reason, source_invoice_number? }
+// Staff-created credit for cases the automatic early-return formula can't
+// judge (e.g. a cancelled flight — the customer never used the yard at
+// all, not the same as "picked up early"). source_invoice_number is
+// optional and purely for staff's own reference/traceability.
+router.post('/credits', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const { phone, first_name, last_name, amount, reason, source_invoice_number } = req.body || {};
+
+    let sourceInvoiceId = null;
+    if (source_invoice_number) {
+      const src = await db.prepare('SELECT id FROM invoices WHERE invoice_number = ? AND carpark_id = ?').get(source_invoice_number, carparkId);
+      if (!src) return res.status(400).json({ error: `No invoice #${source_invoice_number} found` });
+      sourceInvoiceId = src.id;
+    }
+
+    const { userId, userName } = actorFromReq(req);
+    const result = await createManualCredit(db, {
+      carparkId, phone, firstName: first_name, lastName: last_name, amount, reason, sourceInvoiceId, userId, userName,
+    });
+    res.status(201).json(result);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// DELETE /api/invoices/credits/:id — removes a credit entry entirely (e.g.
+// one created in error). Logs the full row first so it's never silently
+// unrecoverable from the audit trail.
+router.delete('/credits/:id', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const before = await db.prepare('SELECT * FROM customer_credits WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
+    if (!before) return res.status(404).json({ error: 'Credit not found' });
+
+    await db.prepare('DELETE FROM customer_credits WHERE id = ? AND carpark_id = ?').run(req.params.id, carparkId);
+
+    const { userId, userName } = actorFromReq(req);
+    await logActivity(db, {
+      carparkId, tableName: 'customer_credits', recordId: req.params.id, action: 'delete',
+      before, after: null,
+      notes: `Deleted credit ($${before.amount}) for ${before.first_name || ''} ${before.last_name || ''}`.trim(),
+      userId, userName,
+    });
+
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
