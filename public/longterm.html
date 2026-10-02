@@ -282,8 +282,15 @@
       const total = termTotalAmount(months);
       const el = document.getElementById('lt-contract-amount');
       if (el) el.value = total > 0 ? toInc(total).toFixed(2) : '';
+      // Setting a term's amount here starts a brand new billing cycle, which
+      // hasn't been paid yet — reset the status so a renewal doesn't keep
+      // showing "Paid" (left over from the PREVIOUS term) after the total
+      // just changed. Staff can still flip it back if they're re-entering an
+      // already-paid historical term.
+      const psEl = document.getElementById('lt-payment-status');
+      if (psEl) psEl.value = 'Unpaid';
       if (isExisting) {
-        showAlert(`Expiry set to ${expiryEl.value} (${base === startEl.value ? 'from contract start' : 'extended from current expiry'})`, 'info', 4000);
+        showAlert(`Expiry set to ${expiryEl.value} (${base === startEl.value ? 'from contract start' : 'extended from current expiry'}) — marked Unpaid for the new term`, 'info', 5000);
       }
     }
 
