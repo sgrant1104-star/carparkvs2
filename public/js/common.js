@@ -220,6 +220,56 @@ async function updateNavCarsCount() {
       if (el) el.textContent = `${data.carsInYard} Cars`;
     }
   } catch(e) {}
+  updatePrebookingBadge();
+}
+
+// Pre-booking attention badge on the nav + a popup so staff on ANY page find
+// out about arrivals / new online requests without having to open Pre-Bookings.
+// Polls once a minute (started on the first call).
+let _prebookLastAwaiting = null;
+let _prebookPollStarted = false;
+async function updatePrebookingBadge() {
+  if (!_prebookPollStarted) {
+    _prebookPollStarted = true;
+    setInterval(updatePrebookingBadge, 60000);
+  }
+  try {
+    const res = await fetch('/api/prebookings/summary', { cache: 'no-store' });
+    if (!res.ok) return;
+    const s = await res.json();
+
+    const badge = document.getElementById('nav-prebook-badge');
+    if (badge) {
+      badge.textContent = s.needsAttention;
+      badge.classList.toggle('d-none', !s.needsAttention);
+      badge.title = `${s.awaitingAccept} awaiting accept, ${s.arrivingToday} arriving today, ${s.overdue} overdue`;
+    }
+
+    const onPrebookPage = window.location.pathname.endsWith('/prebookings.html');
+    if (onPrebookPage) { _prebookLastAwaiting = s.awaitingAccept; return; }
+
+    const link = '<a href="/prebookings.html" class="alert-link ms-1">Open Pre-Bookings</a>';
+
+    // A new online request arrived while this page was open.
+    if (_prebookLastAwaiting !== null && s.awaitingAccept > _prebookLastAwaiting) {
+      const n = s.awaitingAccept - _prebookLastAwaiting;
+      showAlert(`<i class="bi bi-bell-fill me-1"></i><strong>${n} new online booking request${n === 1 ? '' : 's'}</strong> awaiting accept.${link}`, 'warning', 12000);
+    }
+    _prebookLastAwaiting = s.awaitingAccept;
+
+    // Once per browser tab session per day: who's due in today.
+    const key = `prebookDayPopup-${s.businessDate}`;
+    let seen = false;
+    try { seen = !!sessionStorage.getItem(key); } catch (_) {}
+    if (!seen && (s.arrivingToday || s.overdue || s.awaitingAccept)) {
+      try { sessionStorage.setItem(key, '1'); } catch (_) {}
+      const parts = [];
+      if (s.arrivingToday) parts.push(`<strong>${s.arrivingToday} arriving today</strong>`);
+      if (s.awaitingAccept) parts.push(`${s.awaitingAccept} awaiting accept`);
+      if (s.overdue) parts.push(`${s.overdue} overdue`);
+      showAlert(`<i class="bi bi-inbox-fill me-1"></i>Pre-bookings: ${parts.join(' · ')}.${link}`, 'info', 12000);
+    }
+  } catch (e) {}
 }
 
 // Debounce
@@ -253,7 +303,7 @@ function renderNavbar(activePage) {
   const links = navItems.map(item => `
     <li class="nav-item${item.adminOnly ? ' admin-only' : ''}">
       <a class="nav-link${activePage === item.key ? ' active' : ''}" href="${item.href}">
-        <i class="bi ${item.icon}"></i> ${item.label}
+        <i class="bi ${item.icon}"></i> ${item.label}${item.key === 'prebookings' ? ' <span class="badge rounded-pill bg-danger d-none" id="nav-prebook-badge"></span>' : ''}
       </a>
     </li>
   `).join('');

@@ -117,6 +117,17 @@
       </div>
     </div>
 
+    <!-- Arriving today (pre-bookings) -->
+    <div class="form-card mb-3">
+      <div class="form-section-title d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-inbox me-2"></i>Arriving Today <span class="badge bg-info text-dark" id="arrivals-count">0</span></span>
+        <a href="/prebookings.html" class="btn btn-sm btn-outline-primary">Pre-Bookings</a>
+      </div>
+      <div id="arrivals-today" class="small">
+        <div class="text-center text-muted py-2"><div class="spinner-border spinner-border-sm"></div></div>
+      </div>
+    </div>
+
     <!-- Quick Stats / Recent Activity -->
     <div class="row g-3">
       <div class="col-md-6">
@@ -270,7 +281,45 @@
       }
     }
 
+    async function loadArrivals() {
+      const el = document.getElementById('arrivals-today');
+      try {
+        const res = await fetch('/api/prebookings/summary', { cache: 'no-store' });
+        if (!res.ok) return;
+        const s = await res.json();
+        document.getElementById('arrivals-count').textContent = s.arrivingToday;
+        const row = (b, extra) => `
+          <div class="d-flex align-items-center justify-content-between py-1 border-bottom">
+            <div>
+              <strong>${escapeHtml(b.name)}</strong>
+              <span class="text-muted ms-1">${escapeHtml(b.rego || '')}</span>
+              ${extra || ''}
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-muted">${escapeHtml(b.timeIn || 'TBC')}</span>
+              ${b.status === 'confirmed'
+                ? '<span class="badge bg-success">Confirmed</span>'
+                : '<span class="badge bg-warning text-dark">Awaiting accept</span>'}
+              <a href="/invoice.html?prebooking=${b.id}" class="btn btn-action btn-outline-success">Allocate</a>
+            </div>
+          </div>`;
+        const parts = [];
+        if (s.overdueList.length) {
+          parts.push(`<div class="text-danger fw-bold mt-1">Overdue</div>` + s.overdueList.map(b => row(b, `<span class="badge bg-danger ms-1">${escapeHtml(b.dateIn)}</span>`)).join(''));
+        }
+        if (s.todayList.length) parts.push(s.todayList.map(b => row(b)).join(''));
+        if (s.awaitingAccept && !s.todayList.length && !s.overdueList.length) {
+          parts.push(`<div class="text-muted py-1">${s.awaitingAccept} request${s.awaitingAccept === 1 ? '' : 's'} awaiting accept for later dates.</div>`);
+        }
+        el.innerHTML = parts.join('') || '<p class="text-muted small py-2 mb-0">No pre-booked arrivals today</p>' +
+          (s.arrivingTomorrow ? `<div class="text-muted small">${s.arrivingTomorrow} arriving tomorrow.</div>` : '');
+      } catch (e) {}
+    }
+
     loadMenuData();
+    loadArrivals();
+    updatePrebookingBadge();
+    setInterval(loadArrivals, 30000);
     // Refresh every 30 seconds so the count stays live
     setInterval(loadMenuData, 30000);
     // Also refresh immediately whenever the user comes back to this tab

@@ -54,6 +54,7 @@
     function statusBadge(status) {
       const map = {
         pending: 'bg-warning text-dark',
+        confirmed: 'bg-success',
         allocated: 'bg-info text-dark',
         completed: 'bg-success',
         cancelled: 'bg-secondary',
@@ -61,7 +62,7 @@
         auto_cancelled: 'bg-secondary',
       };
       const label = {
-        pending: 'Pending', allocated: 'Allocated', completed: 'Completed',
+        pending: 'Awaiting confirmation', confirmed: 'Confirmed', allocated: 'Checked in', completed: 'Completed',
         cancelled: 'Cancelled', no_show: 'No-show', auto_cancelled: 'Auto-cancelled',
       }[status] || status;
       return `<span class="badge ${map[status] || 'bg-secondary'}">${label}</span>`;
@@ -96,14 +97,14 @@
             </div>
             <div class="text-end">
               ${statusBadge(b.status)}
-              ${b.status === 'pending' ? `<div class="mt-1"><button class="btn btn-sm btn-outline-danger btn-cancel-booking" data-id="${b.id}">Cancel</button></div>` : ''}
+              ${(b.status === 'pending' || b.status === 'confirmed') ? `<div class="mt-1"><button class="btn btn-sm btn-outline-danger btn-cancel-booking" data-id="${b.id}">Cancel</button></div>` : ''}
             </div>
           </div>
         `).join('');
 
         document.querySelectorAll('.btn-cancel-booking').forEach((btn) => {
           btn.addEventListener('click', async () => {
-            if (!confirm('Cancel this booking request?')) return;
+            if (!confirm('Cancel this booking?')) return;
             btn.disabled = true;
             try {
               const res = await fetch(`/api/bookings/${btn.dataset.id}/cancel`, { method: 'POST', credentials: 'include' });

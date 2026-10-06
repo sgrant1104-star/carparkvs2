@@ -82,6 +82,34 @@ async function notifyCustomerBookingSubmitted(booking) {
   await send(booking.email, 'Booking request received - BOI Car Storage', html, 'customer: submitted');
 }
 
+// Staff accepted the booking — this is the "you're confirmed" email, sent
+// before the customer arrives.
+async function notifyCustomerBookingConfirmed(booking) {
+  const base = appUrl();
+  const manage = base
+    ? `<p style="margin-top:16px;color:#666;">Plans changed? You can cancel from your account at <a href="${base}/portal/home.html">${base}/portal/home.html</a>, or get in touch and we'll update it for you.</p>`
+    : '<p style="margin-top:16px;color:#666;">Plans changed? Get in touch and we\'ll update your booking.</p>';
+  const html = wrap('Your booking is confirmed', `
+    <p>Hi ${booking.first_name || booking.firstName || ''},</p>
+    <p>Good news — your parking booking is confirmed. We'll see you at drop-off.</p>
+    ${detailsTable(booking)}
+    <p style="margin-top:16px;color:#666;">Payment is taken on arrival — nothing has been charged.</p>
+    ${manage}
+  `);
+  await send(booking.email, 'Your booking is confirmed - BOI Car Storage', html, 'customer: confirmed');
+}
+
+// Staff changed the dates/times of a booking that was already confirmed.
+async function notifyCustomerBookingUpdated(booking) {
+  const html = wrap('Your booking has been updated', `
+    <p>Hi ${booking.first_name || booking.firstName || ''},</p>
+    <p>We've updated your parking booking. The details are now:</p>
+    ${detailsTable(booking)}
+    <p style="margin-top:16px;color:#666;">If this doesn't look right, please get in touch.</p>
+  `);
+  await send(booking.email, 'Your booking has been updated - BOI Car Storage', html, 'customer: updated');
+}
+
 // Staff allocated the booking to a real spot.
 async function notifyCustomerBookingAllocated(booking) {
   const html = wrap('Your booking is confirmed', `
@@ -148,6 +176,8 @@ function appUrl() {
 module.exports = {
   notifyAdminNewBooking,
   notifyCustomerBookingSubmitted,
+  notifyCustomerBookingConfirmed,
+  notifyCustomerBookingUpdated,
   notifyCustomerBookingAllocated,
   notifyCustomerBookingCancelled,
   notifyAdminBookingCancelledByCustomer,

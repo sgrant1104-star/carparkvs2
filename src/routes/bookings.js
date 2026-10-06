@@ -232,7 +232,7 @@ router.post('/:id/cancel', requireCustomerAuth, async (req, res) => {
     const booking = await db.prepare('SELECT * FROM bookings WHERE id = ? AND customer_account_id = ?')
       .get(req.params.id, req.customerSession.customerId);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
-    if (booking.status !== 'pending') {
+    if (booking.status !== 'pending' && booking.status !== 'confirmed') {
       return res.status(400).json({ error: `This booking is already ${booking.status} and can't be cancelled here.` });
     }
 
