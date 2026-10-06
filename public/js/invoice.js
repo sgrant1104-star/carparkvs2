@@ -58,12 +58,22 @@ function setCustomerAlertText(text) {
   box.classList.toggle('d-none', !text);
 }
 
-const KEY_AVOID_SESSION_KEY = 'invoiceKeyAvoidNextOpen';
+// ─── Key allocation ─────────────────────────────────────────────────────────
+// Each open booking form reserves ("holds") the key it's showing, so another
+// form opened at the same time — in another tab or on another PC — is offered
+// a different key instead of the same "lowest free" one. The server holds
+// expire on their own (10 min) and are refreshed while the form is open.
+const keyHoldToken = (window.crypto && crypto.randomUUID)
+  ? crypto.randomUUID()
+  : `k${Date.now()}${Math.random().toString(36).slice(2)}`;
+let heldKey = null;
+let savedKeyNumber = null; // the key this saved invoice already legitimately owns
 
-/** Rebuild KEY # from /api/keybox/available. When opening a fresh draft, optionally pick lowest key that differs from previousKeyToAvoid (e.g. other tab). */
-async function populateKeySelectFromAvailable({ selectFirstAvailable = false, previousKeyToAvoid = null } = {}) {
-  const keyRes = await fetch('/api/keybox/available');
+/** Rebuild the KEY # dropdown from the keys nobody else is holding, keeping this form's current pick. */
+async function populateKeySelectFromAvailable({ autoPick = false } = {}) {
   const keySel = document.getElementById('inv-key-number');
+  const current = keySel.value;
+  const keyRes = await fetch(`/api/keybox/available?token=${encodeURIComponent(keyHoldToken)}`);
   keySel.innerHTML = '<option value="">No Key</option>';
   if (!keyRes.ok) return;
   const keys = await keyRes.json();
@@ -73,17 +83,63 @@ async function populateKeySelectFromAvailable({ selectFirstAvailable = false, pr
     opt.textContent = `Key ${k}`;
     keySel.appendChild(opt);
   });
-  if (!selectFirstAvailable || keys.length === 0) return;
-  const noKeyEl = document.getElementById('inv-no-key');
-  noKeyEl.checked = false;
-  keySel.disabled = false;
-  let pick = keys[0];
-  if (previousKeyToAvoid != null && String(previousKeyToAvoid) !== '') {
-    const alt = keys.find((k) => String(k) !== String(previousKeyToAvoid));
-    if (alt != null) pick = alt;
-  }
-  keySel.value = pick;
+  if (current && keys.map(String).includes(String(current))) keySel.value = current;
+  if (autoPick) await holdKeyForForm(null);
 }
+
+/**
+ * Reserve a key for this form. preferred = a specific key the user chose, or
+ * null to let the server pick the lowest free one. If the preferred key was
+ * just taken, switches to a free one and says so rather than failing.
+ */
+async function holdKeyForForm(preferred) {
+  const keySel = document.getElementById('inv-key-number');
+  const noKeyEl = document.getElementById('inv-no-key');
+  try {
+    const res = await fetch('/api/keybox/hold', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: keyHoldToken, key_number: preferred || undefined })
+    });
+    let data = await res.json().catch(() => ({}));
+    let switched = false;
+    if (res.status === 409) {
+      const retry = await fetch('/api/keybox/hold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: keyHoldToken })
+      });
+      data = await retry.json().catch(() => ({}));
+      switched = true;
+    }
+    heldKey = data.key_number != null ? String(data.key_number) : null;
+    if (heldKey) {
+      noKeyEl.checked = false;
+      keySel.disabled = false;
+      if (!Array.from(keySel.options).some(o => o.value === heldKey)) {
+        const opt = document.createElement('option');
+        opt.value = heldKey;
+        opt.textContent = `Key ${heldKey}`;
+        keySel.appendChild(opt);
+      }
+      keySel.value = heldKey;
+      if (switched) showAlert(`Key ${preferred} was just taken by another booking — switched to Key ${heldKey}.`, 'warning', 6000);
+    } else {
+      keySel.value = '';
+      if (preferred || switched) showAlert('No free keys left in the key box.', 'danger', 6000);
+    }
+  } catch (_) { /* hold is a convenience; the save-time check is the real guard */ }
+}
+
+function releaseKeyHold() {
+  heldKey = null;
+  try {
+    navigator.sendBeacon('/api/keybox/hold/release', new Blob([JSON.stringify({ token: keyHoldToken })], { type: 'application/json' }));
+  } catch (_) {}
+}
+window.addEventListener('pagehide', releaseKeyHold);
+// Keep the hold alive while the form sits open.
+setInterval(() => { if (heldKey) holdKeyForForm(heldKey); }, 3 * 60 * 1000);
 
 async function initInvoicePage() {
   const user = await checkAuth();
@@ -117,16 +173,7 @@ async function initInvoicePage() {
   }
 
   const params = new URLSearchParams(window.location.search);
-  let keyAvoidFromOtherTab = null;
-  try {
-    keyAvoidFromOtherTab = sessionStorage.getItem(KEY_AVOID_SESSION_KEY);
-    sessionStorage.removeItem(KEY_AVOID_SESSION_KEY);
-  } catch (_) {}
-
-  await populateKeySelectFromAvailable({
-    selectFirstAvailable: !params.get('id'),
-    previousKeyToAvoid: keyAvoidFromOtherTab
-  });
+  await populateKeySelectFromAvailable({ autoPick: !params.get('id') });
 
   // Check URL params for loading existing invoice
   if (params.get('id')) {
@@ -384,6 +431,7 @@ async function loadInvoice(invoiceNumber, invoiceId) {
       keySel.appendChild(opt);
     }
     keySel.value = inv.key_number;
+    savedKeyNumber = String(inv.key_number);
   }
 
   // Split payment
@@ -876,7 +924,40 @@ document.getElementById('split-payment-toggle').addEventListener('change', (e) =
 
 document.getElementById('inv-no-key').addEventListener('change', (e) => {
   document.getElementById('inv-key-number').disabled = e.target.checked;
-  if (e.target.checked) document.getElementById('inv-key-number').value = '';
+  if (e.target.checked) {
+    document.getElementById('inv-key-number').value = '';
+    if (heldKey) {
+      fetch('/api/keybox/hold/release', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: keyHoldToken })
+      }).catch(() => {});
+      heldKey = null;
+    }
+  } else if (!currentInvoiceId) {
+    holdKeyForForm(null);
+  }
+});
+
+// Choosing a different key reserves it (or switches if it was just taken).
+document.getElementById('inv-key-number').addEventListener('change', (e) => {
+  if (e.target.value && e.target.value === savedKeyNumber) {
+    // Back to this booking's own key — it's already theirs, nothing to reserve.
+    if (heldKey) {
+      fetch('/api/keybox/hold/release', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: keyHoldToken })
+      }).catch(() => {});
+      heldKey = null;
+    }
+  } else if (e.target.value) {
+    holdKeyForForm(e.target.value);
+  } else if (heldKey) {
+    fetch('/api/keybox/hold/release', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: keyHoldToken })
+    }).catch(() => {});
+    heldKey = null;
+  }
 });
 
 // ─── 10% Discount: auto-recalculate when toggled (if price already calculated) ─
@@ -1062,11 +1143,6 @@ document.getElementById('btn-new-invoice').addEventListener('click', (e) => {
   e.preventDefault();
   const btn = document.getElementById('btn-new-invoice');
   if (btn.disabled) return;
-  const noKey = document.getElementById('inv-no-key').checked;
-  const prevKey = noKey ? '' : (document.getElementById('inv-key-number').value || '');
-  try {
-    sessionStorage.setItem(KEY_AVOID_SESSION_KEY, prevKey);
-  } catch (_) {}
   const w = window.open('/invoice.html', '_blank');
   if (w) w.opener = null;
   else showAlert('Popup blocked — allow popups for this site to open a new invoice in a new tab.', 'warning');
@@ -1127,6 +1203,7 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
     account_customer_id: document.getElementById('inv-account-customer').value || null,
     key_number: document.getElementById('inv-no-key').checked ? null : (document.getElementById('inv-key-number').value || null),
     no_key: document.getElementById('inv-no-key').checked,
+    key_hold_token: keyHoldToken,
     rego: document.getElementById('inv-rego').value,
     first_name: document.getElementById('inv-first-name').value,
     last_name: document.getElementById('inv-last-name').value,
@@ -1188,15 +1265,21 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
 
     if (!res.ok) {
       const err = await res.json();
-      showAlert(err.error || 'Failed to save invoice', 'danger');
       if (res.status === 409 && String(err.error || '').toLowerCase().includes('key')) {
-        // The key list they were looking at was stale — refresh it so they
-        // see accurate availability instead of hitting the same conflict again.
-        populateKeySelectFromAvailable();
+        // The key they picked was taken in the meantime. Nothing else on the
+        // form is lost — refresh the list and move to a free key, so it's just
+        // a matter of pressing Save again.
+        await populateKeySelectFromAvailable();
+        await holdKeyForForm(null);
+        showAlert(`${err.error} Switched to ${heldKey ? `Key ${heldKey}` : 'no key (none free)'} — check it and press Save again.`, 'warning', 8000);
+      } else {
+        showAlert(err.error || 'Failed to save invoice', 'danger');
       }
     } else {
       const inv = await res.json();
       currentInvoiceId = inv.id;
+      savedKeyNumber = inv.key_number != null ? String(inv.key_number) : null;
+      heldKey = null; // the server freed the hold once the key became this invoice's
       document.getElementById('inv-id').value = inv.id;
       document.getElementById('inv-status-badge').innerHTML = `<span class="badge bg-success">SAVED</span>`;
       document.getElementById('inv-staff-code-display').textContent = inv.staff_code_name

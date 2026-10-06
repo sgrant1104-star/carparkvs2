@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { releaseKey, syncKeyBoxForPickedUp, checkKeyConflict } = require('../utils/keyBoxSync');
+const { heldByOther, releaseToken } = require('../utils/keyHolds');
 const { businessDateYmd } = require('../utils/businessDate');
 const { logActivity, actorFromReq } = require('../utils/audit');
 const { checkAndCreateEarlyReturnCredit, createManualCredit, findAvailableCredit, applyCreditToInvoice, releaseCreditForInvoice } = require('../utils/customerCredit');
@@ -375,7 +376,7 @@ router.post('/', requireAuth, async (req, res) => {
       paid_status, payment_amount, payment_method, paid_status_2, payment_amount_2, payment_method_2,
       payment_date_1, payment_date_2,
       do_not_move, picked_up, staff_id, notes, customer_alert,
-      staff_code, staff_code_name
+      staff_code, staff_code_name, key_hold_token
     } = req.body;
 
     const existing = await db.prepare('SELECT id FROM invoices WHERE invoice_number = ? AND carpark_id = ?').get(invoice_number, carparkId);
@@ -389,6 +390,9 @@ router.post('/', requireAuth, async (req, res) => {
       const conflict = await checkKeyConflict(db, carparkId, key_number);
       if (conflict) {
         return res.status(409).json({ error: `Key ${key_number} is already in use by ${conflict.description}. Pick a different key or release that one first.` });
+      }
+      if (key_hold_token && heldByOther(carparkId, key_number, key_hold_token)) {
+        return res.status(409).json({ error: `Key ${key_number} is being used on another booking right now. Pick a different key.` });
       }
     }
 
@@ -426,6 +430,7 @@ router.post('/', requireAuth, async (req, res) => {
       key_number,
       no_key: no_key ? 1 : 0
     }, finalPickedUp);
+    if (key_hold_token) releaseToken(carparkId, key_hold_token);
 
     const newInvoice = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(newInvoice);
@@ -443,16 +448,11 @@ router.put('/:id', requireAuth, async (req, res) => {
       flight_info, flight_type, total_price, credit_applied, discount_percent,
       paid_status, payment_amount, payment_method, paid_status_2, payment_amount_2, payment_method_2,
       payment_date_1, payment_date_2,
-      do_not_move, picked_up, staff_id, notes, customer_alert, account_customer_id
+      do_not_move, picked_up, staff_id, notes, customer_alert, account_customer_id, key_hold_token
     } = req.body;
 
     const existing = await db.prepare('SELECT * FROM invoices WHERE id = ? AND carpark_id = ?').get(id, carparkId);
     if (!existing) return res.status(404).json({ error: 'Invoice not found' });
-
-    // Release old key if changed
-    if (existing.key_number && existing.key_number != key_number) {
-      await releaseKey(db, carparkId, existing.key_number);
-    }
 
     const finalPickedUp = picked_up || 'Car In Yard';
 
@@ -465,6 +465,15 @@ router.put('/:id', requireAuth, async (req, res) => {
       if (conflict) {
         return res.status(409).json({ error: `Key ${key_number} is already in use by ${conflict.description}. Pick a different key or release that one first.` });
       }
+      if (key_hold_token && heldByOther(carparkId, key_number, key_hold_token)) {
+        return res.status(409).json({ error: `Key ${key_number} is being used on another booking right now. Pick a different key.` });
+      }
+    }
+
+    // Release the old key only once the new one is known to be OK — releasing
+    // first meant a rejected save still freed this booking's original key.
+    if (existing.key_number && existing.key_number != key_number) {
+      await releaseKey(db, carparkId, existing.key_number);
     }
 
     const computedStayNights = deriveStayNights24h(date_in, time_in, return_date, return_time, stay_nights);
@@ -531,6 +540,8 @@ router.put('/:id', requireAuth, async (req, res) => {
         carparkId, invoiceId: Number(id), actualReturnDate: businessDateYmd(), userId, userName,
       });
     }
+
+    if (key_hold_token) releaseToken(carparkId, key_hold_token);
 
     const updated = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
 

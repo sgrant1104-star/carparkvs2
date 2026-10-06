@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { releaseKey } = require('../utils/keyBoxSync');
+const { HOLD_TTL_MS, keysHeldByOthers, releaseToken, holdKey, pickAndHold } = require('../utils/keyHolds');
 const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
@@ -64,12 +65,56 @@ router.get('/lt-slots', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+async function availableKeyNumbers(carparkId) {
+  const keys = await db.prepare("SELECT key_number FROM key_box WHERE carpark_id = ? AND status = 'available' AND COALESCE(holder_type,'available') != 'longterm' ORDER BY key_number").all(carparkId);
+  return keys.map(k => Number(k.key_number));
+}
+
+// Free keys, minus any another open booking form is currently holding. Pass
+// ?token=<this form's token> so the key this form already holds stays listed.
 router.get('/available', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
-    const keys = await db.prepare("SELECT key_number FROM key_box WHERE carpark_id = ? AND status = 'available' AND COALESCE(holder_type,'available') != 'longterm' ORDER BY key_number").all(carparkId);
-    res.json(keys.map(k => k.key_number));
+    const token = String(req.query.token || '');
+    const all = await availableKeyNumbers(carparkId);
+    const others = token ? keysHeldByOthers(carparkId, token) : new Set();
+    res.json(all.filter(k => !others.has(k)));
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/keybox/hold { token, key_number? } — reserve a key for an open
+// booking form. Without key_number: auto-pick the lowest key nobody holds.
+// With key_number: try to hold that specific key (409 if taken/held).
+router.post('/hold', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const token = String(req.body?.token || '').trim();
+    if (!token) return res.status(400).json({ error: 'token is required' });
+    const available = await availableKeyNumbers(carparkId);
+
+    const requested = req.body?.key_number;
+    if (requested != null && requested !== '') {
+      const kn = parseInt(requested, 10);
+      if (!available.includes(kn)) {
+        return res.status(409).json({ error: `Key ${kn} is no longer available`, reason: 'in_use' });
+      }
+      if (!holdKey(carparkId, kn, token)) {
+        return res.status(409).json({ error: `Key ${kn} is being used on another booking right now`, reason: 'held' });
+      }
+      return res.json({ key_number: kn, ttlSeconds: HOLD_TTL_MS / 1000 });
+    }
+
+    const picked = pickAndHold(carparkId, token, available);
+    res.json({ key_number: picked, ttlSeconds: HOLD_TTL_MS / 1000 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/keybox/hold/release { token } — form closed, abandoned, or saved.
+router.post('/hold/release', requireAuth, (req, res) => {
+  const carparkId = req.session.carparkId || 1;
+  const token = String(req.body?.token || '').trim();
+  if (token) releaseToken(carparkId, token);
+  res.json({ success: true });
 });
 
 router.post('/:key_number/release', requireAuth, async (req, res) => {
