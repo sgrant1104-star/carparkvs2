@@ -237,10 +237,10 @@ router.delete('/:id/payments/:paymentId', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
-    const { company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2 } = req.body;
+    const { company_name, contact_name, phone, email, billing_email, billing_address, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2 } = req.body;
     const accountNumber = await generateAccountNumber(db);
-    const result = await db.prepare(`INSERT INTO account_customers (company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2, carpark_id, account_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(company_name, contact_name, phone, email, billing_email, payment_link || '', discount_percent || 0, credit_balance || 0, notes, rego_1 || null, rego_2 || null, carparkId, accountNumber);
+    const result = await db.prepare(`INSERT INTO account_customers (company_name, contact_name, phone, email, billing_email, billing_address, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2, carpark_id, account_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(company_name, contact_name, phone, email, billing_email, String(billing_address || '').trim() || null, payment_link || '', discount_percent || 0, credit_balance || 0, notes, rego_1 || null, rego_2 || null, carparkId, accountNumber);
     const account = await db.prepare('SELECT * FROM account_customers WHERE id = ?').get(result.lastInsertRowid);
     const { userId, userName } = actorFromReq(req);
     await logActivity(db, { carparkId, tableName: 'account_customers', recordId: account.id, action: 'create', before: null, after: account, userId, userName });
@@ -253,9 +253,16 @@ router.put('/:id', requireAuth, async (req, res) => {
     const carparkId = req.session.carparkId || 1;
     const before = await db.prepare('SELECT * FROM account_customers WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
     if (!before) return res.status(404).json({ error: 'Account not found' });
-    const { company_name, contact_name, phone, email, billing_email, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2 } = req.body;
-    await db.prepare(`UPDATE account_customers SET company_name=?, contact_name=?, phone=?, email=?, billing_email=?, payment_link=?, discount_percent=?, credit_balance=?, notes=?, rego_1=?, rego_2=? WHERE id = ? AND carpark_id = ?`)
-      .run(company_name, contact_name, phone, email, billing_email, payment_link || '', discount_percent || 0, credit_balance || 0, notes, rego_1 || null, rego_2 || null, req.params.id, carparkId);
+    const { company_name, contact_name, phone, email, billing_email, billing_address, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2 } = req.body;
+    // The Accounts edit form doesn't send payment_link / rego_1 / rego_2, so
+    // an omitted field must keep its stored value — previously every save
+    // from that form silently blanked them.
+    const keep = (sent, stored, fallback) => (sent !== undefined ? (sent || fallback) : (stored ?? fallback));
+    await db.prepare(`UPDATE account_customers SET company_name=?, contact_name=?, phone=?, email=?, billing_email=?, billing_address=?, payment_link=?, discount_percent=?, credit_balance=?, notes=?, rego_1=?, rego_2=? WHERE id = ? AND carpark_id = ?`)
+      .run(company_name, contact_name, phone, email, billing_email,
+        billing_address !== undefined ? (String(billing_address || '').trim() || null) : (before.billing_address ?? null),
+        keep(payment_link, before.payment_link, ''), discount_percent || 0, credit_balance || 0, notes,
+        keep(rego_1, before.rego_1, null), keep(rego_2, before.rego_2, null), req.params.id, carparkId);
     const account = await db.prepare('SELECT * FROM account_customers WHERE id = ?').get(req.params.id);
     const { userId, userName } = actorFromReq(req);
     await logActivity(db, { carparkId, tableName: 'account_customers', recordId: account.id, action: 'update', before, after: account, userId, userName });

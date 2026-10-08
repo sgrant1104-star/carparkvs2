@@ -1,5 +1,6 @@
 const PDFDocument = require('pdfkit');
 const { computeInvoicePaymentStatus } = require('./paymentAllocation');
+const { billingAddressLines } = require('./billingAddress');
 
 /** Draws the receipt/invoice content onto an already-created PDFDocument and ends it. */
 function drawInvoicePdf(doc, invoice, carpark) {
@@ -26,7 +27,17 @@ function drawInvoicePdf(doc, invoice, carpark) {
   // the individual who dropped the car off — the Customer/Phone grid below
   // still shows their details for operational purposes (whose car, who to
   // call), this just makes clear who's actually being billed.
-  if (invoice.account_name) {
+  // An account with its own "Bill to" address (company name + postal
+  // address, as the customer requires it) gets that block verbatim.
+  const billTo = billingAddressLines(invoice.account_billing_address);
+  if (billTo.length) {
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#7f8c8d').text('Bill to:', 36, doc.y, { width: 347, align: 'left' });
+    billTo.forEach((l, i) => {
+      doc.fontSize(9.5).font(i === 0 ? 'Helvetica-Bold' : 'Helvetica').fillColor('#1a5276')
+        .text(l, 36, doc.y, { width: 347, align: 'left' });
+    });
+    doc.moveDown(0.5);
+  } else if (invoice.account_name) {
     doc.fontSize(10).font('Helvetica-Bold').fillColor('#1a5276')
       .text(`Billed to: ${invoice.account_name}`, { align: 'center', width: 347 });
     doc.moveDown(0.3);

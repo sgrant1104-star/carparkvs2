@@ -237,7 +237,7 @@ async function deallocatePayment(db, { carparkId, paymentSource, paymentId }) {
 async function getAccountStatementData(db, { carparkId, accountIds, startDate, endDate }) {
   const ph = accountIds.map(() => '?').join(',');
   const invoicesRaw = await db.prepare(`
-    SELECT i.*, ac.company_name as account_name
+    SELECT i.*, ac.company_name as account_name, ac.billing_address as account_billing_address
     FROM invoices i
     LEFT JOIN account_customers ac ON ac.id = i.account_customer_id
     WHERE i.account_customer_id IN (${ph}) AND i.void = 0

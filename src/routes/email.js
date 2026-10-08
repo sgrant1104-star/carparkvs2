@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
 const { getAccountStatementData, computeInvoicePaymentStatus } = require('../utils/paymentAllocation');
 const { buildInvoicePdfBuffer } = require('../utils/invoicePdf');
+const { billingAddressLines } = require('../utils/billingAddress');
 const { getTransporter, emailFrom, smtpErrorMessage, SMTP_MISSING_MSG } = require('../utils/mailer');
 const router = express.Router();
 
@@ -124,7 +125,15 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
   doc.fillColor('#2c3e50').fontSize(10).text(`Payment due: 20th of next month (${dueDateYmd})`);
   line();
 
-  doc.fontSize(14).fillColor('#c0392b').font('Helvetica-Bold').text(account.company_name || '');
+  const billTo = billingAddressLines(account.billing_address);
+  if (billTo.length) {
+    doc.fontSize(8).fillColor('#7f8c8d').font('Helvetica-Bold').text('Bill to:');
+    billTo.forEach((l, i) => {
+      doc.fontSize(i === 0 ? 14 : 10).fillColor(i === 0 ? '#c0392b' : '#333').font(i === 0 ? 'Helvetica-Bold' : 'Helvetica').text(l);
+    });
+  } else {
+    doc.fontSize(14).fillColor('#c0392b').font('Helvetica-Bold').text(account.company_name || '');
+  }
   doc.font('Helvetica').fontSize(9).fillColor('#666').text('Showing every booking with an outstanding balance, including unpaid amounts carried over from earlier months. Fully paid bookings are not listed.');
   doc.moveDown(0.5);
 
@@ -565,7 +574,7 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
   const carparkId = req.session.carparkId || 1;
   try {
     const invoice = await db.prepare(`
-      SELECT i.*, ac.company_name as account_name
+      SELECT i.*, ac.company_name as account_name, ac.billing_address as account_billing_address
       FROM invoices i
       LEFT JOIN account_customers ac ON ac.id = i.account_customer_id
       WHERE i.id = ? AND i.carpark_id = ?
@@ -637,6 +646,8 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     <h2 style="color:#2c3e50;margin-top:0;">Receipt / Invoice #${invoice.invoice_number}</h2>
 
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+      ${billingAddressLines(invoice.account_billing_address).length ? `<tr><td style="padding:5px 0;width:140px;color:#666;vertical-align:top;">Bill to</td>
+          <td style="padding:5px 0;font-weight:bold;">${billingAddressLines(invoice.account_billing_address).map(l => String(l).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')).join('<br>')}</td></tr>` : ''}
       <tr><td style="padding:5px 0;width:140px;color:#666;">Customer</td>
           <td style="padding:5px 0;font-weight:bold;">${invoice.first_name || ''} ${invoice.last_name || ''}</td></tr>
       <tr><td style="padding:5px 0;color:#666;">Vehicle Rego</td>

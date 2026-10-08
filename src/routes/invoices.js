@@ -652,7 +652,7 @@ router.get('/:id/pdf', requireAuth, async (req, res) => {
     const { id } = req.params;
     const carparkId = req.session.carparkId || 1;
     const invoice = await db.prepare(`
-      SELECT i.*, ac.company_name as account_name
+      SELECT i.*, ac.company_name as account_name, ac.billing_address as account_billing_address
       FROM invoices i
       LEFT JOIN account_customers ac ON ac.id = i.account_customer_id
       WHERE i.id = ? AND i.carpark_id = ?

@@ -167,6 +167,11 @@
               <label class="form-label">Billing Email (for monthly statements)</label>
               <input type="email" class="form-control" id="acct-billing-email">
             </div>
+            <div class="col-12">
+              <label class="form-label">Bill To address <span class="text-muted small">(optional — printed as "Bill to:" on this account's invoices and statements)</span></label>
+              <textarea class="form-control" id="acct-billing-address" rows="4" placeholder="Company name&#10;Level, Building&#10;Street&#10;City Postcode"></textarea>
+              <div class="form-text">One line per line of the address, starting with the company name as they want it shown. Leave blank to just show the account name.</div>
+            </div>
             <div class="col-md-4">
               <label class="form-label">Discount %</label>
               <input type="number" step="0.1" class="form-control" id="acct-discount" value="0">
@@ -263,6 +268,7 @@
       document.getElementById('acct-phone').value = a.phone||'';
       document.getElementById('acct-email').value = a.email||'';
       document.getElementById('acct-billing-email').value = a.billing_email||'';
+      document.getElementById('acct-billing-address').value = a.billing_address||'';
       document.getElementById('acct-discount').value = a.discount_percent||0;
       document.getElementById('acct-credit').value = a.credit_balance||0;
       document.getElementById('acct-notes').value = a.notes||'';
@@ -492,6 +498,7 @@
       document.getElementById('acct-phone').value = '';
       document.getElementById('acct-email').value = '';
       document.getElementById('acct-billing-email').value = '';
+      document.getElementById('acct-billing-address').value = '';
       document.getElementById('acct-discount').value = '0';
       document.getElementById('acct-credit').value = '0';
       document.getElementById('acct-notes').value = '';
@@ -507,6 +514,7 @@
         phone: document.getElementById('acct-phone').value,
         email: document.getElementById('acct-email').value,
         billing_email: document.getElementById('acct-billing-email').value,
+        billing_address: document.getElementById('acct-billing-address').value,
         discount_percent: document.getElementById('acct-discount').value,
         credit_balance: document.getElementById('acct-credit').value,
         notes: document.getElementById('acct-notes').value
