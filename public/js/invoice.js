@@ -144,6 +144,7 @@ setInterval(() => { if (heldKey) holdKeyForForm(heldKey); }, 3 * 60 * 1000);
 async function initInvoicePage() {
   const user = await checkAuth();
   if (!user) return;
+  forceUppercase('inv-rego', 'inv-first-name', 'inv-last-name');
 
   // Load staff list
   const staffRes = await fetch('/api/admin/staff-list');

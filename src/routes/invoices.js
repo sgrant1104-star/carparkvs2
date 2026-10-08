@@ -3,6 +3,7 @@ const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { releaseKey, syncKeyBoxForPickedUp, checkKeyConflict } = require('../utils/keyBoxSync');
 const { heldByOther, releaseToken } = require('../utils/keyHolds');
+const { withUppercaseFields } = require('../utils/textCase');
 const { businessDateYmd } = require('../utils/businessDate');
 const { logActivity, actorFromReq } = require('../utils/audit');
 const { checkAndCreateEarlyReturnCredit, createManualCredit, findAvailableCredit, applyCreditToInvoice, releaseCreditForInvoice } = require('../utils/customerCredit');
@@ -367,6 +368,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // POST /api/invoices
 router.post('/', requireAuth, async (req, res) => {
   try {
+    req.body = withUppercaseFields(req.body);
     const carparkId = req.session.carparkId || 1;
     const {
       invoice_number, customer_id, account_customer_id, key_number, no_key,
@@ -440,6 +442,7 @@ router.post('/', requireAuth, async (req, res) => {
 // PUT /api/invoices/:id
 router.put('/:id', requireAuth, async (req, res) => {
   try {
+    req.body = withUppercaseFields(req.body);
     const { id } = req.params;
     const carparkId = req.session.carparkId || 1;
     const {

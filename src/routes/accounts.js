@@ -5,6 +5,7 @@ const { businessDateYmd } = require('../utils/businessDate');
 const { allocateAccountPayment, deallocatePayment, getAccountInvoicesWithOutstanding } = require('../utils/paymentAllocation');
 const { logActivity, actorFromReq } = require('../utils/audit');
 const { generateAccountNumber } = require('../utils/accountNumber');
+const { withUppercaseFields } = require('../utils/textCase');
 const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
@@ -236,6 +237,7 @@ router.delete('/:id/payments/:paymentId', requireAuth, async (req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   try {
+    req.body = withUppercaseFields(req.body, ['rego_1', 'rego_2']);
     const carparkId = req.session.carparkId || 1;
     const { company_name, contact_name, phone, email, billing_email, billing_address, payment_link, discount_percent, credit_balance, notes, rego_1, rego_2 } = req.body;
     const accountNumber = await generateAccountNumber(db);
@@ -250,6 +252,7 @@ router.post('/', requireAuth, async (req, res) => {
 
 router.put('/:id', requireAuth, async (req, res) => {
   try {
+    req.body = withUppercaseFields(req.body, ['rego_1', 'rego_2']);
     const carparkId = req.session.carparkId || 1;
     const before = await db.prepare('SELECT * FROM account_customers WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
     if (!before) return res.status(404).json({ error: 'Account not found' });

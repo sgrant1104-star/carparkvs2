@@ -272,6 +272,26 @@ async function updatePrebookingBadge() {
   } catch (e) {}
 }
 
+// Names and registrations are always stored in capitals. Convert as staff type
+// (keeping the cursor where it was) so what's on screen is what gets saved;
+// the server also upper-cases on save, so this is the visible half.
+function forceUppercase(...ids) {
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('text-uppercase');
+    el.addEventListener('input', () => {
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const upper = el.value.toUpperCase();
+      if (el.value !== upper) {
+        el.value = upper;
+        try { el.setSelectionRange(start, end); } catch (_) {}
+      }
+    });
+  });
+}
+
 // Debounce
 function debounce(fn, delay) {
   let timer;

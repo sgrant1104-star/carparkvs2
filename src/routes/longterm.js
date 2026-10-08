@@ -8,6 +8,7 @@ const {
   collapsePaymentsForDisplay,
 } = require('../utils/longtermProration');
 const { logActivity, actorFromReq } = require('../utils/audit');
+const { withUppercaseFields } = require('../utils/textCase');
 const router = express.Router();
 
 function normalizedMoney(val) {
@@ -433,6 +434,7 @@ router.post('/:id/keybox', requireAuth, async (req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   try {
+    req.body = withUppercaseFields(req.body);
     const carparkId = req.session.carparkId || 1;
     const { lt_number, name, rego_1, rego_2, phone, email, rate, rate_period, contract_start_date, expiry_date, notes, contract_amount, payment_status } = req.body;
     const existing = await db.prepare('SELECT id, active FROM longterm_customers WHERE lt_number = ? AND carpark_id = ?').get(lt_number, carparkId);
@@ -465,6 +467,7 @@ router.post('/', requireAuth, async (req, res) => {
 
 router.put('/:id', requireAuth, async (req, res) => {
   try {
+    req.body = withUppercaseFields(req.body);
     const {
       lt_number,
       name, rego_1, rego_2, phone, email,

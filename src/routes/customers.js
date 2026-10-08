@@ -1,6 +1,7 @@
 const express = require('express');
 const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
+const { withUppercaseFields } = require('../utils/textCase');
 const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
@@ -32,6 +33,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   try {
+    req.body = withUppercaseFields(req.body);
     const carparkId = req.session.carparkId || 1;
     const { first_name, last_name, phone, email, notes, alert_message } = req.body;
     const result = await db.prepare(`INSERT INTO customers (first_name, last_name, phone, email, notes, alert_message, carpark_id) VALUES (?, ?, ?, ?, ?, ?, ?)`)
@@ -43,6 +45,7 @@ router.post('/', requireAuth, async (req, res) => {
 
 router.put('/:id', requireAuth, async (req, res) => {
   try {
+    req.body = withUppercaseFields(req.body);
     const carparkId = req.session.carparkId || 1;
     const { first_name, last_name, phone, email, notes, alert_message } = req.body;
     await db.prepare(`UPDATE customers SET first_name = ?, last_name = ?, phone = ?, email = ?, notes = ?, alert_message = ? WHERE id = ? AND carpark_id = ?`)

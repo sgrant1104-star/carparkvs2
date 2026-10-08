@@ -907,6 +907,7 @@
 
     async function init() {
       await checkAuth();
+      forceUppercase('lt-name', 'lt-rego1', 'lt-rego2');
       await loadLongTerm();
       const params = new URLSearchParams(window.location.search);
       const ltId = params.get('lt_id');
