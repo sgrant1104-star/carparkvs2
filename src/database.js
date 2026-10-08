@@ -719,21 +719,6 @@ async function initializeDatabase() {
     await db.prepare("UPDATE key_box SET status = 'in_use', invoice_id = 3, longterm_customer_id = NULL, holder_type = 'invoice' WHERE carpark_id = 1 AND key_number = 22").run();
   }
 
-  // ── One-time data setup (2026-10-09) ────────────────────────────────────
-  // FENZ require invoices to carry their HQ "Bill to" address. Only fills it
-  // in when exactly one matching account exists and it has no address yet,
-  // so it can never overwrite anything staff have entered since.
-  try {
-    const fenz = await db.prepare(`SELECT id, billing_address FROM account_customers WHERE UPPER(company_name) LIKE 'FIRE EMERGENCY NEW ZEALAND%' AND active = 1`).all();
-    if (fenz.length === 1 && !String(fenz[0].billing_address || '').trim()) {
-      await db.prepare('UPDATE account_customers SET billing_address = ? WHERE id = ?').run(
-        'Fire and Emergency NZ Headquarters\nLevel 7, Spark Building\n42-52 Willis Street,\nWellington 6010', fenz[0].id);
-      console.log(`[DB] One-time setup: set Bill To address on account #${fenz[0].id}`);
-    }
-  } catch (err) {
-    console.error('[DB] One-time FENZ bill-to setup failed:', err.message);
-  }
-
   saveToDisk();
   console.log('[DB] Database ready');
 }
