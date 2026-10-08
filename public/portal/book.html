@@ -86,7 +86,7 @@
             <div class="small text-muted" id="estimate-breakdown">Set your dates and times above</div>
             <div class="small mt-2">
               <i class="bi bi-info-circle me-1"></i>This is an estimate — the final price is confirmed at drop-off.
-              <strong>Payment is taken on arrival; nothing is charged online.</strong>
+              <strong id="paymentNote">Payment is taken on arrival; nothing is charged online.</strong>
             </div>
           </div>
 
@@ -229,8 +229,22 @@
       updateSubmitState();
     }
 
+    // What "payment" means depends on the kind of booking — keep the note
+    // under the estimate in step with it (matches the confirmation emails).
+    function updatePaymentNote() {
+      const el = document.getElementById('paymentNote');
+      if (document.getElementById('isLongTerm').checked) {
+        el.textContent = 'Long-term bookings are priced individually — we\'ll be in touch about your rate. Nothing is charged online.';
+      } else if (document.getElementById('wantsAccount').checked && accountVerified) {
+        el.textContent = 'This booking will be billed to your business account on your monthly statement; nothing is charged on arrival.';
+      } else {
+        el.textContent = 'Payment is taken on arrival; nothing is charged online.';
+      }
+    }
+
     let estimateSeq = 0;
     async function updateEstimate() {
+      updatePaymentNote();
       const dateIn = document.getElementById('dateIn').value;
       const timeIn = document.getElementById('timeIn').value;
       const dateOut = document.getElementById('dateOut').value;

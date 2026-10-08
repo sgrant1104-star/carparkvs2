@@ -2,8 +2,9 @@ const express = require('express');
 const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
-const { getAccountStatementData, computeInvoicePaymentStatus } = require('../utils/paymentAllocation');
+const { getAccountStatementData } = require('../utils/paymentAllocation');
 const { buildInvoicePdfBuffer } = require('../utils/invoicePdf');
+const { methodLabel, invoiceStatusBanner, displayRego } = require('../utils/invoiceDisplay');
 const { billingAddressLines } = require('../utils/billingAddress');
 const { getTransporter, emailFrom, smtpErrorMessage, SMTP_MISSING_MSG } = require('../utils/mailer');
 const router = express.Router();
@@ -89,7 +90,7 @@ function buildAccountEmailHTML(carpark, account, statementData, monthName, year,
     <p>Hi ${account.company_name},</p>
     <p>Please see attached the ${outstandingInvoices.length} unpaid ${invoiceWord} along with the account statement.</p>
     <p style="margin-top:16px;"><strong>Amount Outstanding: <span style="color:#c0392b;font-size:18px;">$${totalOutstanding.toFixed(2)}</span></strong></p>
-    <p style="margin-top:4px;"><strong>Payment due date:</strong> 20th of next month (${dueDateYmd})</p>
+    <p style="margin-top:4px;"><strong>Payment due date:</strong> 20th of next month (${fmtYmd(dueDateYmd)})</p>
     ${payLink}
     ${bank ? `<hr style="margin-top:22px;"><h3 style="color:#2c3e50;font-size:15px;">Payment details</h3>${bank}` : ''}
     <hr style="margin-top:30px;">
@@ -122,7 +123,7 @@ function drawAccountStatementPdf(doc, { carpark, account, statementData, monthNa
     .text(`Account statement — ${monthName} ${year}`, left + 12, headerY + 22, { width: fullWidth - 24 });
   doc.y += 64;
 
-  doc.fillColor('#2c3e50').fontSize(10).text(`Payment due: 20th of next month (${dueDateYmd})`);
+  doc.fillColor('#2c3e50').fontSize(10).text(`Payment due: 20th of next month (${fmtYmd(dueDateYmd)})`);
   line();
 
   const billTo = billingAddressLines(account.billing_address);
@@ -602,34 +603,30 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     const gstAmt = ltMatch ? (totalInc - (totalInc / (1 + GST_RATE))) : 0;
     const baseExGst = ltMatch ? (totalInc - gstAmt) : 0;
 
+    const escHtml = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Same "Bill to" wording as the PDF: the account's address block if it
+    // has one, otherwise just the account name.
+    const addrLines = billingAddressLines(invoice.account_billing_address);
+    const billToLines = addrLines.length ? addrLines : (invoice.account_name ? [invoice.account_name] : []);
+
     const paymentRows = `
       <tr><td style="padding:6px 10px;border-bottom:1px solid #eee;"><strong>Payment</strong></td>
-          <td style="padding:6px 10px;border-bottom:1px solid #eee;">${invoice.paid_status || '—'}</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #eee;">${methodLabel(invoice.paid_status)}</td>
           <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">${currency(invoice.payment_amount)}</td></tr>
       ${invoice.payment_amount_2 > 0 ? `
       <tr><td style="padding:6px 10px;border-bottom:1px solid #eee;"><strong>2nd Payment</strong></td>
-          <td style="padding:6px 10px;border-bottom:1px solid #eee;">${invoice.paid_status_2 || '—'}</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #eee;">${methodLabel(invoice.paid_status_2)}</td>
           <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">${currency(invoice.payment_amount_2)}</td></tr>` : ''}
     `;
 
     // Clear paid/owing status — the same "at a glance" banner used on the PDF.
     // On Account and unconfirmed Internet Banking are NOT counted as paid —
     // they're money owed/promised, not money received.
-    const { isPaidInFull, pending, owing } = computeInvoicePaymentStatus(invoice);
-    let bannerColor, bannerText;
-    if (isPaidInFull) {
-      bannerColor = '#1e8449'; bannerText = 'PAID IN FULL';
-    } else if (pending > 0.01) {
-      bannerColor = '#d68910';
-      bannerText = owing > 0.01
-        ? `PENDING ${currency(pending)} + DUE ${currency(owing)}`
-        : `PAYMENT PENDING CONFIRMATION: ${currency(pending)}`;
-    } else {
-      bannerColor = '#c0392b'; bannerText = `AMOUNT DUE: ${currency(owing)}`;
-    }
+    const banner = invoiceStatusBanner(invoice);
     const statusBannerHtml = `
-      <div style="background:${bannerColor};color:#fff;text-align:center;padding:12px;border-radius:6px;margin:16px 0;font-size:16px;font-weight:bold;">
-        ${bannerText}
+      <div style="background:${banner.color};color:#fff;text-align:center;padding:12px;border-radius:6px;margin:16px 0;font-size:16px;font-weight:bold;">
+        ${banner.label}
+        ${banner.note ? `<div style="font-size:12px;font-weight:normal;margin-top:4px;">${banner.note}</div>` : ''}
       </div>`;
 
     const transporterEarly = getTransporter();
@@ -646,12 +643,12 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     <h2 style="color:#2c3e50;margin-top:0;">Receipt / Invoice #${invoice.invoice_number}</h2>
 
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
-      ${billingAddressLines(invoice.account_billing_address).length ? `<tr><td style="padding:5px 0;width:140px;color:#666;vertical-align:top;">Bill to</td>
-          <td style="padding:5px 0;font-weight:bold;">${billingAddressLines(invoice.account_billing_address).map(l => String(l).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')).join('<br>')}</td></tr>` : ''}
+      ${billToLines.length ? `<tr><td style="padding:5px 0;width:140px;color:#666;vertical-align:top;">Bill to</td>
+          <td style="padding:5px 0;font-weight:bold;">${billToLines.map(escHtml).join('<br>')}</td></tr>` : ''}
       <tr><td style="padding:5px 0;width:140px;color:#666;">Customer</td>
           <td style="padding:5px 0;font-weight:bold;">${invoice.first_name || ''} ${invoice.last_name || ''}</td></tr>
       <tr><td style="padding:5px 0;color:#666;">Vehicle Rego</td>
-          <td style="padding:5px 0;font-weight:bold;">${invoice.rego || '—'}</td></tr>
+          <td style="padding:5px 0;font-weight:bold;">${escHtml(displayRego(invoice.rego))}</td></tr>
       <tr><td style="padding:5px 0;color:#666;">Key #</td>
           <td style="padding:5px 0;">${invoice.no_key ? 'No Key' : (invoice.key_number || '—')}</td></tr>
       <tr><td style="padding:5px 0;color:#666;">Date In</td>
@@ -681,7 +678,7 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
       ${paymentRows}
     </table>
 
-    ${invoice.notes ? `<p style="margin-top:16px;padding:10px;background:#fff3cd;border-radius:4px;font-size:13px;"><strong>Notes:</strong> ${invoice.notes}</p>` : ''}
+    ${invoice.notes ? `<p style="margin-top:16px;padding:10px;background:#fff3cd;border-radius:4px;font-size:13px;"><strong>Notes:</strong> ${escHtml(invoice.notes)}</p>` : ''}
 
     <hr style="border:1px solid #dee2e6;margin:20px 0 10px;">
     <p style="color:#7f8c8d;font-size:12px;text-align:center;margin:0;">
@@ -716,7 +713,17 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
   }
 });
 
-function longTermEmailHTML(carpark, lt, kind, amountDueExGst = null) {
+/** Total actually paid by a long-term customer so far (ex GST), plus their contract total. */
+async function longTermPaidSummary(db, carparkId, lt) {
+  const row = await db.prepare(`
+    SELECT COALESCE(SUM(amount_ex_gst), 0) AS paid FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ?
+  `).get(carparkId, lt.id);
+  const contractExGst = lt.contract_amount != null && lt.contract_amount !== '' ? parseFloat(lt.contract_amount) : 0;
+  return { paidExGst: Math.round((parseFloat(row?.paid || 0)) * 100) / 100, contractExGst: contractExGst || 0 };
+}
+
+function longTermEmailHTML(carpark, lt, kind, amountDueExGst = null, paidSummary = {}) {
+  const { paidExGst = 0, contractExGst = 0 } = paidSummary;
   const currency = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
   const gst = longTermGstAmounts(lt, kind === 'payment' ? amountDueExGst : null);
   const startDate = lt?.contract_start_date ? fmtYmd(lt.contract_start_date) : (lt?.created_at ? fmtYmd(lt.created_at) : '');
@@ -736,7 +743,7 @@ function longTermEmailHTML(carpark, lt, kind, amountDueExGst = null) {
   <h2 style="color:#2c3e50;">${carpark.name} – Long-term payment due</h2>
   <p>Hi ${lt.name},</p>
   <p>Please arrange payment for your long-term storage contract <strong>${lt.lt_number}</strong>.</p>
-  <p><strong>Payment due:</strong> by the 20th (${dueDateYmd}).</p>
+  <p><strong>Payment due:</strong> by the 20th (${fmtYmd(dueDateYmd)}).</p>
   <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8f9fa;border-radius:8px;">
     <tr><td style="padding:12px;"><strong>Amount due</strong></td><td style="padding:12px;text-align:right;font-size:18px;color:#c0392b;">${currency(gst.total)}</td></tr>
     <tr><td style="padding:12px;border-top:1px solid #dee2e6;">Amount ex GST</td><td style="padding:12px;border-top:1px solid #dee2e6;text-align:right;">${currency(gst.base)}</td></tr>
@@ -750,16 +757,26 @@ function longTermEmailHTML(carpark, lt, kind, amountDueExGst = null) {
 </body></html>`;
   }
 
+  // The receipt reflects what has ACTUALLY been paid so far — not the
+  // contract total, which is what it used to show (so a part-payment or a
+  // single month of a longer contract was "received" for the full amount).
+  const paid = longTermGstAmounts(lt, paidExGst || 0);
+  const contractInc = contractExGst > 0 ? longTermGstAmounts(lt, contractExGst).total : 0;
+  const remainingInc = contractExGst > 0 ? Math.max(0, Math.round((contractInc - paid.total) * 100) / 100) : 0;
+  const statusWord = remainingInc > 0.01 ? 'Part paid' : 'Paid in full';
+
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
 <body style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px;color:#333;">
   <h2 style="color:#27ae60;">${carpark.name} – Payment received (thank you)</h2>
   <p>Hi ${lt.name},</p>
-  <p>Thank you — we have recorded payment for long-term contract <strong>${lt.lt_number}</strong>.</p>
+  <p>Thank you — we have received your payment for long-term contract <strong>${lt.lt_number}</strong>.</p>
   <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#ecf9f1;border-radius:8px;">
-    <tr><td style="padding:12px;"><strong>Recorded amount</strong></td><td style="padding:12px;text-align:right;font-size:18px;color:#27ae60;">${currency(gst.total)}</td></tr>
-    <tr><td style="padding:12px;border-top:1px solid #c8e6c9;">Amount ex GST</td><td style="padding:12px;border-top:1px solid #c8e6c9;text-align:right;">${currency(gst.base)}</td></tr>
-    <tr><td style="padding:12px;border-top:1px solid #c8e6c9;">GST (${Math.round(gst.rate * 100)}%)</td><td style="padding:12px;border-top:1px solid #c8e6c9;text-align:right;">${currency(gst.gst)}</td></tr>
-    <tr><td style="padding:12px;border-top:1px solid #c8e6c9;">Status</td><td style="padding:12px;border-top:1px solid #c8e6c9;text-align:right;">${lt.payment_status || 'Paid'}</td></tr>
+    <tr><td style="padding:12px;"><strong>Total paid to date (inc GST)</strong></td><td style="padding:12px;text-align:right;font-size:18px;color:#27ae60;">${currency(paid.total)}</td></tr>
+    <tr><td style="padding:12px;border-top:1px solid #c8e6c9;">Amount ex GST</td><td style="padding:12px;border-top:1px solid #c8e6c9;text-align:right;">${currency(paid.base)}</td></tr>
+    <tr><td style="padding:12px;border-top:1px solid #c8e6c9;">GST (${Math.round(paid.rate * 100)}%)</td><td style="padding:12px;border-top:1px solid #c8e6c9;text-align:right;">${currency(paid.gst)}</td></tr>
+    ${contractExGst > 0 ? `<tr><td style="padding:12px;border-top:1px solid #c8e6c9;">Contract total (inc GST)</td><td style="padding:12px;border-top:1px solid #c8e6c9;text-align:right;">${currency(contractInc)}</td></tr>` : ''}
+    ${remainingInc > 0.01 ? `<tr><td style="padding:12px;border-top:1px solid #c8e6c9;">Balance remaining (inc GST)</td><td style="padding:12px;border-top:1px solid #c8e6c9;text-align:right;color:#c0392b;">${currency(remainingInc)}</td></tr>` : ''}
+    <tr><td style="padding:12px;border-top:1px solid #c8e6c9;">Status</td><td style="padding:12px;border-top:1px solid #c8e6c9;text-align:right;">${contractExGst > 0 ? statusWord : 'Payment received'}</td></tr>
     ${startDate ? `<tr><td style="padding:12px;border-top:1px solid #c8e6c9;">Contract start</td><td style="padding:12px;border-top:1px solid #c8e6c9;text-align:right;">${startDate}</td></tr>` : ''}
     ${expiryDate ? `<tr><td style="padding:12px;border-top:1px solid #c8e6c9;">Contract expiry</td><td style="padding:12px;border-top:1px solid #c8e6c9;text-align:right;">${expiryDate}</td></tr>` : ''}
   </table>
@@ -803,8 +820,12 @@ router.get('/longterm/:id/preview', requireAuth, async (req, res) => {
     if (!lt) return res.status(404).json({ error: 'Long-term customer not found' });
     const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
     const amountDueExGst = kind === 'payment' ? await longTermAmountDueExGst(db, carparkId, lt) : null;
+    const paidSummary = await longTermPaidSummary(db, carparkId, lt);
+    if (kind === 'receipt' && paidSummary.paidExGst <= 0) {
+      return res.status(400).json({ error: 'No payment has been recorded for this customer yet — add a payment first.' });
+    }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(longTermEmailHTML(carpark || {}, lt, kind, amountDueExGst));
+    res.send(longTermEmailHTML(carpark || {}, lt, kind, amountDueExGst, paidSummary));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -821,11 +842,15 @@ router.post('/longterm/:id/receipt', requireAuth, async (req, res) => {
     const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
     const transporter = getTransporter();
     if (!transporter) return res.status(503).json({ error: SMTP_MISSING_MSG });
+    const paidSummary = await longTermPaidSummary(db, carparkId, lt);
+    if (paidSummary.paidExGst <= 0) {
+      return res.status(400).json({ error: 'No payment has been recorded for this customer yet — add a payment before sending a receipt.' });
+    }
     await transporter.sendMail({
       from: emailFrom(),
       to: emailTo,
       subject: `${carpark ? carpark.name : 'Car Storage'} – Payment confirmation (${lt.lt_number})`,
-      html: longTermEmailHTML(carpark || {}, lt, 'receipt'),
+      html: longTermEmailHTML(carpark || {}, lt, 'receipt', null, paidSummary),
     });
     res.json({ success: true, message: `Receipt / confirmation sent to ${emailTo}` });
   } catch (err) {

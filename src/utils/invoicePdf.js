@@ -1,6 +1,6 @@
 const PDFDocument = require('pdfkit');
-const { computeInvoicePaymentStatus } = require('./paymentAllocation');
 const { billingAddressLines } = require('./billingAddress');
+const { methodLabel, invoiceStatusBanner, displayRego } = require('./invoiceDisplay');
 
 /** Draws the receipt/invoice content onto an already-created PDFDocument and ends it. */
 function drawInvoicePdf(doc, invoice, carpark) {
@@ -29,7 +29,10 @@ function drawInvoicePdf(doc, invoice, carpark) {
   // call), this just makes clear who's actually being billed.
   // An account with its own "Bill to" address (company name + postal
   // address, as the customer requires it) gets that block verbatim.
-  const billTo = billingAddressLines(invoice.account_billing_address);
+  // No address on file -> just the account name, in the same "Bill to:" layout,
+  // so every on-account invoice reads the same way.
+  const addressLines = billingAddressLines(invoice.account_billing_address);
+  const billTo = addressLines.length ? addressLines : (invoice.account_name ? [invoice.account_name] : []);
   if (billTo.length) {
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#7f8c8d').text('Bill to:', 36, doc.y, { width: 347, align: 'left' });
     billTo.forEach((l, i) => {
@@ -37,10 +40,6 @@ function drawInvoicePdf(doc, invoice, carpark) {
         .text(l, 36, doc.y, { width: 347, align: 'left' });
     });
     doc.moveDown(0.5);
-  } else if (invoice.account_name) {
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#1a5276')
-      .text(`Billed to: ${invoice.account_name}`, { align: 'center', width: 347 });
-    doc.moveDown(0.3);
   }
 
   const dateIn     = invoice.date_in     ? new Date(invoice.date_in).toLocaleDateString('en-NZ')     : '';
@@ -53,7 +52,7 @@ function drawInvoicePdf(doc, invoice, carpark) {
   doc.text(`Customer`, leftCol, y); doc.font('Helvetica-Bold').text(`${invoice.first_name || ''} ${invoice.last_name || ''}`.trim(), leftCol + 58, y);
   y += 14; doc.font('Helvetica');
   doc.text(`Phone`, leftCol, y); doc.text(invoice.phone || '—', leftCol + 58, y);
-  doc.text(`Vehicle`, rightCol, y - 14); doc.font('Helvetica-Bold').text(invoice.rego || '—', rightCol + 48, y - 14);
+  doc.text(`Vehicle`, rightCol, y - 14); doc.font('Helvetica-Bold').text(displayRego(invoice.rego), rightCol + 48, y - 14);
   doc.font('Helvetica').text(`Key`, rightCol, y); doc.text(invoice.no_key ? 'No Key' : (invoice.key_number || '—'), rightCol + 48, y);
   y += 14;
   doc.text(`Date in`, leftCol, y); doc.text(`${dateIn} ${invoice.time_in || ''}`.trim(), leftCol + 58, y);
@@ -74,33 +73,27 @@ function drawInvoicePdf(doc, invoice, carpark) {
   // to know at a glance, not something to infer from raw payment fields.
   // On Account and unconfirmed Internet Banking are NOT counted as paid
   // here — they're money owed/promised, not money received.
-  const { isPaidInFull, pending, owing } = computeInvoicePaymentStatus(invoice);
-
-  let bannerLabel, bannerColor;
-  if (isPaidInFull) {
-    bannerLabel = 'PAID IN FULL'; bannerColor = '#1e8449';
-  } else if (pending > 0.01) {
-    bannerLabel = owing > 0.01
-      ? `PENDING ${currency(pending)} + DUE ${currency(owing)}`
-      : `PAYMENT PENDING CONFIRMATION: ${currency(pending)}`;
-    bannerColor = '#d68910';
-  } else {
-    bannerLabel = `AMOUNT DUE: ${currency(owing)}`; bannerColor = '#c0392b';
-  }
+  const banner = invoiceStatusBanner(invoice);
+  const { owing } = banner;
 
   const bannerY = doc.y;
-  doc.rect(36, bannerY, 347, 26).fill(bannerColor);
+  doc.rect(36, bannerY, 347, 26).fill(banner.color);
   doc.fillColor('#ffffff').fontSize(12).font('Helvetica-Bold').text(
-    bannerLabel, 36, bannerY + 7, { width: 347, align: 'center' }
+    banner.label, 36, bannerY + 7, { width: 347, align: 'center' }
   );
   doc.y = bannerY + 34;
 
   doc.fontSize(9).font('Helvetica').fillColor('#333');
+  if (banner.note) {
+    doc.font('Helvetica-Oblique').fillColor('#1a5276').text(banner.note, { align: 'center', width: 347 });
+    doc.font('Helvetica').fillColor('#333');
+    doc.moveDown(0.3);
+  }
   if (invoice.credit_applied > 0) doc.text(`Credit applied: ${currency(invoice.credit_applied)}`);
-  doc.text(`Payment: ${invoice.paid_status} — ${currency(invoice.payment_amount)}`);
-  if (invoice.payment_amount_2 > 0) doc.text(`2nd payment: ${invoice.paid_status_2} — ${currency(invoice.payment_amount_2)}`);
-  if (pending > 0.01) {
-    doc.font('Helvetica-Bold').fillColor('#d68910').text(`Awaiting confirmation: ${currency(pending)}`);
+  doc.text(`Payment: ${methodLabel(invoice.paid_status)} — ${currency(invoice.payment_amount)}`);
+  if (invoice.payment_amount_2 > 0) doc.text(`2nd payment: ${methodLabel(invoice.paid_status_2)} — ${currency(invoice.payment_amount_2)}`);
+  if (banner.ibPending > 0.01) {
+    doc.font('Helvetica-Bold').fillColor('#d68910').text(`Awaiting confirmation: ${currency(banner.ibPending)}`);
     doc.font('Helvetica').fillColor('#333');
   }
   if (owing > 0.01) {

@@ -22,6 +22,14 @@ function wrap(title, bodyHtml) {
   </body></html>`;
 }
 
+
+// What the customer should expect about payment — depends on the kind of booking.
+function paymentNote(b) {
+  if (b.is_long_term || b.isLongTerm) return "Long-term bookings are priced individually — we'll be in touch about your rate. Nothing has been charged.";
+  if (b.account_customer_id || b.accountCustomerId || b.account_company_name || b.accountCompanyName) return 'This booking will be billed to your business account on your monthly statement — nothing is charged on arrival.';
+  return 'Payment is taken on arrival — nothing has been charged.';
+}
+
 function detailsTable(b) {
   const rows = [
     ['Customer', `${b.first_name || b.firstName || ''} ${b.last_name || b.lastName || ''}`.trim()],
@@ -77,7 +85,7 @@ async function notifyCustomerBookingSubmitted(booking) {
     <p>Hi ${booking.first_name || booking.firstName || ''},</p>
     <p>Thanks — we've received your booking request. Our team will confirm your spot before your drop-off date.</p>
     ${detailsTable(booking)}
-    <p style="margin-top:16px;color:#666;">Payment is taken on arrival — nothing has been charged.</p>
+    <p style="margin-top:16px;color:#666;">${paymentNote(booking)}</p>
   `);
   await send(booking.email, 'Booking request received - BOI Car Storage', html, 'customer: submitted');
 }
@@ -93,7 +101,7 @@ async function notifyCustomerBookingConfirmed(booking) {
     <p>Hi ${booking.first_name || booking.firstName || ''},</p>
     <p>Good news — your parking booking is confirmed. We'll see you at drop-off.</p>
     ${detailsTable(booking)}
-    <p style="margin-top:16px;color:#666;">Payment is taken on arrival — nothing has been charged.</p>
+    <p style="margin-top:16px;color:#666;">${paymentNote(booking)}</p>
     ${manage}
   `);
   await send(booking.email, 'Your booking is confirmed - BOI Car Storage', html, 'customer: confirmed');
@@ -116,7 +124,7 @@ async function notifyCustomerBookingAllocated(booking) {
     <p>Hi ${booking.first_name || booking.firstName || ''},</p>
     <p>Good news — your parking booking is confirmed.</p>
     ${detailsTable(booking)}
-    <p style="margin-top:16px;color:#666;">Payment is taken on arrival — nothing has been charged.</p>
+    <p style="margin-top:16px;color:#666;">${paymentNote(booking)}</p>
   `);
   await send(booking.email, 'Your booking is confirmed - BOI Car Storage', html, 'customer: allocated');
 }
