@@ -120,6 +120,7 @@ app.use('/api/banking',   require('./src/routes/banking'));
 app.use('/api/admin',     require('./src/routes/admin'));
 app.use('/api/endday',    require('./src/routes/endday'));
 app.use('/api/flights',   require('./src/routes/flights'));
+app.use('/api/staffing',  require('./src/routes/staffing')); // token-only counts feed for the roster app
 
 // ─── Diagnostic endpoint (no auth – safe, read-only) ─────────────────────────
 app.get('/api/status', async (req, res) => {
