@@ -1,0 +1,5 @@
+node_modules/
+carpark.db
+carpark.db-*
+*.log
+.env
