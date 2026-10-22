@@ -11,41 +11,57 @@
 <body>
   <div id="navbar-container"></div>
 
+  <style>
+    .acv-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .acv-card { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; padding: 16px 18px; }
+    .acv-card .lbl { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #52616e; text-transform: uppercase; letter-spacing: .05em; }
+    .acv-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .acv-card .num { font-size: 30px; font-weight: 700; line-height: 1.2; margin-top: 4px; }
+    .acv-card .num small { font-size: 14px; font-weight: 500; color: #52616e; }
+    .acv-card .sub { color: #52616e; }
+    .acv-toolbar { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .acv-chip { border-radius: 999px; padding: 8px 14px; border: 1px solid #b8c4cd; background: #fff; font-weight: 600; font-size: 14px; min-height: 40px; cursor: pointer; }
+    .acv-chip.active { background: #1a5276; color: #fff; border-color: #1a5276; }
+    .acv-table { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; overflow-x: auto; }
+    .acv-row { display: grid; grid-template-columns: 1.5fr 0.9fr 1.4fr 2fr 1.1fr 1.3fr 1.4fr; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #e6ecf0; align-items: center; min-width: 1180px; }
+    .acv-row:last-child { border-bottom: 0; }
+    .acv-head { background: #f7f9fa; font-size: 12px; font-weight: 700; color: #52616e; text-transform: uppercase; letter-spacing: .05em; border-radius: 12px 12px 0 0; }
+    .acv-pill { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 700; }
+    .acv-badge { background: #e6edf2; color: #1a5276; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
+    .acv-inv { display: inline-block; border-radius: 6px; padding: 3px 9px; font-size: 13px; font-weight: 600; }
+    .acv-muted { color: #52616e; font-size: 13px; }
+    .acv-name { background: none; border: 0; padding: 0; font-weight: 700; font-size: 15px; color: #16232e; text-align: left; cursor: pointer; }
+    .acv-name:hover { text-decoration: underline; }
+  </style>
+
   <div class="page-container">
     <div class="page-header">
-      <h2><i class="bi bi-building me-2"></i>Annual Accounts</h2>
-      <button class="btn btn-success" id="btn-new-acct"><i class="bi bi-plus-lg me-1"></i>New Account</button>
-    </div>
-
-    <div class="alert alert-secondary small mb-3">
-      Company accounts are matched on the <strong>Invoice</strong> page automatically by your existing customer/account links.
-      <strong>Total balance</strong> is all-time invoiced minus all payments recorded here.
-    </div>
-
-    <div class="table-container">
-      <div class="table-responsive">
-        <table class="table table-hover">
-          <thead>
-            <tr>
-              <th>Company</th>
-              <th>Account #</th>
-              <th>Rego 1 / 2</th>
-              <th>Contact</th>
-              <th>Phone</th>
-              <th>Billing Email</th>
-              <th>Discount</th>
-              <th>Credit Balance</th>
-              <th>This month</th>
-              <th>Total balance</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="accounts-tbody">
-            <tr><td colspan="11" class="text-center"><div class="spinner-border spinner-border-sm"></div></td></tr>
-          </tbody>
-        </table>
+      <div>
+        <h2 class="mb-0"><i class="bi bi-building me-2"></i>Accounts</h2>
+        <div class="acv-muted mt-1"><span id="ac-today-text"></span> &nbsp;·&nbsp; invoices are due on the 20th of the month after they are issued</div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="/account-reminders.html" class="btn btn-outline-primary" id="btn-review-reminders">
+          <i class="bi bi-envelope-check me-1"></i>Review emails to send <span class="badge bg-primary" id="draft-count">0</span>
+        </a>
+        <button class="btn btn-success" id="btn-new-acct"><i class="bi bi-plus-lg me-1"></i>New Account</button>
       </div>
     </div>
+
+    <div class="acv-cards" id="ac-cards"></div>
+
+    <div class="acv-toolbar">
+      <input type="search" class="form-control" id="ac-search" aria-label="Search accounts" placeholder="Search company, account # or invoice #" style="flex: 1 1 240px; min-width: 0; min-height: 44px;">
+      <div class="d-flex flex-wrap gap-2" id="ac-chips"></div>
+    </div>
+
+    <div class="acv-table">
+      <div class="acv-row acv-head">
+        <div>Account</div><div>Owing</div><div>Oldest unpaid</div><div>Invoices</div><div>Last paid</div><div>Reminders</div><div></div>
+      </div>
+      <div id="ac-grid"><div class="text-center py-4 text-muted"><div class="spinner-border"></div></div></div>
+    </div>
+    <div class="acv-muted mt-3">What each account owes, and how old it is, is worked out from the invoices and payments recorded. Each invoice is emailed on its own; the statement follows once they are all out.</div>
 
     <!-- Account Detail: Invoices -->
     <div id="account-detail" class="d-none mt-4">
@@ -208,53 +224,187 @@
     document.getElementById('detail-month').value = new Date().getMonth() + 1;
     document.getElementById('detail-year').value = new Date().getFullYear();
 
-    async function loadAccounts() {
-      const res = await fetch('/api/accounts');
-      if (!res.ok) {
-        document.getElementById('accounts-tbody').innerHTML =
-          '<tr><td colspan="11" class="text-center text-danger">Failed to load accounts — try refreshing the page.</td></tr>';
-        return;
-      }
-      const accounts = await res.json();
-      const tbody = document.getElementById('accounts-tbody');
-
-      if (accounts.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">No account customers yet</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = accounts.map(a => `
-        <tr>
-          <td class="fw-bold">${escapeHtml(a.company_name)}</td>
-          <td class="small"><code>${escapeHtml(a.account_number || '—')}</code></td>
-          <td class="small">${[a.rego_1, a.rego_2].filter(Boolean).join(' / ') || '—'}</td>
-          <td>${escapeHtml(a.contact_name||'')}</td>
-          <td>${escapeHtml(a.phone||'')}</td>
-          <td>${a.billing_email||a.email||''}</td>
-          <td>${a.discount_percent > 0 ? `<span class="badge bg-info">${a.discount_percent}%</span>` : '—'}</td>
-          <td>${a.credit_balance > 0 ? `<span class="text-success fw-bold">${formatCurrency(a.credit_balance)}</span>` : '—'}</td>
-          <td class="small">${a.month_payment_status === 'Outstanding'
-            ? `<span class="badge bg-warning text-dark">Outstanding ${formatCurrency(a.month_outstanding || 0)}</span>`
-            : (a.month_payment_status === 'Paid' ? '<span class="badge bg-success">Paid</span>' : '—')}</td>
-          <td class="small">${a.balance_payment_status === 'Outstanding'
-            ? `<span class="badge bg-danger">Owing ${formatCurrency(a.balance_outstanding || 0)}</span>`
-            : (a.balance_payment_status === 'Paid' ? '<span class="badge bg-success">Clear</span>' : '—')}</td>
-          <td>
-            <div class="d-flex gap-1">
-              <button class="btn btn-action btn-warning btn-edit" data-id="${a.id}">Edit</button>
-              <button class="btn btn-action btn-outline-info btn-view" data-id="${a.id}" data-name="${escapeHtml(a.company_name)}">View</button>
-            </div>
-          </td>
-        </tr>
-      `).join('');
-
-      document.querySelectorAll('.btn-edit').forEach(btn => {
-        btn.addEventListener('click', () => openEditAcct(btn.dataset.id));
-      });
-      document.querySelectorAll('.btn-view').forEach(btn => {
-        btn.addEventListener('click', () => showAccountDetail(btn.dataset.id, btn.dataset.name));
-      });
+    function escapeAttr(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
     }
+    // Timestamps from the database are UTC; show the NZ calendar day they fell on.
+    const nzDay = (ts) => {
+      if (!ts) return '—';
+      const d = new Date(String(ts).replace(' ', 'T') + 'Z');
+      return isNaN(d) ? String(ts).slice(0, 10) : d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Pacific/Auckland' });
+    };
+    const ymdParts = (s) => { const p = String(s || '').slice(0, 10).split('-').map(Number); return p.length === 3 && p[0] ? p : null; };
+    const fmtD = (s) => { const p = ymdParts(s); return p ? new Date(p[0], p[1] - 1, p[2]).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'; };
+    const fmtS = (s) => { const p = ymdParts(s); return p ? new Date(p[0], p[1] - 1, p[2]).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' }) : '—'; };
+    const money = (n) => '$' + Number(n || 0).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    // ── Overview: who owes what, and how old ────────────────────────────────
+    const BUCKET = {
+      overdue:  { pill: 'background:#fde8e6;color:#9b1c11', chip: 'background:#fde8e6;color:#9b1c11', btn: 'btn-danger', dot: '#b42318' },
+      upcoming: { pill: 'background:#e3eef7;color:#1a4f78', chip: 'background:#e3eef7;color:#1a4f78', btn: 'btn-outline-primary', dot: '#1a5276' },
+      paid:     { pill: 'background:#e3f4ea;color:#17603a', chip: 'background:#e3f4ea;color:#17603a', btn: 'btn-outline-secondary', dot: '#1e7a46' },
+    };
+    const UNSENT_CHIP = 'background:#fff0d6;color:#6f3a00;border:1px dashed #b45309';
+    let ovData = null;
+    let ovFilter = 'all';
+
+    function whenText(days) {
+      if (days == null) return 'Paid up';
+      if (days < 0) return `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue`;
+      if (days === 0) return 'Due today';
+      return `Due in ${days} day${days === 1 ? '' : 's'}`;
+    }
+
+    function reminderText(a) {
+      if (a.draftKinds.length) return '<span class="text-warning-emphasis fw-semibold">Email drafted — waiting for your OK</span>';
+      if (a.status.unsentCount) return `${a.status.unsentCount === 1 ? 'An invoice has' : a.status.unsentCount + ' invoices have'} not been emailed`;
+      if (a.lastReminderSentAt) return `Last email sent ${nzDay(a.lastReminderSentAt)}`;
+      return '—';
+    }
+
+    // What the one button on each row does.
+    function rowAction(a) {
+      const st = a.status;
+      if (a.draftKinds.length) return { label: 'Review email', cls: 'btn-warning', go: { review: true } };
+      const unsent = a.invoices.find((i) => !i.emailed);
+      if (unsent) return { label: st.unsentCount > 1 ? 'Send invoices' : 'Send invoice', cls: 'btn-primary', go: { kind: 'invoice', invoiceId: unsent.id } };
+      if (st.bucket === 'overdue') return { label: 'Send overdue notice', cls: 'btn-danger', go: { kind: 'overdue' } };
+      if (st.bucket === 'upcoming') {
+        const newest = a.invoices[a.invoices.length - 1];
+        const p = ymdParts(newest.dateIn);
+        return { label: 'Send statement', cls: 'btn-outline-primary', go: { kind: 'statement', month: p[1], year: p[0] } };
+      }
+      return { label: 'View account', cls: 'btn-outline-secondary', go: { view: true } };
+    }
+
+    function renderOverview() {
+      if (!ovData) return;
+      const s = ovData.summary;
+      document.getElementById('ac-today-text').textContent = new Date(ovData.today + 'T00:00:00').toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+      const cardDefs = [
+        { dot: BUCKET.overdue.dot, label: 'Overdue', n: s.overdue.count, unit: s.overdue.count === 1 ? 'account' : 'accounts', sub: `${money(s.overdue.amount)} to collect` },
+        { dot: BUCKET.upcoming.dot, label: s.nextDue.date ? `Falls due ${fmtS(s.nextDue.date)}` : 'Next due', n: money(s.nextDue.amount), unit: '', sub: s.nextDue.date ? 'invoices not yet due' : 'nothing coming up' },
+        { dot: '#b45309', label: 'Invoices to send', n: s.toSend.count, unit: s.toSend.count === 1 ? 'invoice' : 'invoices', sub: `${money(s.toSend.amount)} not yet emailed` },
+        { dot: '#8a99a5', label: 'Total owing', n: money(s.owing.amount), unit: '', sub: `across ${s.owing.accounts} account${s.owing.accounts === 1 ? '' : 's'}` },
+      ];
+      document.getElementById('ac-cards').innerHTML = cardDefs.map((c) => `
+        <div class="acv-card">
+          <div class="lbl"><span class="acv-dot" style="background:${c.dot}"></span>${c.label}</div>
+          <div class="num">${c.n} <small>${c.unit}</small></div>
+          <div class="sub">${c.sub}</div>
+        </div>`).join('');
+
+      const dc = document.getElementById('draft-count');
+      dc.textContent = ovData.draftCount;
+      dc.className = 'badge ' + (ovData.draftCount ? 'bg-danger' : 'bg-secondary');
+
+      const all = ovData.accounts;
+      const chipDefs = [
+        ['all', 'Everyone', all.length],
+        ['overdue', 'Overdue', all.filter((a) => a.status.bucket === 'overdue').length],
+        ['tosend', 'Invoices to send', all.filter((a) => a.status.unsentCount > 0).length],
+        ['upcoming', 'Not yet due', all.filter((a) => a.status.bucket === 'upcoming').length],
+        ['paid', 'Paid up', all.filter((a) => a.status.bucket === 'paid').length],
+      ];
+      const chipsEl = document.getElementById('ac-chips');
+      chipsEl.innerHTML = chipDefs.map((c) => `<button type="button" class="acv-chip ${ovFilter === c[0] ? 'active' : ''}" data-chip="${c[0]}">${c[1]} <span style="opacity:.8;font-weight:500">${c[2]}</span></button>`).join('');
+      chipsEl.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => { ovFilter = b.dataset.chip; renderOverview(); }));
+
+      const words = (document.getElementById('ac-search').value || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const shown = all.filter((a) => {
+        if (ovFilter === 'tosend' ? a.status.unsentCount === 0 : (ovFilter !== 'all' && a.status.bucket !== ovFilter)) return false;
+        if (!words.length) return true;
+        const hay = `${a.company_name} ${a.account_number} ${a.contact_name} ${a.invoices.map((i) => i.number).join(' ')}`.toLowerCase();
+        return words.every((w) => hay.includes(w));
+      });
+
+      const grid = document.getElementById('ac-grid');
+      if (!shown.length) {
+        grid.innerHTML = `<div class="text-center text-muted py-4">${all.length ? 'Nobody in this group.' : 'No account customers yet.'}</div>`;
+        return;
+      }
+
+      grid.innerHTML = shown.map((a) => {
+        const st = a.status;
+        const b = BUCKET[st.bucket] || BUCKET.paid;
+        const act = rowAction(a);
+        const oldest = st.oldest;
+        const chips = a.invoices.map((i) => {
+          const style = !i.emailed ? UNSENT_CHIP : (i.days < 0 ? BUCKET.overdue.chip : BUCKET.upcoming.chip);
+          const tip = i.emailed ? `Emailed ${nzDay(i.emailedAt)}${i.emailedTo ? ' to ' + i.emailedTo : ''}` : 'Not emailed to the customer yet';
+          return `<span class="acv-inv" style="${style}" title="${escapeAttr(tip)}">${escapeHtml(String(i.number))} · ${money(i.outstanding)}${i.emailed ? '' : ' · not sent'}</span>`;
+        }).join('');
+        return `
+          <div class="acv-row">
+            <div>
+              <button type="button" class="acv-name" data-act="view" data-id="${a.id}">${escapeHtml(a.company_name)}</button>
+              <div class="mt-1"><span class="acv-badge">${escapeHtml(a.account_number || '—')}</span> <span class="acv-muted">&nbsp;${a.email ? escapeHtml(a.contact_name) : '<span class="text-warning-emphasis fw-semibold">No billing email</span>'}</span></div>
+            </div>
+            <div>
+              <div class="fw-bold" style="font-size:16px">${st.owing ? money(st.owing) : '—'}</div>
+              <div class="acv-muted">${a.invoices.length ? a.invoices.length + (a.invoices.length === 1 ? ' unpaid invoice' : ' unpaid invoices') : 'All paid'}</div>
+            </div>
+            <div>
+              <span class="acv-pill" style="${b.pill}">${whenText(st.days)}</span>
+              <div class="acv-muted mt-1">${oldest ? `INV ${escapeHtml(String(oldest.number))} · due ${fmtS(oldest.due)}` : 'Nothing unpaid'}</div>
+            </div>
+            <div class="d-flex flex-wrap gap-1">${chips || '<span class="acv-muted">No unpaid invoices</span>'}</div>
+            <div>
+              <div>${st.lastPaid ? fmtD(st.lastPaid.date) : '—'}</div>
+              <div class="acv-muted">${st.lastPaid ? money(st.lastPaid.amount) : ''}</div>
+            </div>
+            <div class="acv-muted" style="line-height:1.4">${reminderText(a)}</div>
+            <div class="d-flex gap-2 justify-content-end flex-wrap">
+              <button type="button" class="btn btn-sm ${act.cls}" data-act="go" data-id="${a.id}">${act.label}</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="edit" data-id="${a.id}">Edit</button>
+            </div>
+          </div>`;
+      }).join('');
+
+      grid.querySelectorAll('[data-act="view"]').forEach((el) => el.addEventListener('click', () => {
+        const a = ovData.accounts.find((x) => String(x.id) === el.dataset.id);
+        if (a) showAccountDetail(a.id, a.company_name);
+      }));
+      grid.querySelectorAll('[data-act="edit"]').forEach((el) => el.addEventListener('click', () => openEditAcct(el.dataset.id)));
+      grid.querySelectorAll('[data-act="go"]').forEach((el) => el.addEventListener('click', () => {
+        const a = ovData.accounts.find((x) => String(x.id) === el.dataset.id);
+        if (!a) return;
+        const go = rowAction(a).go;
+        if (go.view) showAccountDetail(a.id, a.company_name);
+        else if (go.review) window.location.href = `/account-reminders.html?account=${a.id}`;
+        else startManual({ accountId: a.id, ...go }, el);
+      }));
+    }
+
+    // Opens (or creates) a draft for the review screen; nothing is sent from here.
+    async function startManual(body, el) {
+      if (el) el.disabled = true;
+      try {
+        let res = await fetch('/api/account-reminders/manual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        let data = await res.json().catch(() => ({}));
+        if (res.status === 409 && body.kind === 'statement' && confirm(`${data.error}\n\nSend the statement anyway?`)) {
+          res = await fetch('/api/account-reminders/manual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, force: true }) });
+          data = await res.json().catch(() => ({}));
+        }
+        if (!res.ok) { if (res.status !== 409) showAlert(data.error || 'Could not prepare the email', 'danger', 7000); if (el) el.disabled = false; return; }
+        window.location.href = `/account-reminders.html?draft=${data.id}`;
+      } catch (e) {
+        showAlert('Connection error. Please try again.', 'danger');
+        if (el) el.disabled = false;
+      }
+    }
+
+    async function loadAccounts() {
+      const res = await fetch('/api/accounts/overview', { cache: 'no-store' });
+      if (!res.ok) {
+        document.getElementById('ac-grid').innerHTML = '<div class="text-center text-danger py-4">Failed to load accounts — try refreshing the page.</div>';
+        return;
+      }
+      ovData = await res.json();
+      renderOverview();
+    }
+    document.getElementById('ac-search').addEventListener('input', () => renderOverview());
 
     async function openEditAcct(id) {
       const res = await fetch(`/api/accounts/${id}`);
@@ -307,6 +457,18 @@
       el.value = t0 < t1 ? monthEndStr : monthStartStr;
     }
 
+    /** Has this invoice been emailed to the account? Shows when, or lets staff send it. */
+    function emailedCell(inv, out) {
+      if (inv.account_emailed_at) {
+        const tip = [inv.account_emailed_to, inv.account_emailed_by].filter(Boolean).join(' · ');
+        return `<span title="${escapeAttr(tip)}">Sent ${nzDay(inv.account_emailed_at)}</span>${out > 0.01 ? ` <a href="#" data-send-invoice="${inv.id}">Resend</a>` : ''}`;
+      }
+      if (out > 0.01) {
+        return `<span class="badge bg-warning text-dark">Not sent</span> <button type="button" class="btn btn-sm btn-primary py-0" data-send-invoice="${inv.id}">Send invoice</button> <a href="#" data-mark-sent="${inv.id}" title="It was already emailed some other way">Already sent</a>`;
+      }
+      return '<span class="text-muted">—</span>';
+    }
+
     async function loadStatement() {
       if (!currentAccountId) return;
       const month = document.getElementById('detail-month').value;
@@ -335,7 +497,7 @@
         <div class="table-responsive">
           <table class="table table-sm table-hover table-bordered statement-table">
             <thead class="table-light">
-              <tr><th>Stay</th><th>Name</th><th>Rego</th><th class="text-end">Amount</th><th class="text-end">Outstanding</th><th>Status</th><th>Invoice</th></tr>
+              <tr><th>Stay</th><th>Name</th><th>Rego</th><th class="text-end">Amount</th><th class="text-end">Outstanding</th><th>Status</th><th>Invoice</th><th>Emailed to customer</th></tr>
             </thead>
             <tbody>
               ${data.invoices.map(inv => {
@@ -351,6 +513,7 @@
                   <td class="text-end fw-bold ${out > 0.01 ? 'text-danger' : 'text-muted'}">${out > 0.01 ? formatCurrency(out) : '—'}</td>
                   <td><span class="badge ${badgeClass}">${payStatus}</span> <span class="small text-muted">(${statusBadge(inv.paid_status)})</span></td>
                   <td><a href="/invoice.html?id=${inv.id}" class="btn btn-sm btn-outline-primary py-0">#${inv.invoice_number}</a></td>
+                  <td class="small text-nowrap">${emailedCell(inv, out)}</td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -358,17 +521,33 @@
               <tr class="table-success">
                 <td colspan="3" class="fw-bold">Total — ${monthLabel}</td>
                 <td class="fw-bold text-end fs-6">${formatCurrency(total)}</td>
-                <td colspan="3"></td>
+                <td colspan="4"></td>
               </tr>
             </tfoot>
           </table>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-          <a href="/email.html" class="btn btn-sm btn-outline-primary"><i class="bi bi-envelope me-1"></i>Send statement email</a>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btn-send-statement"><i class="bi bi-envelope me-1"></i>Send statement (review first)</button>
           <a href="/api/email/account-invoice.pdf?month=${month}&year=${year}&account_ids=${currentAccountId}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-pdf me-1"></i>Download PDF</a>
         </div>
       `;
       }
+
+      stmtEl.querySelectorAll('[data-send-invoice]').forEach((el) => el.addEventListener('click', (e) => {
+        e.preventDefault();
+        startManual({ accountId: Number(currentAccountId), kind: 'invoice', invoiceId: Number(el.dataset.sendInvoice) }, el);
+      }));
+      stmtEl.querySelectorAll('[data-mark-sent]').forEach((el) => el.addEventListener('click', async (e) => {
+        e.preventDefault();
+        if (!confirm('Mark this invoice as already emailed to the customer? It will stop showing as "not sent".')) return;
+        const r = await fetch(`/api/account-reminders/invoices/${el.dataset.markSent}/mark-sent`, { method: 'POST' });
+        if (!r.ok) { const err = await r.json().catch(() => ({})); showAlert(err.error || 'Could not update', 'danger'); return; }
+        showAlert('Marked as sent', 'success');
+        await loadStatement();
+        await loadAccounts();
+      }));
+      const stmtBtn = document.getElementById('btn-send-statement');
+      if (stmtBtn) stmtBtn.addEventListener('click', () => startManual({ accountId: Number(currentAccountId), kind: 'statement', month: Number(month), year: Number(year) }, stmtBtn));
 
       document.getElementById('acct-pay-summary').textContent =
         `${monthLabel}: invoiced ${formatCurrency(total)} · paid ${formatCurrency(paid)} · outstanding ${formatCurrency(outstanding)}.`;

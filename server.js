@@ -113,6 +113,7 @@ app.use('/api/returns',   require('./src/routes/returns'));
 app.use('/api/customers', require('./src/routes/customers'));
 app.use('/api/longterm',  require('./src/routes/longterm'));
 app.use('/api/lt-reminders', require('./src/routes/ltReminders'));
+app.use('/api/account-reminders', require('./src/routes/accountReminders'));
 app.use('/api/accounts',  require('./src/routes/accounts'));
 app.use('/api/keybox',    require('./src/routes/keybox'));
 app.use('/api/reports',   require('./src/routes/reports'));
@@ -271,6 +272,7 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
               (carpark_id, account_customer_id, account_name, month, year, sent_at, status, recipient_email, customer_type)
               VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, 'account')`)
               .run(carpark.id, account.id, account.company_name, month, year, 'sent', emailTo);
+            await require('./src/utils/accountReminders').markInvoicesEmailed(db, statementData.outstandingInvoices.map(i => i.id), { to: emailTo, by: 'month-end statement' });
             console.log(`Sent account email to ${emailTo}`);
           } catch (err) {
             console.error(`Failed to send to ${emailTo}:`, err.message);
@@ -374,13 +376,11 @@ async function runMonthEndEmailJob({ force = false, includeAccounts = true, incl
 // Long-term customers are deliberately excluded from this automatic run —
 // staff chase those up manually instead. includeLongTerm: true is still
 // available via the manual admin trigger below if that ever changes.
-cron.schedule('0 8 28-31 * *', async () => {
-  try {
-    await runMonthEndEmailJob({ force: false, includeAccounts: true, includeLongTerm: false });
-  } catch (_) {
-    // already logged in runMonthEndEmailJob
-  }
-});
+// Account statements are no longer sent unattended from here. The 7am job
+// below drafts each account's statement (once its invoices have been emailed)
+// for staff to review and send; if the business switches that screen to
+// "send automatically", the same job sends them. The forced admin run below
+// still works as a manual override.
 
 // ─── Admin: manually trigger month-end email run now ───────────────────────────
 app.post('/api/admin/run-month-end-emails', async (req, res) => {
@@ -421,6 +421,14 @@ cron.schedule('0 7 * * *', async () => {
     console.log('[lt-reminders] daily job:', JSON.stringify(r));
   } catch (err) {
     console.error('Long-term reminders job error:', err);
+  }
+  try {
+    const { runDailyJob: runAccountJob } = require('./src/routes/accountReminders');
+    const { businessDateYmd } = require('./src/utils/businessDate');
+    const r = await runAccountJob({ carparkId: 1, todayYmd: businessDateYmd() });
+    console.log('[account-reminders] daily job:', JSON.stringify(r));
+  } catch (err) {
+    console.error('Account reminders job error:', err);
   }
 }, { timezone: 'Pacific/Auckland' });
 

@@ -6,6 +6,7 @@ const { allocateAccountPayment, deallocatePayment, getAccountInvoicesWithOutstan
 const { logActivity, actorFromReq } = require('../utils/audit');
 const { generateAccountNumber } = require('../utils/accountNumber');
 const { withUppercaseFields } = require('../utils/textCase');
+const accountReminders = require('../utils/accountReminders');
 const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
@@ -50,6 +51,51 @@ router.get('/', requireAuth, async (req, res) => {
       });
     }
     res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/accounts/overview — who owes what and how old, which invoices have
+// been emailed, and what is waiting for review. (Before '/:id' so it isn't
+// read as an account id.)
+router.get('/overview', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const today = businessDateYmd();
+    await accountReminders.generateDrafts(db, { carparkId, todayYmd: today });
+    const [rows, drafts] = await Promise.all([
+      accountReminders.loadAccountsWithStatus(db, { carparkId, todayYmd: today }),
+      accountReminders.listDrafts(db, { carparkId, todayYmd: today }),
+    ]);
+    const draftByAccount = new Map();
+    for (const d of drafts) {
+      if (!draftByAccount.has(d.accountId)) draftByAccount.set(d.accountId, []);
+      draftByAccount.get(d.accountId).push(d.kind);
+    }
+    const lastSent = new Map((await db.prepare(`
+      SELECT account_customer_id AS id, MAX(sent_at) AS sent_at FROM account_reminders
+      WHERE carpark_id = ? AND status = 'sent' AND kind IN ('early','overdue','statement') GROUP BY account_customer_id
+    `).all(carparkId)).map((r) => [r.id, r.sent_at]));
+
+    const accounts = rows.map(({ account, unpaid, status }) => ({
+      id: account.id, company_name: account.company_name, account_number: account.account_number || '',
+      contact_name: account.contact_name || '', email: accountReminders.billingEmail(account),
+      status, invoices: unpaid,
+      draftKinds: draftByAccount.get(account.id) || [], lastReminderSentAt: lastSent.get(account.id) || null,
+    })).sort((a, b) => (a.status.days == null ? 99999 : a.status.days) - (b.status.days == null ? 99999 : b.status.days));
+
+    const sum = (list, pick) => Math.round(list.reduce((t, x) => t + pick(x), 0) * 100) / 100;
+    const overdueAccts = accounts.filter((a) => a.status.overdueAmt > 0);
+    const nextDueYmd = accounts.flatMap((a) => a.invoices.filter((i) => i.days >= 0).map((i) => i.due)).sort()[0] || null;
+    res.json({
+      today, accounts, draftCount: drafts.length,
+      summary: {
+        overdue: { count: overdueAccts.length, amount: sum(accounts, (a) => a.status.overdueAmt) },
+        nextDue: { date: nextDueYmd, amount: sum(accounts.filter(() => nextDueYmd), (a) => a.invoices.filter((i) => i.days >= 0 && i.due === nextDueYmd).reduce((t, i) => t + i.outstanding, 0)) },
+        toSend: { count: sum(accounts, (a) => a.status.unsentCount), accounts: accounts.filter((a) => a.status.unsentCount > 0).length, amount: sum(accounts, (a) => a.status.unsentAmt) },
+        owing: { amount: sum(accounts, (a) => a.status.owing), accounts: accounts.filter((a) => a.status.owing > 0).length },
+        paid: accounts.filter((a) => a.status.bucket === 'paid').length,
+      },
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

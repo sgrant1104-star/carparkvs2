@@ -7,6 +7,7 @@ const { buildInvoicePdfBuffer } = require('../utils/invoicePdf');
 const { methodLabel, invoiceStatusBanner, displayRego } = require('../utils/invoiceDisplay');
 const { billingAddressLines } = require('../utils/billingAddress');
 const { getTransporter, emailFrom, smtpErrorMessage, SMTP_MISSING_MSG } = require('../utils/mailer');
+const { markInvoicesEmailed } = require('../utils/accountReminders');
 const router = express.Router();
 
 const LONGTERM_MONTHLY_DEFAULT = 200.00;
@@ -451,6 +452,7 @@ router.post('/send-accounts', requireAuth, async (req, res) => {
           attachments,
         });
         results.push({ account: g.account.company_name, status: 'sent', email: emailTo, total });
+        await markInvoicesEmailed(db, statementData.outstandingInvoices.map(i => i.id), { to: emailTo, by: 'statement email' });
         await db.prepare(`INSERT INTO email_logs (carpark_id, account_customer_id, account_name, month, year, sent_at, status, recipient_email) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`)
           .run(carparkId, g.account.id, g.account.company_name, parseInt(m), parseInt(y), 'sent', emailTo);
       } catch (sendErr) {
@@ -707,6 +709,7 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
       attachments,
     });
 
+    if (invoice.account_customer_id) await markInvoicesEmailed(db, [invoice.id], { to: emailTo, by: 'invoice email' });
     res.json({ success: true, message: `Receipt sent to ${emailTo}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -880,5 +883,60 @@ router.post('/test', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * Everything the monthly statement email for ONE account needs: same query,
+ * same HTML and same attachments as send-accounts, so the review screen
+ * previews exactly what a send would produce.
+ */
+async function prepareStatement({ carparkId, account, month, year }) {
+  const m = String(month).padStart(2, '0');
+  const y = parseInt(year, 10);
+  const startDate = `${y}-${m}-01`;
+  const endDate = new Date(Date.UTC(y, parseInt(m, 10), 0)).toISOString().split('T')[0];
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthName = monthNames[parseInt(m, 10) - 1];
+  const dueDateYmd = dueDate20thNextMonth(parseInt(m, 10), y);
+  const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
+  const statementData = await getAccountStatementData(db, { carparkId, accountIds: [account.id], startDate, endDate });
+  const invNo = accountInvoiceNumber(y, m, account.id);
+  const attachNames = [`Statement-${invNo}.pdf`, ...statementData.outstandingInvoices.map(i => `Invoice-${i.invoice_number}.pdf`)];
+  return {
+    carpark, statementData, monthName, m, y, dueDateYmd, invNo, attachNames,
+    to: billingEmail(account),
+    subject: `${carpark.name} – GST – ${monthName} ${y} Account Statement`,
+    html: buildAccountEmailHTML(carpark, account, statementData, monthName, y, m, dueDateYmd),
+  };
+}
+
+/** Send the statement for one account (PDFs attached), log it, and mark its invoices as emailed. */
+async function sendStatement({ carparkId, account, month, year, transporter, by = 'staff', note = null }) {
+  const p = await prepareStatement({ carparkId, account, month, year });
+  if (!p.to) throw new Error('No billing email on this account');
+  if (!p.statementData.outstandingInvoices.length) throw new Error('Nothing unpaid for this account — no statement to send');
+  const attachments = [];
+  try {
+    attachments.push({ filename: p.attachNames[0], content: await buildAccountStatementPdfBuffer({ carpark: p.carpark, account, statementData: p.statementData, monthName: p.monthName, year: p.y, month2: p.m, dueDateYmd: p.dueDateYmd }) });
+  } catch (e) { console.error('[statement] PDF failed for', account.company_name, e.message); }
+  for (const inv of p.statementData.outstandingInvoices) {
+    try { attachments.push({ filename: `Invoice-${inv.invoice_number}.pdf`, content: await buildInvoicePdfBuffer(inv, p.carpark) }); }
+    catch (e) { console.error('[statement] invoice PDF failed #' + inv.invoice_number, e.message); }
+  }
+  const noteHtml = note ? `<p style="background:#fff8e6;border-radius:6px;padding:10px 12px;margin-top:16px;">${String(note).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</p>` : '';
+  const html = noteHtml ? p.html.replace('<hr style="margin-top:30px;">', noteHtml + '<hr style="margin-top:30px;">') : p.html;
+  try {
+    await transporter.sendMail({ from: emailFrom(), to: p.to, subject: p.subject, html, attachments });
+  } catch (err) {
+    await db.prepare('INSERT INTO email_logs (carpark_id, account_customer_id, account_name, month, year, status, error_msg, recipient_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(carparkId, account.id, account.company_name, parseInt(p.m, 10), p.y, 'failed', err.message, p.to);
+    throw err;
+  }
+  await db.prepare('INSERT INTO email_logs (carpark_id, account_customer_id, account_name, month, year, sent_at, status, recipient_email) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)')
+    .run(carparkId, account.id, account.company_name, parseInt(p.m, 10), p.y, 'sent', p.to);
+  await markInvoicesEmailed(db, p.statementData.outstandingInvoices.map(i => i.id), { to: p.to, by });
+  return { to: p.to, total: p.statementData.totalOutstanding, count: p.statementData.outstandingInvoices.length };
+}
+
 module.exports = router;
 module.exports.buildAccountEmailHTML = buildAccountEmailHTML;
+module.exports.prepareStatement = prepareStatement;
+module.exports.sendStatement = sendStatement;

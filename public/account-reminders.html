@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Emails - Carpark Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+  <style>
+    .rv-card { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start; }
+    .rv-card.sel { border: 2px solid #1a5276; padding: 13px 15px; }
+    .rv-pick { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: #16232e; cursor: pointer; }
+    .rv-pill { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; }
+    .rv-badge { background: #e6edf2; color: #1a5276; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
+    .rv-muted { color: #52616e; font-size: 13px; }
+    .rv-panel { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; overflow: hidden; }
+    .rv-panel-head { padding: 14px 20px; background: #f7f9fa; border-bottom: 1px solid #d9e1e7; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; }
+    .rv-label { font-size: 12px; font-weight: 700; color: #52616e; text-transform: uppercase; letter-spacing: .05em; }
+    .rv-chip { border-radius: 999px; padding: 9px 15px; border: 1px solid #b8c4cd; background: #fff; font-weight: 600; min-height: 42px; cursor: pointer; }
+    .rv-chip.on { background: #1a5276; color: #fff; border-color: #1a5276; }
+    .rv-frame { width: 100%; height: 560px; border: 1px solid #e0e7ec; border-radius: 10px; background: #fff; }
+    .rv-check { width: 22px; height: 22px; margin-top: 2px; accent-color: #1a5276; flex: none; cursor: pointer; }
+    .rv-attach { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #b8c4cd; border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 600; background: #fff; }
+  </style>
+</head>
+<body>
+  <div id="navbar-container"></div>
+
+  <div class="page-container">
+    <div class="page-header">
+      <div>
+        <h2 class="mb-0"><i class="bi bi-envelope-check me-2"></i>Emails to review</h2>
+        <div class="rv-muted mt-1">Invoices first, then the monthly statement &nbsp;·&nbsp; <strong style="color:#16232e">nothing is sent until you approve it</strong></div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="/accounts.html" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Accounts</a>
+        <button type="button" class="btn btn-primary" id="btn-send-checked" disabled>Nothing selected</button>
+      </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-3" id="rv-tabs"></div>
+    <div id="rv-result" class="alert alert-success d-none" role="status"></div>
+
+    <div id="rv-held" class="alert alert-warning d-none"></div>
+
+    <div class="row g-3 align-items-start" id="rv-work">
+      <div class="col-lg-5">
+        <div id="rv-list" class="d-flex flex-column gap-2"></div>
+      </div>
+
+      <div class="col-lg-7">
+        <div class="rv-panel" id="rv-preview" style="display:none">
+          <div class="rv-panel-head">
+            <div class="rv-label">Preview — exactly what <span id="pv-first">they</span> will receive</div>
+            <div class="rv-muted">To: <span id="pv-to"></span></div>
+          </div>
+          <div id="pv-warn" class="alert alert-warning m-3 mb-0 d-none"></div>
+          <div class="p-3 d-flex flex-column gap-3">
+            <div>
+              <div class="rv-label">Subject</div>
+              <div class="fs-6 fw-bold mt-1" id="pv-subject"></div>
+            </div>
+            <iframe id="pv-frame" class="rv-frame" sandbox title="Email preview"></iframe>
+            <div id="pv-attach" class="d-flex flex-wrap gap-2"></div>
+            <div>
+              <label class="rv-label" for="pv-note">Add a personal line (optional)</label>
+              <input type="text" class="form-control mt-1" id="pv-note" placeholder="e.g. Happy to go through the October jobs if useful" style="min-height:44px">
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <button type="button" class="btn btn-primary" id="btn-send-one" style="min-height:44px"></button>
+              <button type="button" class="btn btn-outline-secondary" id="btn-snooze" style="min-height:44px">Snooze 3 days</button>
+              <button type="button" class="btn btn-link text-secondary" id="btn-skip" style="min-height:44px">Skip this one</button>
+            </div>
+          </div>
+        </div>
+        <div id="rv-empty" class="rv-panel p-4 text-center text-muted" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="rv-panel mt-4 p-3 p-md-4">
+      <div class="d-flex flex-wrap justify-content-between gap-2 align-items-baseline mb-2">
+        <div class="fs-5 fw-bold">What gets drafted, and when</div>
+        <div class="rv-muted">Every morning the system drafts whatever is due — you review it here, then send.</div>
+      </div>
+      <div class="d-flex flex-wrap gap-2 mb-3" id="rv-rules"></div>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="rv-muted fw-semibold">Sending:</span>
+        <button type="button" class="rv-chip" data-mode="ask">Ask me first (recommended)</button>
+        <button type="button" class="rv-chip" data-mode="auto">Send automatically</button>
+        <span class="rv-muted">Reminders stop by themselves once the invoices are paid. A statement is never drafted while one of its invoices hasn't been emailed.</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-container" class="alert-banner"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar('accounts');
+
+    const money = (n) => '$' + Number(n || 0).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const TABS = [
+      { id: 'invoice',   label: 'Invoices to send', kinds: ['invoice'] },
+      { id: 'statement', label: 'Statements',       kinds: ['statement'] },
+      { id: 'reminder',  label: 'Reminders & overdue notices', kinds: ['early', 'overdue'] },
+    ];
+    const PILL = {
+      invoice:   { style: 'background:#e3eef7;color:#1a4f78' },
+      statement: { style: 'background:#ece7f6;color:#4b2f86' },
+      early:     { style: 'background:#fff0d6;color:#8a4b00' },
+      overdue:   { style: 'background:#fde8e6;color:#9b1c11' },
+    };
+
+    let state = { drafts: [], held: [], settings: null, rules: [], tab: null, sel: {}, checked: {}, note: {} };
+    const params = new URLSearchParams(location.search);
+    const wantedDraft = Number(params.get('draft')) || null;
+    const wantedAccount = Number(params.get('account')) || null;
+
+    const tabOf = (kind) => (TABS.find((t) => t.kinds.includes(kind)) || TABS[0]).id;
+    const draftsIn = (tabId) => state.drafts.filter((d) => tabOf(d.kind) === tabId);
+    const cur = () => draftsIn(state.tab).find((d) => d.id === state.sel[state.tab]) || null;
+    const fmtS = (s) => { const p = String(s || '').slice(0, 10).split('-').map(Number); return p[0] ? new Date(p[0], p[1] - 1, p[2]).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' }) : ''; };
+
+    function pillLabel(d) {
+      if (d.kind === 'invoice') return `Invoice ${d.invoiceNumber}${d.resend ? ' · resend' : ''}`;
+      if (d.kind === 'statement') return `Statement · ${d.monthLabel}`;
+      if (d.kind === 'early') return 'Friendly reminder';
+      return 'Overdue notice';
+    }
+    function whenText(d) {
+      if (d.kind === 'invoice') return `Issued ${fmtS(d.dateIn)}${d.rego ? ' · ' + d.rego : ''}`;
+      if (d.kind === 'statement') return `${d.count} unpaid invoice${d.count === 1 ? '' : 's'}`;
+      if (d.kind === 'early') return `due ${fmtS(d.oldestDue)}`;
+      return `${Math.abs(d.days)} day${Math.abs(d.days) === 1 ? '' : 's'} overdue`;
+    }
+
+    async function load() {
+      const res = await fetch('/api/account-reminders', { cache: 'no-store' });
+      if (!res.ok) { showAlert('Could not load emails', 'danger'); return; }
+      const data = await res.json();
+      state.drafts = data.drafts;
+      state.held = data.held || [];
+      state.settings = data.settings;
+      state.rules = data.rules;
+      state.drafts.forEach((d) => {
+        if (!(d.id in state.checked)) state.checked[d.id] = d.hasEmail && !(d.kind === 'statement' && d.unsent);
+      });
+      if (!state.tab) {
+        const wanted = wantedDraft && state.drafts.find((d) => d.id === wantedDraft);
+        const forAccount = wantedAccount && state.drafts.find((d) => d.accountId === wantedAccount);
+        state.tab = wanted ? tabOf(wanted.kind) : forAccount ? tabOf(forAccount.kind) : (TABS.find((t) => draftsIn(t.id).length) || TABS[0]).id;
+      }
+      const list = draftsIn(state.tab);
+      if (!list.some((d) => d.id === state.sel[state.tab])) {
+        const pick = (wantedDraft && list.find((d) => d.id === wantedDraft)) || (wantedAccount && list.find((d) => d.accountId === wantedAccount)) || list[0];
+        state.sel[state.tab] = pick ? pick.id : null;
+      }
+      render();
+      renderRules();
+      if (state.sel[state.tab]) loadPreview();
+    }
+
+    function render() {
+      document.getElementById('rv-tabs').innerHTML = TABS.map((t) => `<button type="button" class="rv-chip ${t.id === state.tab ? 'on' : ''}" data-tab="${t.id}">${t.label} <span style="opacity:.8;font-weight:500">${draftsIn(t.id).length}</span></button>`).join('');
+      document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
+        state.tab = b.dataset.tab;
+        const list = draftsIn(state.tab);
+        if (!list.some((d) => d.id === state.sel[state.tab])) state.sel[state.tab] = list[0] ? list[0].id : null;
+        render();
+        if (state.sel[state.tab]) loadPreview();
+      }));
+
+      const held = document.getElementById('rv-held');
+      if (state.tab === 'statement' && state.held.length) {
+        held.classList.remove('d-none');
+        held.innerHTML = `<strong>${state.held.length} account${state.held.length === 1 ? '' : 's'} held back</strong> until their invoices have been emailed, so a statement never lists an invoice the customer hasn't seen: ` +
+          state.held.map((h) => `${escapeHtml(h.name)} (${h.unsent} unsent)`).join(', ') + `. <a href="#" id="go-invoices">Send those invoices</a>`;
+        const g = document.getElementById('go-invoices');
+        if (g) g.addEventListener('click', (e) => { e.preventDefault(); state.tab = 'invoice'; const l = draftsIn('invoice'); state.sel.invoice = l[0] ? l[0].id : null; render(); if (state.sel.invoice) loadPreview(); });
+      } else {
+        held.classList.add('d-none');
+      }
+
+      const list = draftsIn(state.tab);
+      const sel = state.sel[state.tab];
+      document.getElementById('rv-list').innerHTML = list.map((d) => `
+        <div class="rv-card ${d.id === sel ? 'sel' : ''}">
+          <input type="checkbox" class="rv-check" data-check="${d.id}" aria-label="Include ${escapeHtml(d.name)} in the send" ${state.checked[d.id] ? 'checked' : ''} ${d.hasEmail ? '' : 'disabled'}>
+          <button type="button" class="rv-pick" data-pick="${d.id}">
+            <div class="d-flex flex-wrap justify-content-between gap-1 align-items-baseline">
+              <span class="fw-bold">${escapeHtml(d.name)}</span>
+              <span class="fw-bold">${money(d.amount)}</span>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-1">
+              <span class="rv-badge">${escapeHtml(d.acct || '—')}</span>
+              <span class="rv-pill" style="${PILL[d.kind].style}">${escapeHtml(pillLabel(d))}</span>
+              <span class="rv-muted">${escapeHtml(whenText(d))}</span>
+            </div>
+            <div class="rv-muted mt-1" style="${!d.hasEmail || d.warning ? 'color:#8a4b00;font-weight:600' : ''}">${!d.hasEmail ? 'No billing email on file' : (d.warning ? escapeHtml(d.warning) : 'Drafted — waiting for you')}</div>
+          </button>
+        </div>`).join('');
+      document.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => { state.sel[state.tab] = Number(b.dataset.pick); render(); loadPreview(); }));
+      document.querySelectorAll('[data-check]').forEach((c) => c.addEventListener('change', () => { state.checked[Number(c.dataset.check)] = c.checked; updateBulk(); }));
+
+      document.getElementById('rv-preview').style.display = sel ? '' : 'none';
+      const empty = document.getElementById('rv-empty');
+      empty.style.display = list.length ? 'none' : '';
+      const emptyText = {
+        invoice: 'Every invoice has been emailed to its account.<br><span class="small">New invoices appear here as soon as they are issued.</span>',
+        statement: 'No statements to review right now.<br><span class="small">Statements are drafted on the last day of the month, once every invoice has been emailed.</span>',
+        reminder: 'No reminders or overdue notices waiting.<br><span class="small">A friendly reminder is drafted 3 days before the 20th, and overdue notices at 3, 10 and 30 days late.</span>',
+      };
+      empty.innerHTML = `<i class="bi bi-check2-circle fs-1 text-success d-block mb-2"></i>${emptyText[state.tab]}`;
+      updateBulk();
+    }
+
+    function updateBulk() {
+      const n = draftsIn(state.tab).filter((d) => state.checked[d.id] && d.hasEmail).length;
+      const b = document.getElementById('btn-send-checked');
+      b.disabled = n === 0;
+      b.textContent = n ? `Approve & send ${n} selected` : 'Nothing selected';
+    }
+
+    let previewSeq = 0;
+    async function loadPreview() {
+      const d = cur();
+      if (!d) return;
+      const seq = ++previewSeq;
+      const noteEl = document.getElementById('pv-note');
+      if (noteEl.dataset.for !== String(d.id)) { noteEl.value = state.note[d.id] || ''; noteEl.dataset.for = String(d.id); }
+      const qs = new URLSearchParams();
+      if (noteEl.value.trim()) qs.set('note', noteEl.value.trim());
+      const res = await fetch(`/api/account-reminders/${d.id}/preview?${qs.toString()}`);
+      if (seq !== previewSeq) return;
+      if (!res.ok) { const e = await res.json().catch(() => ({})); showAlert(e.error || 'Could not build the preview', 'danger'); return; }
+      const p = await res.json();
+      const first = (d.contact || d.name).split(' ')[0];
+      const firstNice = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+      document.getElementById('pv-first').textContent = firstNice;
+      document.getElementById('pv-to').textContent = p.to || 'no billing email on file';
+      document.getElementById('pv-subject').textContent = p.subject;
+      document.getElementById('pv-frame').srcdoc = p.html;
+      document.getElementById('pv-attach').innerHTML = (p.attachNames || []).map((n) => `<span class="rv-attach"><i class="bi bi-file-earmark-pdf" style="color:#1a5276"></i>${escapeHtml(n)}</span>`).join('');
+      const warn = document.getElementById('pv-warn');
+      warn.classList.toggle('d-none', !d.warning);
+      warn.textContent = d.warning || '';
+      const send = document.getElementById('btn-send-one');
+      send.disabled = !d.hasEmail;
+      send.textContent = d.hasEmail ? `Approve & send to ${firstNice}` : 'Add a billing email to send';
+    }
+
+    document.getElementById('pv-note').addEventListener('input', debounce(() => {
+      const d = cur();
+      if (!d) return;
+      state.note[d.id] = document.getElementById('pv-note').value;
+      loadPreview();
+    }, 350));
+
+    function showResult(msg) {
+      const el = document.getElementById('rv-result');
+      el.textContent = msg;
+      el.classList.remove('d-none');
+    }
+
+    document.getElementById('btn-send-one').addEventListener('click', async () => {
+      const d = cur();
+      if (!d) return;
+      const btn = document.getElementById('btn-send-one');
+      btn.disabled = true;
+      const res = await fetch(`/api/account-reminders/${d.id}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: state.note[d.id] || '' }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showAlert(data.error || 'Could not send', 'danger', 8000); btn.disabled = false; return; }
+      showResult(`Sent to ${data.name} at ${data.to}. It is logged on the account.`);
+      state.sel[state.tab] = null;
+      await load();
+    });
+
+    document.getElementById('btn-send-checked').addEventListener('click', async () => {
+      const items = draftsIn(state.tab).filter((d) => state.checked[d.id] && d.hasEmail).map((d) => ({ id: d.id, note: state.note[d.id] || '' }));
+      if (!items.length) return;
+      if (!confirm(`Send ${items.length} email${items.length === 1 ? '' : 's'} now?`)) return;
+      const btn = document.getElementById('btn-send-checked');
+      btn.disabled = true;
+      const res = await fetch('/api/account-reminders/send-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showAlert(data.error || 'Could not send', 'danger'); updateBulk(); return; }
+      showResult(`Sent ${data.sent} email${data.sent === 1 ? '' : 's'}.` + (data.failed ? ` ${data.failed} could not be sent: ${data.results.filter((r) => !r.ok).map((r) => r.error).join('; ')}` : ' Each one is logged on the account.'));
+      state.sel[state.tab] = null;
+      await load();
+    });
+
+    async function act(path, body) {
+      const d = cur();
+      if (!d) return;
+      const res = await fetch(`/api/account-reminders/${d.id}/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); showAlert(e.error || 'Failed', 'danger'); return; }
+      state.sel[state.tab] = null;
+      await load();
+    }
+    document.getElementById('btn-skip').addEventListener('click', () => { if (confirm('Skip this email? It won\'t be drafted again.')) act('skip'); });
+    document.getElementById('btn-snooze').addEventListener('click', () => act('snooze', { days: 3 }));
+
+    function renderRules() {
+      const s = state.settings;
+      if (!s) return;
+      document.getElementById('rv-rules').innerHTML = state.rules.map((r) => `
+        <button type="button" role="switch" aria-checked="${s.rules[r.key] ? 'true' : 'false'}" class="rv-chip ${s.rules[r.key] ? 'on' : ''}" data-rule="${r.key}">${s.rules[r.key] ? '✓' : '○'} ${escapeHtml(r.label)}</button>`).join('');
+      document.querySelectorAll('[data-rule]').forEach((b) => b.addEventListener('click', () => saveSettings({ rules: { ...s.rules, [b.dataset.rule]: !s.rules[b.dataset.rule] }, mode: s.mode })));
+      document.querySelectorAll('[data-mode]').forEach((b) => {
+        b.classList.toggle('on', b.dataset.mode === s.mode);
+        b.onclick = () => {
+          if (b.dataset.mode === 'auto' && !confirm('Invoices, statements and reminders will be emailed to your accounts automatically each morning without you checking them first. Switch to automatic?')) return;
+          saveSettings({ rules: s.rules, mode: b.dataset.mode });
+        };
+      });
+    }
+    async function saveSettings(body) {
+      const res = await fetch('/api/account-reminders/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!res.ok) { showAlert('Could not save', 'danger'); return; }
+      state.settings = await res.json();
+      renderRules();
+    }
+
+    async function init() {
+      await checkAuth();
+      await load();
+      updateNavCarsCount();
+    }
+    init();
+  </script>
+</body>
+</html>

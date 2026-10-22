@@ -599,6 +599,46 @@ async function initializeDatabase() {
     rules TEXT,
     mode TEXT DEFAULT 'ask'
   )`);
+  // On-account invoices: has this invoice been emailed to the account yet?
+  // Tracking starts now, so everything issued before the cut-over is treated
+  // as already sent (the old month-end statements covered it) — only newer
+  // invoices show up as "not yet sent".
+  {
+    let addedEmailedAt = false;
+    try { x(`ALTER TABLE invoices ADD COLUMN account_emailed_at DATETIME`); addedEmailedAt = true; } catch (_) {}
+    try { x(`ALTER TABLE invoices ADD COLUMN account_emailed_to TEXT`); } catch (_) {}
+    try { x(`ALTER TABLE invoices ADD COLUMN account_emailed_by TEXT`); } catch (_) {}
+    if (addedEmailedAt) {
+      x(`UPDATE invoices SET account_emailed_at = '2026-10-01 00:00:00', account_emailed_by = 'before tracking began'
+         WHERE account_customer_id IS NOT NULL AND substr(trim(COALESCE(date_in,'')),1,10) < '2026-10-01'`);
+    }
+  }
+
+  // On-account emails (invoice / statement / reminder / overdue notice) are
+  // drafted by the system and reviewed by staff before they go. One row per
+  // account, kind and cycle so the same one is never drafted twice.
+  x(`CREATE TABLE IF NOT EXISTS account_reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    carpark_id INTEGER DEFAULT 1,
+    account_customer_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,              -- invoice | statement | early | overdue
+    rule_key TEXT NOT NULL,
+    cycle_key TEXT NOT NULL,         -- what it is about: a due date, a month, or a day (manual)
+    invoice_id INTEGER NOT NULL DEFAULT 0,
+    status TEXT DEFAULT 'drafted',   -- drafted | sent | skipped
+    snoozed_until TEXT,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sent_at DATETIME,
+    sent_by TEXT,
+    UNIQUE (account_customer_id, kind, rule_key, cycle_key, invoice_id)
+  )`);
+  try { x(`CREATE INDEX IF NOT EXISTS account_reminders_status ON account_reminders (carpark_id, status)`); } catch (_) {}
+  x(`CREATE TABLE IF NOT EXISTS account_reminder_settings (
+    carpark_id INTEGER PRIMARY KEY,
+    rules TEXT,
+    mode TEXT DEFAULT 'ask'
+  )`);
   try { x(`CREATE INDEX IF NOT EXISTS customer_credits_name ON customer_credits (carpark_id, last_name, first_name, status)`); } catch (_) {}
   try { x(`CREATE INDEX IF NOT EXISTS customer_credits_source ON customer_credits (source_invoice_id)`); } catch (_) {}
 
