@@ -573,6 +573,32 @@ async function initializeDatabase() {
   // The vehicle the credit came from — a third way to recognise the customer
   // when they have no phone or surname on file.
   try { x(`ALTER TABLE customer_credits ADD COLUMN rego TEXT`); } catch (_) {}
+
+  // Long-term payment reminders: drafted by the system, reviewed and sent by
+  // staff. One row per customer, payment cycle (the due date it is chasing)
+  // and rule, so the same reminder is never drafted twice.
+  x(`CREATE TABLE IF NOT EXISTS lt_reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    carpark_id INTEGER DEFAULT 1,
+    longterm_customer_id INTEGER NOT NULL,
+    rule_key TEXT NOT NULL,
+    cycle_due_date TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT DEFAULT 'drafted',   -- drafted | sent | skipped
+    snoozed_until TEXT,
+    months INTEGER,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sent_at DATETIME,
+    sent_by TEXT,
+    UNIQUE (longterm_customer_id, cycle_due_date, rule_key)
+  )`);
+  try { x(`CREATE INDEX IF NOT EXISTS lt_reminders_status ON lt_reminders (carpark_id, status)`); } catch (_) {}
+  x(`CREATE TABLE IF NOT EXISTS lt_reminder_settings (
+    carpark_id INTEGER PRIMARY KEY,
+    rules TEXT,
+    mode TEXT DEFAULT 'ask'
+  )`);
   try { x(`CREATE INDEX IF NOT EXISTS customer_credits_name ON customer_credits (carpark_id, last_name, first_name, status)`); } catch (_) {}
   try { x(`CREATE INDEX IF NOT EXISTS customer_credits_source ON customer_credits (source_invoice_id)`); } catch (_) {}
 

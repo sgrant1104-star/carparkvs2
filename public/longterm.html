@@ -11,56 +11,64 @@
 <body>
   <div id="navbar-container"></div>
 
+  <style>
+    .ltv-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .ltv-card { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; padding: 16px 18px; }
+    .ltv-card .lbl { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #52616e; text-transform: uppercase; letter-spacing: .05em; }
+    .ltv-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .ltv-card .num { font-size: 30px; font-weight: 700; line-height: 1.2; margin-top: 4px; }
+    .ltv-card .num small { font-size: 14px; font-weight: 500; color: #52616e; }
+    .ltv-card .sub { color: #52616e; }
+    .ltv-toolbar { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .ltv-chip { border-radius: 999px; padding: 8px 14px; border: 1px solid #b8c4cd; background: #fff; font-weight: 600; font-size: 14px; min-height: 40px; cursor: pointer; }
+    .ltv-chip.active { background: #1a5276; color: #fff; border-color: #1a5276; }
+    .ltv-table { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; overflow-x: auto; }
+    .ltv-row { display: grid; grid-template-columns: 1.5fr 1.7fr 1fr 1.2fr 1fr 1.3fr 1.5fr; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #e6ecf0; align-items: center; min-width: 1180px; }
+    .ltv-row:last-child { border-bottom: 0; }
+    .ltv-head { background: #f7f9fa; font-size: 12px; font-weight: 700; color: #52616e; text-transform: uppercase; letter-spacing: .05em; border-radius: 12px 12px 0 0; }
+    .ltv-pill { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 700; }
+    .ltv-bar { height: 8px; border-radius: 99px; background: #e3e9ee; overflow: hidden; }
+    .ltv-bar > div { height: 8px; border-radius: 99px; }
+    .ltv-ltbadge { background: #e6edf2; color: #1a5276; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
+    .ltv-muted { color: #52616e; font-size: 13px; }
+    .ltv-name { background: none; border: 0; padding: 0; font-weight: 700; font-size: 15px; color: #16232e; text-align: left; cursor: pointer; }
+    .ltv-name:hover { text-decoration: underline; }
+  </style>
+
   <div class="page-container">
     <div class="page-header">
-      <h2><i class="bi bi-calendar-week me-2"></i>Long Term Customers</h2>
-      <button class="btn btn-success" id="btn-new-lt">
-        <i class="bi bi-plus-lg me-1"></i>New
-      </button>
+      <div>
+        <h2 class="mb-0"><i class="bi bi-calendar-week me-2"></i>Long Term</h2>
+        <div class="ltv-muted mt-1"><span id="lt-today-text"></span> &nbsp;·&nbsp; amounts include GST</div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="/lt-reminders.html" class="btn btn-outline-primary" id="btn-review-reminders">
+          <i class="bi bi-envelope-check me-1"></i>Review today's reminders <span class="badge bg-primary" id="draft-count">0</span>
+        </a>
+        <button class="btn btn-success" id="btn-new-lt">
+          <i class="bi bi-plus-lg me-1"></i>New customer
+        </button>
+      </div>
     </div>
 
-    <div id="renewal-summary" class="alert alert-info small mb-3">
-      Checking renewal dates...
-    </div>
+    <div class="ltv-cards" id="lt-cards"></div>
 
-    <div class="d-flex align-items-center mb-2">
-      <div class="btn-group btn-group-sm" role="group" id="lt-status-filter">
+    <div class="ltv-toolbar">
+      <input type="search" class="form-control" id="lt-search" aria-label="Search long-term customers" placeholder="Search name, LT # or rego" style="flex: 1 1 240px; min-width: 0; min-height: 44px;">
+      <div class="d-flex flex-wrap gap-2" id="lt-chips"></div>
+      <div class="btn-group btn-group-sm ms-auto" role="group" id="lt-status-filter">
         <button type="button" class="btn btn-outline-primary active" data-status="active">Active</button>
         <button type="button" class="btn btn-outline-secondary" data-status="archived">Archived</button>
       </div>
     </div>
 
-    <!-- Column headers (same 8-column grid as .lt-card: renewal + payment match badges) -->
-    <div class="row g-2 mb-2 px-1">
-      <div class="col-12 col-md-6">
-        <div class="lt-card-header-row">
-          <div class="lt-h">LT#</div>
-          <div class="lt-h">Name</div>
-          <div class="lt-h">Renewal</div>
-          <div class="lt-h">Pay</div>
-          <div class="lt-h">Rego 1</div>
-          <div class="lt-h">Rego 2</div>
-          <div class="lt-h">Phone</div>
-          <div class="lt-h">Edit</div>
-        </div>
+    <div class="ltv-table">
+      <div class="ltv-row ltv-head">
+        <div>Customer</div><div>Contract</div><div>Paid through</div><div>Next payment</div><div>Amount</div><div>Reminders</div><div></div>
       </div>
-      <div class="col-12 col-md-6">
-        <div class="lt-card-header-row">
-          <div class="lt-h">LT#</div>
-          <div class="lt-h">Name</div>
-          <div class="lt-h">Renewal</div>
-          <div class="lt-h">Pay</div>
-          <div class="lt-h">Rego 1</div>
-          <div class="lt-h">Rego 2</div>
-          <div class="lt-h">Phone</div>
-          <div class="lt-h">Edit</div>
-        </div>
-      </div>
+      <div id="lt-grid"><div class="text-center py-4 text-muted"><div class="spinner-border"></div></div></div>
     </div>
-
-    <div id="lt-grid" class="lt-grid">
-      <div class="text-center py-4 text-muted"><div class="spinner-border"></div></div>
-    </div>
+    <div class="ltv-muted mt-3">"Paid through" and "Next payment" are worked out from the payments recorded — nobody has to calculate them.</div>
   </div>
 
   <!-- LT Edit/Add Modal -->
@@ -152,6 +160,12 @@
             </div>
           </div>
 
+          <!-- Where they're up to + reminder history (worked out from the payments) -->
+          <div class="mt-3 p-3 rounded border bg-light" id="lt-coverage" style="display:none;">
+            <div class="d-flex flex-wrap gap-4" id="lt-coverage-facts"></div>
+            <div class="small text-muted mt-2" id="lt-coverage-history"></div>
+          </div>
+
           <!-- LT Payments -->
           <div class="mt-3">
             <div class="d-flex align-items-center justify-content-between mb-2">
@@ -222,14 +236,11 @@
           </div>
         </div>
         <div class="modal-footer flex-wrap gap-2">
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-preview-lt-pay" disabled title="Save first to preview email template">
-            <i class="bi bi-eye me-1"></i> Preview payment email
+          <button type="button" class="btn btn-primary btn-sm" id="btn-request-lt" disabled title="Save the customer first">
+            <i class="bi bi-envelope-exclamation me-1"></i> Send payment request (review first)
           </button>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-preview-lt-rcpt" disabled title="Save first to preview email template">
             <i class="bi bi-eye me-1"></i> Preview receipt email
-          </button>
-          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-email-lt-pay" disabled title="Save the customer and add an email first">
-            <i class="bi bi-envelope-exclamation me-1"></i> Email payment request
           </button>
           <button type="button" class="btn btn-outline-success btn-sm" id="btn-email-lt-rcpt" disabled title="Save the customer and add an email first">
             <i class="bi bi-envelope-check me-1"></i> Email receipt / paid
@@ -309,13 +320,11 @@
       const id = document.getElementById('lt-id').value;
       const em = (document.getElementById('lt-email').value || '').trim();
       const dis = !id || !em;
-      const bp = document.getElementById('btn-email-lt-pay');
+      const rq = document.getElementById('btn-request-lt');
       const br = document.getElementById('btn-email-lt-rcpt');
-      const pp = document.getElementById('btn-preview-lt-pay');
       const pr = document.getElementById('btn-preview-lt-rcpt');
-      if (bp) { bp.disabled = dis; bp.title = dis ? (id ? 'Add an email address above' : 'Save the customer first') : 'Send payment request email'; }
+      if (rq) { rq.disabled = !id; rq.title = id ? 'Prepare a payment request showing how many days they have left — you review it before anything is sent' : 'Save the customer first'; }
       if (br) { br.disabled = dis; br.title = dis ? (id ? 'Add an email address above' : 'Save the customer first') : 'Send paid / receipt confirmation'; }
-      if (pp) { pp.disabled = !id; pp.title = id ? 'Preview payment request template' : 'Save the customer first'; }
       if (pr) { pr.disabled = !id; pr.title = id ? 'Preview paid/receipt template' : 'Save the customer first'; }
     }
 
@@ -327,111 +336,174 @@
       return `LT${parseInt(digits, 10)}`;
     }
 
-    function renewalBadge(c) {
-      if (c.renewal_status === 'expired') {
-        return `<span class="badge bg-danger">Expired ${Math.abs(c.days_to_expiry)}d</span>`;
-      }
-      if (c.renewal_status === 'due_soon') {
-        return `<span class="badge bg-warning text-dark">Due in ${c.days_to_expiry}d</span>`;
-      }
-      if (c.renewal_status === 'active') {
-        return `<span class="badge bg-success-subtle text-success-emphasis">Active (${c.days_to_expiry}d)</span>`;
-      }
-      return `<span class="badge bg-secondary-subtle text-secondary-emphasis">No expiry</span>`;
-    }
-
-    function paymentBadgeHtml(c) {
-      if (c.payment_status === 'Paid') return '<span class="badge bg-success">Paid</span>';
-      if (c.payment_status === 'Partial') return '<span class="badge bg-info text-dark">Partial</span>';
-      return '<span class="badge bg-light text-dark border">Unpaid</span>';
-    }
-
     function escapeAttr(s) {
       return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
     }
 
-    function renderRenewalSummary(customers) {
-      const expired = customers.filter(c => c.renewal_status === 'expired').length;
-      const dueSoon = customers.filter(c => c.renewal_status === 'due_soon').length;
-      const noExpiry = customers.filter(c => c.renewal_status === 'no_expiry').length;
-      const el = document.getElementById('renewal-summary');
-      if (!el) return;
-      let cls = 'alert-info';
-      if (expired > 0) cls = 'alert-danger';
-      else if (dueSoon > 0) cls = 'alert-warning';
-      el.className = `alert ${cls} small mb-3`;
-      el.innerHTML = `
-        <strong>Renewals:</strong>
-        ${expired} expired,
-        ${dueSoon} due in 30 days,
-        ${noExpiry} with no expiry date.
-        <span class="ms-2 text-muted">Tip: open customer → set +3 / +6 / +12 months.</span>
-      `;
-    }
+    // ── Overview: who needs attention, and when ────────────────────────────
+    const BUCKET = {
+      overdue:  { pill: 'background:#fde8e6;color:#9b1c11', bar: '#b42318', btn: 'btn-danger',            dot: '#b42318', label: 'Overdue' },
+      soon:     { pill: 'background:#fff0d6;color:#8a4b00', bar: '#b45309', btn: 'btn-primary',           dot: '#b45309', label: 'Due in 14 days' },
+      upcoming: { pill: 'background:#e3eef7;color:#1a4f78', bar: '#1a5276', btn: 'btn-outline-primary',  dot: '#1a5276', label: 'Coming up' },
+      paid:     { pill: 'background:#e3f4ea;color:#17603a', bar: '#1e7a46', btn: 'btn-outline-secondary', dot: '#1e7a46', label: 'Paid up' },
+      none:     { pill: 'background:#eceff1;color:#455560', bar: '#8a99a5', btn: 'btn-outline-secondary', dot: '#8a99a5', label: 'No payment info' },
+    };
+    const ACTION_LABEL = { overdue: 'Send overdue notice', soon: 'Send payment request', upcoming: 'Send payment request', paid: 'Send payment request', none: 'Send payment request' };
 
+    let ovData = null;
+    let ovFilter = 'all';
     let currentLtStatus = 'active';
 
-    async function loadLongTerm(status) {
-      if (status) currentLtStatus = status;
-      const res = await fetch(`/api/longterm?status=${currentLtStatus}`);
-      if (!res.ok) return;
-      const customers = await res.json();
+    const money = (n) => '$' + Number(n || 0).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const ymdParts = (s) => { const p = String(s || '').slice(0, 10).split('-').map(Number); return p.length === 3 && p[0] ? p : null; };
+    const fmtD = (s) => { const p = ymdParts(s); return p ? new Date(p[0], p[1] - 1, p[2]).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'; };
 
-      const summaryEl = document.getElementById('renewal-summary');
-      if (currentLtStatus === 'active') {
-        summaryEl.style.display = '';
-        renderRenewalSummary(customers);
-      } else {
-        summaryEl.style.display = 'none';
-      }
+    // Timestamps from the database are UTC; show the NZ calendar day they fell on.
+    const nzDay = (ts) => { if (!ts) return '—'; const d = new Date(String(ts).replace(' ', 'T') + 'Z'); return isNaN(d) ? fmtD(ts) : d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Pacific/Auckland' }); };
 
-      if (customers.length === 0) {
-        const label = currentLtStatus === 'archived' ? 'archived' : 'active';
-        document.getElementById('lt-grid').innerHTML = `<div class="col-12 text-center text-muted py-4">No ${label} long term customers${currentLtStatus === 'active' ? ' yet' : ''}.</div>`;
+    function whenText(days) {
+      if (days == null) return '—';
+      if (days < 0) return `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue`;
+      if (days === 0) return 'Due today';
+      return `In ${days} day${days === 1 ? '' : 's'}`;
+    }
+
+    function amountNote(st) {
+      if (!st.nextMonths) return st.nextAmountInc ? 'Contract amount' : '';
+      return st.nextMonths === 1 ? 'Monthly payment' : `${st.nextMonths}-month renewal`;
+    }
+
+    function reminderText(c) {
+      if (c.draftKind) return '<span class="text-warning-emphasis fw-semibold">Reminder drafted — waiting for your OK</span>';
+      if (c.lastReminderSentAt) return `Last reminder sent ${nzDay(c.lastReminderSentAt)}`;
+      return '—';
+    }
+
+    function renderOverview() {
+      if (!ovData) return;
+      const active = currentLtStatus === 'active';
+      const s = ovData.summary;
+      document.getElementById('lt-today-text').textContent = new Date(ovData.today + 'T00:00:00').toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+      const cardDefs = [
+        { k: 'overdue', label: 'Overdue', n: s.overdue.count, unit: s.overdue.count === 1 ? 'customer' : 'customers', sub: `${money(s.overdue.amount)} to collect` },
+        { k: 'soon', label: 'Due within 14 days', n: s.soon.count, unit: s.soon.count === 1 ? 'customer' : 'customers', sub: `${money(s.soon.amount)} coming in` },
+        { k: 'upcoming', label: 'Coming up (15–60 days)', n: s.upcoming.count, unit: s.upcoming.count === 1 ? 'customer' : 'customers', sub: `${money(s.upcoming.amount)} expected` },
+        { k: 'paid', label: 'Expected in the next 30 days', n: money(s.next30.amount), unit: '', sub: `${s.next30.count} payment${s.next30.count === 1 ? '' : 's'} due` },
+      ];
+      document.getElementById('lt-cards').innerHTML = active ? cardDefs.map((c) => `
+        <div class="ltv-card">
+          <div class="lbl"><span class="ltv-dot" style="background:${BUCKET[c.k].dot}"></span>${c.label}</div>
+          <div class="num">${c.n} <small>${c.unit}</small></div>
+          <div class="sub">${c.sub}</div>
+        </div>`).join('') : '';
+
+      const dc = document.getElementById('draft-count');
+      dc.textContent = ovData.draftCount;
+      dc.className = 'badge ' + (ovData.draftCount ? 'bg-danger' : 'bg-secondary');
+      document.getElementById('btn-review-reminders').style.display = active ? '' : 'none';
+
+      const chipDefs = [
+        ['all', 'Everyone', ovData.customers.length],
+        ['overdue', 'Overdue', s.overdue.count],
+        ['soon', 'Due in 14 days', s.soon.count],
+        ['upcoming', 'Coming up', s.upcoming.count],
+        ['paid', 'Paid up', s.paid.count],
+      ];
+      if (s.none.count) chipDefs.push(['none', 'No payment info', s.none.count]);
+      const chipsEl = document.getElementById('lt-chips');
+      chipsEl.style.display = active ? '' : 'none';
+      chipsEl.innerHTML = chipDefs.map((c) => `<button type="button" class="ltv-chip ${ovFilter === c[0] ? 'active' : ''}" data-chip="${c[0]}">${c[1]} <span style="opacity:.8;font-weight:500">${c[2]}</span></button>`).join('');
+      chipsEl.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => { ovFilter = b.dataset.chip; renderOverview(); }));
+
+      const words = (document.getElementById('lt-search').value || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const shown = ovData.customers.filter((c) => {
+        if (active && ovFilter !== 'all' && c.status.bucket !== ovFilter) return false;
+        if (!words.length) return true;
+        const hay = `${c.name} ${c.lt_number} ${c.rego_1 || ''} ${c.rego_2 || ''} ${c.phone || ''}`.toLowerCase();
+        return words.every((w) => hay.includes(w));
+      }).sort((a, b) => (a.status.days == null ? 99999 : a.status.days) - (b.status.days == null ? 99999 : b.status.days));
+
+      const grid = document.getElementById('lt-grid');
+      if (!shown.length) {
+        grid.innerHTML = `<div class="text-center text-muted py-4">${ovData.customers.length ? 'Nobody in this group.' : `No ${currentLtStatus} long term customers${active ? ' yet' : ''}.`}</div>`;
         return;
       }
 
-      // Split into two columns
-      const half = Math.ceil(customers.length / 2);
-      const col1 = customers.slice(0, half);
-      const col2 = customers.slice(half);
+      grid.innerHTML = shown.map((c) => {
+        const st = c.status;
+        const b = BUCKET[st.bucket] || BUCKET.none;
+        let pct = 0;
+        const cs = ymdParts(st.contractStart), ce = ymdParts(st.contractEnd);
+        if (cs && ce) {
+          const a = new Date(cs[0], cs[1] - 1, cs[2]), z = new Date(ce[0], ce[1] - 1, ce[2]), t = new Date(ovData.today + 'T00:00:00');
+          pct = Math.max(0, Math.min(1, (t - a) / (z - a)));
+        }
+        const regos = [c.rego_1, c.rego_2].filter(Boolean).join(' · ');
+        const dueLine = st.nextDue ? `due ${fmtD(st.nextDue)}` : (st.bucket === 'none' ? 'no payments recorded' : '');
+        const action = active
+          ? `<button type="button" class="btn btn-sm ${c.draftKind ? 'btn-warning' : b.btn}" data-act="request" data-id="${c.id}">${c.draftKind ? 'Review reminder' : ACTION_LABEL[st.bucket]}</button>`
+          : '';
+        return `
+          <div class="ltv-row">
+            <div>
+              <button type="button" class="ltv-name" data-act="edit" data-id="${c.id}">${escapeHtml(c.name)}</button>
+              <div class="mt-1"><span class="ltv-ltbadge">${escapeHtml(c.lt_number)}</span> <span class="ltv-muted">&nbsp;${escapeHtml(regos)}</span></div>
+            </div>
+            <div>
+              ${cs && ce ? `<div class="ltv-bar"><div style="width:${Math.round(pct * 100)}%;background:${b.bar}"></div></div>` : ''}
+              <div class="ltv-muted mt-1">${cs || ce ? `${fmtD(st.contractStart)} – ${fmtD(st.contractEnd)}` : 'No contract dates'}</div>
+            </div>
+            <div>${st.paidThrough ? fmtD(st.paidThrough) : '—'}</div>
+            <div>
+              <span class="ltv-pill" style="${b.pill}">${active ? whenText(st.days) : 'Archived'}</span>
+              <div class="ltv-muted mt-1">${dueLine}</div>
+            </div>
+            <div>
+              <div class="fw-bold">${st.nextAmountInc ? money(st.nextAmountInc) : '—'}</div>
+              <div class="ltv-muted">${amountNote(st)}</div>
+            </div>
+            <div class="ltv-muted" style="line-height:1.4">${active ? reminderText(c) : ''}</div>
+            <div class="d-flex gap-2 justify-content-end flex-wrap">
+              ${action}
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="edit" data-id="${c.id}">Edit</button>
+            </div>
+          </div>`;
+      }).join('');
 
-      function renderCol(items) {
-        return items.map(c => `
-          <div class="lt-card mb-2">
-            <div class="lt-number">${c.lt_number}</div>
-            <div class="lt-name" title="${escapeAttr(c.name)}">${escapeHtml(c.name)}</div>
-            <div class="lt-cell-renewal">${currentLtStatus === 'archived' ? '<span class="badge bg-secondary">Archived</span>' : renewalBadge(c)}</div>
-            <div class="lt-cell-payment">${paymentBadgeHtml(c)}</div>
-            ${c.rego_1 ? `<span class="lt-rego">${c.rego_1}</span>` : '<span class="lt-rego text-muted">—</span>'}
-            ${c.rego_2 ? `<span class="lt-rego">${c.rego_2}</span>` : '<span class="lt-rego text-muted" style="opacity:0.3;">—</span>'}
-            <div class="lt-phone-cell">${escapeHtml(c.phone || '')}</div>
-            <button class="btn btn-warning btn-action btn-edit-lt" data-id="${c.id}" 
-              data-lt='${JSON.stringify(c).replace(/'/g, "&#39;")}'>
-              Edit
-            </button>
-          </div>
-        `).join('');
-      }
-
-      document.getElementById('lt-grid').innerHTML = `
-        <div>${renderCol(col1)}</div>
-        <div>${renderCol(col2)}</div>
-      `;
-
-      // Attach edit handlers
-      document.querySelectorAll('.btn-edit-lt').forEach(btn => {
-        btn.addEventListener('click', () => {
-          try {
-            const lt = JSON.parse(btn.dataset.lt.replace(/&#39;/g, "'"));
-            openEditModal(lt);
-          } catch(e) {
-            // Try fetching by id
-            openEditById(btn.dataset.id);
-          }
-        });
-      });
+      grid.querySelectorAll('[data-act="edit"]').forEach((el) => el.addEventListener('click', () => {
+        const c = ovData.customers.find((x) => String(x.id) === el.dataset.id);
+        if (c) openEditModal(c);
+      }));
+      grid.querySelectorAll('[data-act="request"]').forEach((el) => el.addEventListener('click', () => startRequest(el.dataset.id, el)));
     }
+
+    // "Send payment request" — opens (or creates) a draft for review; nothing is sent from here.
+    async function startRequest(customerId, el) {
+      if (el) el.disabled = true;
+      try {
+        const res = await fetch('/api/lt-reminders/manual', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId: Number(customerId) }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showAlert(data.error || 'Could not prepare the request', 'danger'); if (el) el.disabled = false; return; }
+        window.location.href = `/lt-reminders.html?draft=${data.id}`;
+      } catch (e) {
+        showAlert('Connection error. Please try again.', 'danger');
+        if (el) el.disabled = false;
+      }
+    }
+
+    async function loadLongTerm(status) {
+      if (status) currentLtStatus = status;
+      const res = await fetch(`/api/longterm/overview?status=${currentLtStatus}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      ovData = await res.json();
+      renderOverview();
+    }
+
+    document.getElementById('lt-search').addEventListener('input', () => renderOverview());
 
     async function openEditById(id) {
       const res = await fetch(`/api/longterm/${id}`);
@@ -763,6 +835,34 @@
       setLtPaymentDefaults();
       new bootstrap.Modal('#ltModal').show();
       loadLtPayments(lt.id);
+      renderCoverage(lt.id);
+    }
+
+    // "Paid through / next payment" and the reminder history for the open customer.
+    async function renderCoverage(id) {
+      const box = document.getElementById('lt-coverage');
+      const facts = document.getElementById('lt-coverage-facts');
+      const hist = document.getElementById('lt-coverage-history');
+      if (!box) return;
+      box.style.display = 'none';
+      const c = ovData && ovData.customers.find((x) => String(x.id) === String(id));
+      if (!c) return;
+      const st = c.status;
+      const b = BUCKET[st.bucket] || BUCKET.none;
+      facts.innerHTML = `
+        <div><div class="ltv-muted">Paid through</div><div class="fw-bold">${st.paidThrough ? fmtD(st.paidThrough) : '—'}</div></div>
+        <div><div class="ltv-muted">Next payment</div><div><span class="ltv-pill" style="${b.pill}">${whenText(st.days)}</span> <span class="ltv-muted">${st.nextDue ? 'due ' + fmtD(st.nextDue) : ''}</span></div></div>
+        <div><div class="ltv-muted">Renewal</div><div class="fw-bold">${st.nextAmountInc ? money(st.nextAmountInc) : '—'} <span class="ltv-muted fw-normal">${amountNote(st)}</span></div></div>`;
+      hist.textContent = '';
+      box.style.display = '';
+      try {
+        const r = await fetch(`/api/lt-reminders/customer/${id}`);
+        if (!r.ok) return;
+        const rows = (await r.json()).filter((x) => x.status === 'sent').slice(0, 3);
+        hist.textContent = rows.length
+          ? 'Reminders sent: ' + rows.map((x) => `${x.ruleLabel} (${nzDay(x.sent_at)})`).join(' · ')
+          : 'No reminders sent yet.';
+      } catch (_) { /* history is a convenience */ }
     }
 
     document.getElementById('btn-new-lt').addEventListener('click', async () => {
@@ -819,7 +919,7 @@
       if (!id) { showAlert('Save the customer first', 'warning'); return; }
       const em = (document.getElementById('lt-email').value || '').trim();
       if (!em) { showAlert('Add an email address first', 'warning'); return; }
-      const btn = path.includes('payment') ? document.getElementById('btn-email-lt-pay') : document.getElementById('btn-email-lt-rcpt');
+      const btn = document.getElementById('btn-email-lt-rcpt');
       if (btn) { btn.disabled = true; }
       try {
         const res = await fetch(`/api/email/longterm/${id}/${path}`, { method: 'POST' });
@@ -848,9 +948,11 @@
       w.document.write(html);
       w.document.close();
     }
-    document.getElementById('btn-preview-lt-pay').addEventListener('click', () => previewLtEmail('payment'));
+    document.getElementById('btn-request-lt').addEventListener('click', () => {
+      const id = document.getElementById('lt-id').value;
+      if (id) startRequest(id, document.getElementById('btn-request-lt'));
+    });
     document.getElementById('btn-preview-lt-rcpt').addEventListener('click', () => previewLtEmail('receipt'));
-    document.getElementById('btn-email-lt-pay').addEventListener('click', () => postLtEmail('payment-request'));
     document.getElementById('btn-email-lt-rcpt').addEventListener('click', () => postLtEmail('receipt'));
 
     document.getElementById('btn-add-lt-payment').addEventListener('click', async () => {

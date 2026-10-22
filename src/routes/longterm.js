@@ -12,6 +12,8 @@ const {
   isPlausibleDate,
 } = require('../utils/longtermProration');
 const { respreadBatch } = require('../utils/ltRespread');
+const ltReminders = require('../utils/ltReminders');
+const { businessDateYmd } = require('../utils/businessDate');
 const { logActivity, actorFromReq } = require('../utils/audit');
 const { withUppercaseFields } = require('../utils/textCase');
 const router = express.Router();
@@ -59,6 +61,61 @@ router.get('/', requireAuth, async (req, res) => {
       ORDER BY CAST(REPLACE(lt_number, 'LT', '') AS INTEGER)
     `).all(carparkId);
     res.json(customers.map(c => withRenewalStatus(c, today)));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/longterm/overview?status=active|archived
+// Everyone with their "paid through" date, next payment due, days left and
+// amount — worked out from the payments, so staff don't have to — plus the
+// summary cards and how many reminders are waiting for review.
+router.get('/overview', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const today = businessDateYmd();
+    const archived = String(req.query.status || 'active').toLowerCase() === 'archived';
+    // Make sure today's reminders exist before counting them.
+    if (!archived) await ltReminders.generateDrafts(db, { carparkId, todayYmd: today });
+
+    const all = await ltReminders.loadCustomersWithStatus(db, carparkId, today, { includeArchived: true });
+    const list = all.filter((x) => (archived ? Number(x.customer.active) === 0 : Number(x.customer.active) === 1));
+
+    const lastRem = await db.prepare(`
+      SELECT longterm_customer_id AS id, MAX(sent_at) AS sent_at FROM lt_reminders
+      WHERE carpark_id = ? AND status = 'sent' GROUP BY longterm_customer_id
+    `).all(carparkId);
+    const lastSent = new Map(lastRem.map((r) => [r.id, r.sent_at]));
+    const drafted = await db.prepare(`
+      SELECT longterm_customer_id AS id, kind FROM lt_reminders
+      WHERE carpark_id = ? AND status = 'drafted' AND (snoozed_until IS NULL OR snoozed_until <= ?)
+    `).all(carparkId, today);
+    const draftKind = new Map(drafted.map((r) => [r.id, r.kind]));
+
+    const customers = list.map(({ customer, status }) => ({
+      ...withRenewalStatus(customer, today),
+      key_number: customer.lt_key_slot || null,
+      key_in_yard: !!customer.lt_in_yard,
+      status,
+      lastReminderSentAt: lastSent.get(customer.id) || null,
+      draftKind: draftKind.get(customer.id) || null,
+    }));
+
+    const money = (n) => Math.round(n * 100) / 100;
+    const sumAmt = (xs) => money(xs.reduce((s, c) => s + (c.status.nextAmountInc || 0), 0));
+    const by = (b) => customers.filter((c) => c.status.bucket === b);
+    const next30 = customers.filter((c) => c.status.days != null && c.status.days >= 0 && c.status.days <= 30);
+    res.json({
+      today,
+      customers,
+      summary: {
+        overdue: { count: by('overdue').length, amount: sumAmt(by('overdue')) },
+        soon: { count: by('soon').length, amount: sumAmt(by('soon')) },
+        upcoming: { count: by('upcoming').length, amount: sumAmt(by('upcoming')) },
+        paid: { count: by('paid').length },
+        none: { count: by('none').length },
+        next30: { count: next30.length, amount: sumAmt(next30) },
+      },
+      draftCount: archived ? 0 : draftKind.size,
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

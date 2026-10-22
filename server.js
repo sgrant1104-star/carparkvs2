@@ -112,6 +112,7 @@ app.use('/api/invoices',  require('./src/routes/invoices'));
 app.use('/api/returns',   require('./src/routes/returns'));
 app.use('/api/customers', require('./src/routes/customers'));
 app.use('/api/longterm',  require('./src/routes/longterm'));
+app.use('/api/lt-reminders', require('./src/routes/ltReminders'));
 app.use('/api/accounts',  require('./src/routes/accounts'));
 app.use('/api/keybox',    require('./src/routes/keybox'));
 app.use('/api/reports',   require('./src/routes/reports'));
@@ -405,6 +406,21 @@ cron.schedule('15 0 * * *', async () => {
     await autoCancelOverdueBookings();
   } catch (err) {
     console.error('Auto-cancel bookings job error:', err);
+  }
+}, { timezone: 'Pacific/Auckland' });
+
+// ─── Scheduled job: draft today's long-term payment reminders ─────────────────
+// 7am NZ. Drafts whatever is due so it is waiting on the Reminders page for
+// staff to review; only sends by itself if the business has switched the mode
+// to automatic (default: ask first).
+cron.schedule('0 7 * * *', async () => {
+  try {
+    const { runDailyJob } = require('./src/utils/ltReminders');
+    const { businessDateYmd } = require('./src/utils/businessDate');
+    const r = await runDailyJob(require('./src/database').db, { carparkId: 1, todayYmd: businessDateYmd() });
+    console.log('[lt-reminders] daily job:', JSON.stringify(r));
+  } catch (err) {
+    console.error('Long-term reminders job error:', err);
   }
 }, { timezone: 'Pacific/Auckland' });
 
