@@ -89,6 +89,9 @@
     if (nomail) assert(/No email/.test(nomail.warning || ''), 'a customer with no email is flagged');
 
     const carpark = { name: 'BOI Car Storage Yard', bank_name: 'BNZ', bank_account_number: '00-0000-0000000-00' };
+    const cExp = (await R.loadCustomersWithStatus(db, cp, TODAY, { includeArchived: true })).find((x) => x.customer.id === idOld);
+    const mExp = R.buildReminderEmail({ carpark, customer: cExp.customer, status: cExp.status, kind: 'expired', months: 3, todayYmd: TODAY });
+    assert(mExp.coversFrom === TODAY && /23 October 2026 – 22 January 2027/.test(mExp.html), `a renewal offer to an ended contract starts today, not in the past (${mExp.coversFrom})`);
     const cOver = (await R.loadCustomersWithStatus(db, cp, TODAY)).find((x) => x.customer.id === idOver);
     const mOver = R.buildReminderEmail({ carpark, customer: cOver.customer, status: cOver.status, kind: 'overdue', months: 12, note: 'See you Friday <b>', todayYmd: TODAY });
     assert(/9 days overdue/.test(mOver.subject), `overdue subject says "9 days overdue" (${mOver.subject})`);

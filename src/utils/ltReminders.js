@@ -257,7 +257,9 @@ const dayWord = (n) => `${n} day${n === 1 ? '' : 's'}`;
 function buildReminderEmail({ carpark, customer, status, kind, months, note, todayYmd }) {
   const m = Number(months) || status.nextMonths || 1;
   const amt = amounts(status.lastTerm, m);
-  const from = status.nextDue || todayYmd;
+  // A renewal offer to an ended contract starts today — the period it would
+  // otherwise "cover" (from the last payment) has already gone.
+  const from = kind === 'expired' ? todayYmd : (status.nextDue || todayYmd);
   const to = addCalendarDaysYmd(addMonthsYmd(from, m), -1);
   const lt = customer.lt_number;
   const first = firstName(customer.name);
