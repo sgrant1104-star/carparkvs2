@@ -19,11 +19,11 @@ const router = express.Router();
 router.get('/credits/lookup', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
-    const { phone, first_name, last_name } = req.query;
-    if (!phone && !(first_name && last_name)) {
+    const { phone, first_name, last_name, rego } = req.query;
+    if (!phone && !(first_name && last_name) && !rego) {
       return res.json({ credits: [], totalAvailable: 0 });
     }
-    const result = await findAvailableCredit(db, { carparkId, phone, firstName: first_name, lastName: last_name });
+    const result = await findAvailableCredit(db, { carparkId, phone, firstName: first_name, lastName: last_name, rego });
     res.json(result);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -123,7 +123,7 @@ router.post('/:id/apply-credit', requireAuth, async (req, res) => {
   try {
     const carparkId = req.session.carparkId || 1;
     const { id } = req.params;
-    const { amount, phone, first_name, last_name } = req.body || {};
+    const { amount, phone, first_name, last_name, rego } = req.body || {};
     const amt = parseFloat(amount);
     if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'amount must be > 0' });
     const invoice = await db.prepare('SELECT id FROM invoices WHERE id = ? AND carpark_id = ?').get(id, carparkId);
@@ -131,7 +131,7 @@ router.post('/:id/apply-credit', requireAuth, async (req, res) => {
 
     const { userId, userName } = actorFromReq(req);
     const result = await applyCreditToInvoice(db, {
-      carparkId, invoiceId: id, amount: amt, phone, firstName: first_name, lastName: last_name, userId, userName,
+      carparkId, invoiceId: id, amount: amt, phone, firstName: first_name, lastName: last_name, rego, userId, userName,
     });
     if (result.applied <= 0) {
       return res.status(400).json({ error: 'No credit could be applied — invoice may already be fully covered, or no matching credit was found' });

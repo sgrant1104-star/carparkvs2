@@ -77,9 +77,10 @@ async function checkAndCreateEarlyReturnCredit(db, { carparkId, invoiceId, actua
   const reason = `Early return: booked ${bookedNights} night(s), picked up ${unusedNights} night(s) early (return date ${bookedReturn}, actual ${actual}).`;
 
   const result = await db.prepare(`
-    INSERT INTO customer_credits (carpark_id, phone, first_name, last_name, amount, source_invoice_id, reason, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'available')
-  `).run(carparkId, invoice.phone || null, invoice.first_name || null, invoice.last_name || null, creditAmount, invoiceId, reason);
+    INSERT INTO customer_credits (carpark_id, phone, first_name, last_name, rego, amount, source_invoice_id, reason, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'available')
+  `).run(carparkId, invoice.phone || null, invoice.first_name || null, invoice.last_name || null,
+    String(invoice.rego || '').trim().toUpperCase() || null, creditAmount, invoiceId, reason);
 
   await logActivity(db, {
     carparkId, tableName: 'customer_credits', recordId: result.lastInsertRowid, action: 'create',
@@ -95,7 +96,7 @@ async function checkAndCreateEarlyReturnCredit(db, { carparkId, invoiceId, actua
  * Find available (unused or partially-used) credit for a customer, matched
  * by phone first, then by exact first+last name if no phone match.
  */
-async function findAvailableCredit(db, { carparkId, phone, firstName, lastName }) {
+async function findAvailableCredit(db, { carparkId, phone, firstName, lastName, rego }) {
   const normPhone = normalizePhone(phone);
   let rows = [];
 
@@ -117,6 +118,26 @@ async function findAvailableCredit(db, { carparkId, phone, firstName, lastName }
     `).all(carparkId, firstName, lastName);
   }
 
+  // The vehicle is a third way to recognise a returning customer — and the
+  // only one for credits saved with no phone and no surname (a booking made
+  // under just a first name). Added to, not instead of, the phone/name
+  // matches, so a customer who comes back with a new phone still finds it.
+  // Credits made before the rego was stored on them use their source
+  // invoice's rego.
+  const normRego = String(rego || '').replace(/\s+/g, '').toUpperCase();
+  if (normRego) {
+    const byRego = await db.prepare(`
+      SELECT cc.* FROM customer_credits cc
+      LEFT JOIN invoices i ON i.id = cc.source_invoice_id
+      WHERE cc.carpark_id = ? AND cc.status != 'used'
+        AND REPLACE(UPPER(COALESCE(NULLIF(cc.rego, ''), i.rego, '')), ' ', '') = ?
+      ORDER BY cc.created_at ASC
+    `).all(carparkId, normRego);
+    const seen = new Set(rows.map(r => r.id));
+    for (const r of byRego) if (!seen.has(r.id)) rows.push(r);
+    rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  }
+
   const withRemaining = rows
     .map(r => ({ ...r, remaining: round2((parseFloat(r.amount) || 0) - (parseFloat(r.amount_used) || 0)) }))
     .filter(r => r.remaining > 0.01);
@@ -135,7 +156,7 @@ async function findAvailableCredit(db, { carparkId, phone, firstName, lastName }
  * invoice go into a nonsensical negative balance. Any excess simply stays
  * available on the customer's ledger for their next visit.
  */
-async function applyCreditToInvoice(db, { carparkId, invoiceId, amount, phone, firstName, lastName, userId = null, userName = null }) {
+async function applyCreditToInvoice(db, { carparkId, invoiceId, amount, phone, firstName, lastName, rego, userId = null, userName = null }) {
   const invoiceBefore = await db.prepare('SELECT total_price, credit_applied FROM invoices WHERE id = ? AND carpark_id = ?').get(invoiceId, carparkId);
   if (!invoiceBefore) return { applied: 0, creditsUsed: [] };
 
@@ -144,7 +165,7 @@ async function applyCreditToInvoice(db, { carparkId, invoiceId, amount, phone, f
   let remaining = startingAmount;
   if (remaining <= 0) return { applied: 0, creditsUsed: [] };
 
-  const { credits } = await findAvailableCredit(db, { carparkId, phone, firstName, lastName });
+  const { credits } = await findAvailableCredit(db, { carparkId, phone, firstName, lastName, rego });
   const creditsUsed = [];
 
   for (const credit of credits) {

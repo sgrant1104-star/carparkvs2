@@ -743,7 +743,8 @@ async function checkCustomerCredit() {
   const phone = document.getElementById('inv-phone').value.trim();
   const firstName = document.getElementById('inv-first-name').value.trim();
   const lastName = document.getElementById('inv-last-name').value.trim();
-  if (!phone && !(firstName && lastName)) {
+  const rego = document.getElementById('inv-rego').value.trim();
+  if (!phone && !(firstName && lastName) && !rego) {
     renderCreditDisplay(null);
     return;
   }
@@ -752,6 +753,7 @@ async function checkCustomerCredit() {
     if (phone) qs.set('phone', phone);
     if (firstName) qs.set('first_name', firstName);
     if (lastName) qs.set('last_name', lastName);
+    if (rego) qs.set('rego', rego);
     const res = await fetch(`/api/invoices/credits/lookup?${qs.toString()}`);
     if (!res.ok) return;
     availableCreditInfo = await res.json();
@@ -832,6 +834,8 @@ function applyAvailableCredit() {
 
 document.getElementById('inv-phone').addEventListener('blur', checkCustomerCredit);
 document.getElementById('inv-last-name').addEventListener('blur', checkCustomerCredit);
+document.getElementById('inv-first-name').addEventListener('blur', checkCustomerCredit);
+document.getElementById('inv-rego').addEventListener('blur', checkCustomerCredit);
 document.getElementById('inv-total-price').addEventListener('input', updateAmountDueHint);
 document.getElementById('inv-total-price').addEventListener('change', updateAmountDueHint);
 
@@ -1298,7 +1302,7 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               amount: newlyStagedCredit,
-              phone: payload.phone, first_name: payload.first_name, last_name: payload.last_name,
+              phone: payload.phone, first_name: payload.first_name, last_name: payload.last_name, rego: payload.rego,
             })
           });
           if (creditRes.ok) {

@@ -570,6 +570,9 @@ async function initializeDatabase() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   try { x(`CREATE INDEX IF NOT EXISTS customer_credits_phone ON customer_credits (carpark_id, phone, status)`); } catch (_) {}
+  // The vehicle the credit came from — a third way to recognise the customer
+  // when they have no phone or surname on file.
+  try { x(`ALTER TABLE customer_credits ADD COLUMN rego TEXT`); } catch (_) {}
   try { x(`CREATE INDEX IF NOT EXISTS customer_credits_name ON customer_credits (carpark_id, last_name, first_name, status)`); } catch (_) {}
   try { x(`CREATE INDEX IF NOT EXISTS customer_credits_source ON customer_credits (source_invoice_id)`); } catch (_) {}
 
