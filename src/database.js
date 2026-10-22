@@ -719,6 +719,31 @@ async function initializeDatabase() {
     await db.prepare("UPDATE key_box SET status = 'in_use', invoice_id = 3, longterm_customer_id = NULL, holder_type = 'invoice' WHERE carpark_id = 1 AND key_number = 22").run();
   }
 
+  // ── One-time data correction (2026-10-22) ───────────────────────────────
+  // LT8's 12-month $1650 prepay was spread Mar 2026 - Feb 2027 by the July
+  // backfill (counted from the day cash arrived) although the contract and
+  // payment cover 14 Oct 2025 - 13 Oct 2026. Re-spread from the contract
+  // start. Guarded on the exact customer, contract date, batch and current
+  // first month, so it is a no-op once applied or if anything has changed.
+  try {
+    const lt8 = await db.prepare(`SELECT id FROM longterm_customers WHERE lt_number = 'LT8' AND carpark_id = 1 AND substr(contract_start_date, 1, 10) = '2025-10-14'`).get();
+    if (lt8) {
+      const batchId = 'ltb-1783578819970-1gvrsw';
+      const b = await db.prepare(`SELECT COUNT(*) n, MIN(substr(payment_date, 1, 10)) first FROM longterm_payments WHERE longterm_customer_id = ? AND payment_batch_id = ?`).get(lt8.id, batchId);
+      if (b && Number(b.n) === 12 && b.first === '2026-03-31') {
+        const { respreadBatch } = require('./utils/ltRespread');
+        await respreadBatch(db, {
+          carparkId: 1, ltId: lt8.id, batchId, coversFrom: '2025-10-14', months: 12,
+          userName: 'Correction (Claude, per Shane 2026-10-22)',
+          notes: 'LT8 prepay re-spread from contract start 14 Oct 2025 (was counted from cash date 31 Mar 2026)',
+        });
+        console.log('[DB] One-time correction: LT8 prepay re-spread from 2025-10-14 over 12 months');
+      }
+    }
+  } catch (err) {
+    console.error('[DB] One-time LT8 re-spread failed:', err.message);
+  }
+
   saveToDisk();
   console.log('[DB] Database ready');
 }

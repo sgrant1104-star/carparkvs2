@@ -178,6 +178,17 @@
                   <option value="Other">Other</option>
                 </select>
               </div>
+              <div class="col-md-3">
+                <label class="form-label">Months covered</label>
+                <input type="number" min="1" max="12" step="1" class="form-control" id="lt-payment-months">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Covers from</label>
+                <input type="date" class="form-control" id="lt-payment-covers-from">
+              </div>
+              <div class="col-md-5 d-flex align-items-end">
+                <div class="small text-muted pb-2" id="lt-payment-coverage-note">—</div>
+              </div>
               <div class="col-md-8">
                 <label class="form-label">Transaction reference (optional)</label>
                 <input type="text" class="form-control" id="lt-payment-reference" placeholder="e.g. transfer reference">
@@ -469,6 +480,44 @@
       if (ks && sel.value) ks.value = 'in_yard';
     }
 
+    // ── Which months a payment counts toward ──────────────────────────────
+    // The form shows (and lets staff change) the number of months and the
+    // month coverage starts. Defaults come from the server: months from the
+    // amount, start after whatever earlier payments already cover. Until
+    // staff touch a field it follows the suggestion; once touched it's theirs.
+    let monthsTouched = false;
+    let coversTouched = false;
+    const fmtMonth = (ym) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-NZ', { month: 'short', year: 'numeric' });
+
+    async function refreshCoverage() {
+      const id = document.getElementById('lt-id').value;
+      const noteEl = document.getElementById('lt-payment-coverage-note');
+      const monthsEl = document.getElementById('lt-payment-months');
+      const coversEl = document.getElementById('lt-payment-covers-from');
+      if (!id || !noteEl) return;
+      const amtInc = parseFloat(document.getElementById('lt-payment-amount').value);
+      if (!Number.isFinite(amtInc) || amtInc <= 0) { noteEl.textContent = '—'; return; }
+      const qs = new URLSearchParams({
+        amount_ex_gst: toExGst(amtInc),
+        cash_date: document.getElementById('lt-payment-date').value || localDateStr(new Date()),
+      });
+      if (monthsTouched && monthsEl.value) qs.set('months', monthsEl.value);
+      if (coversTouched && coversEl.value) qs.set('covers_from', coversEl.value);
+      try {
+        const res = await fetch(`/api/longterm/${id}/payments/suggest?${qs.toString()}`);
+        if (!res.ok) return;
+        const s = await res.json();
+        if (!monthsTouched) monthsEl.value = s.months;
+        if (!coversTouched) coversEl.value = s.coversFrom;
+        const list = s.monthsList || [];
+        const range = list.length > 1 ? `${fmtMonth(list[0])} – ${fmtMonth(list[list.length - 1])}` : fmtMonth(list[0]);
+        const per = list.length > 1 ? ` (${list.length} × $${(amtInc / list.length).toFixed(2)})` : '';
+        noteEl.innerHTML = `Counted in <strong>${range}</strong>${per}` +
+          (s.overlapMonths && s.overlapMonths.length
+            ? `<div class="text-danger">Already covered by an earlier payment: ${s.overlapMonths.map(fmtMonth).join(', ')}</div>` : '');
+      } catch (_) { /* preview only */ }
+    }
+
     function setLtPaymentDefaults() {
       const dateEl = document.getElementById('lt-payment-date');
       if (dateEl) dateEl.value = localDateStr(new Date());
@@ -481,7 +530,23 @@
 
       const refEl = document.getElementById('lt-payment-reference');
       if (refEl) refEl.value = '';
+
+      monthsTouched = false;
+      coversTouched = false;
+      const monthsEl = document.getElementById('lt-payment-months');
+      const coversEl = document.getElementById('lt-payment-covers-from');
+      if (monthsEl) monthsEl.value = '';
+      if (coversEl) coversEl.value = '';
+      const noteEl = document.getElementById('lt-payment-coverage-note');
+      if (noteEl) noteEl.textContent = '—';
+      refreshCoverage();
     }
+
+    ['lt-payment-amount', 'lt-payment-date'].forEach((fid) => {
+      document.getElementById(fid).addEventListener('input', debounce(refreshCoverage, 250));
+    });
+    document.getElementById('lt-payment-months').addEventListener('input', () => { monthsTouched = true; refreshCoverage(); });
+    document.getElementById('lt-payment-covers-from').addEventListener('input', () => { coversTouched = true; refreshCoverage(); });
 
     function updateLtPaymentButtons() {
       const id = document.getElementById('lt-id').value;
@@ -516,6 +581,7 @@
             : `Paid: $${toInc(paid).toFixed(2)} (inc GST)`;
 
         const display = data.displayPayments || data.payments || [];
+        refreshCoverage();
         if (display.length === 0) {
           tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No payments recorded</td></tr>';
           return;
@@ -532,7 +598,7 @@
             ? `<div class="text-muted" style="font-size:0.7rem;">Spread: ${p.allocations.map(a => `${String(a.payment_date).slice(0, 7)} $${toInc(a.amount_ex_gst).toFixed(2)}`).join(' · ')}</div>`
             : '';
           return `
-            <tr class="${prorated ? 'table-info' : ''}" data-row-id="${p.id}" data-prorated="${prorated ? '1' : '0'}" data-amount-ex-gst="${Number(p.amount_ex_gst || 0)}" data-date="${d}" data-method="${escapeAttr(p.payment_method || '')}" data-reference="${escapeAttr(p.transaction_reference || '')}">
+            <tr class="${prorated ? 'table-info' : ''}" data-row-id="${p.id}" data-prorated="${prorated ? '1' : '0'}" data-is-batch="${/^ltb-/.test(String(p.id)) ? '1' : '0'}" data-covers-from="${(p.allocations || []).map(a => String(a.payment_date).slice(0, 10)).sort()[0] || ''}" data-months="${p.months || 1}" data-amount-ex-gst="${Number(p.amount_ex_gst || 0)}" data-date="${d}" data-method="${escapeAttr(p.payment_method || '')}" data-reference="${escapeAttr(p.transaction_reference || '')}">
               <td class="small lt-pay-view-date">${d}${prorated ? `<br><span class="badge bg-info text-dark">${p.months} mo</span>` : ''}</td>
               <td class="small fw-bold lt-pay-view-amount">$${toInc(p.amount_ex_gst).toFixed(2)}${prorated ? ' <span class="text-muted fw-normal">total</span>' : ''}</td>
               <td class="small lt-pay-view-method">${p.payment_method || ''}</td>
@@ -567,8 +633,16 @@
               : `<input type="number" step="0.01" class="form-control form-control-sm lt-edit-amount" value="${toInc(amountExGst).toFixed(2)}">`;
             tr.querySelector('.lt-pay-view-method').innerHTML =
               `<select class="form-select form-select-sm lt-edit-method">${methodOptionsHtml(currentMethod)}</select>`;
+            const isBatch = tr.dataset.isBatch === '1';
+            const origCovers = tr.dataset.coversFrom || '';
+            const origMonths = parseInt(tr.dataset.months, 10) || 1;
             tr.querySelector('.lt-pay-view-ref').innerHTML =
-              `<input type="text" class="form-control form-control-sm lt-edit-ref" value="${escapeAttr(currentRef)}">`;
+              `<input type="text" class="form-control form-control-sm lt-edit-ref" value="${escapeAttr(currentRef)}">` +
+              (isBatch ? `
+                <div class="small text-muted mt-1">Counted from
+                  <input type="date" class="form-control form-control-sm d-inline-block lt-edit-covers" style="width:150px" value="${origCovers}">
+                  for <input type="number" min="1" max="12" class="form-control form-control-sm d-inline-block lt-edit-months" style="width:60px" value="${origMonths}"> mo
+                </div>` : '');
             tr.querySelector('.lt-pay-view-actions').innerHTML = `
               <button type="button" class="btn btn-sm btn-success btn-save-lt-payment" title="Save"><i class="bi bi-check-lg"></i></button>
               <button type="button" class="btn btn-sm btn-outline-secondary btn-cancel-lt-payment" title="Cancel"><i class="bi bi-x-lg"></i></button>
@@ -597,6 +671,27 @@
               if (!res.ok) { showAlert(result.error || 'Could not save changes', 'danger'); return; }
               const ps = document.getElementById('lt-payment-status');
               if (ps && result.payment_status) ps.value = result.payment_status;
+
+              // Moving which months the payment counts toward (same total).
+              if (isBatch) {
+                const newCovers = tr.querySelector('.lt-edit-covers').value;
+                const newMonths = parseInt(tr.querySelector('.lt-edit-months').value, 10) || origMonths;
+                if (newCovers && (newCovers !== origCovers || newMonths !== origMonths)) {
+                  const respread = (allow) => fetch(`/api/longterm/${ltId}/payments/batch/${encodeURIComponent(btn.dataset.id)}/respread`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ covers_from: newCovers, months: newMonths, allow_overlap: allow || undefined }),
+                  });
+                  let rr = await respread(false);
+                  let rd = await rr.json().catch(() => ({}));
+                  if (rr.status === 409 && rd.overlapMonths) {
+                    if (!confirm(`${rd.error}\n\nCounting it twice overstates those months. Do it anyway?`)) { await loadLtPayments(ltId); return; }
+                    rr = await respread(true);
+                    rd = await rr.json().catch(() => ({}));
+                  }
+                  if (!rr.ok) { showAlert(rd.error || 'Could not change the months', 'danger'); return; }
+                }
+              }
               showAlert('Payment updated', 'success');
               await loadLtPayments(ltId);
             });
@@ -770,18 +865,29 @@
       const paymentMethod = (document.getElementById('lt-payment-method').value || 'Other').trim();
       const transactionReference = (document.getElementById('lt-payment-reference').value || '').trim();
 
-      const res = await fetch(`/api/longterm/${id}/payments`, {
+      const monthsVal = parseInt(document.getElementById('lt-payment-months').value, 10);
+      const coversVal = document.getElementById('lt-payment-covers-from').value;
+      const send = (allowOverlap) => fetch(`/api/longterm/${id}/payments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           payment_date: paymentDate,
           amount_ex_gst: amt,
           payment_method: paymentMethod,
-          transaction_reference: transactionReference || null
+          transaction_reference: transactionReference || null,
+          months: Number.isFinite(monthsVal) ? monthsVal : undefined,
+          covers_from: coversVal || undefined,
+          allow_overlap: allowOverlap || undefined,
         })
       });
 
-      const data = await res.json().catch(() => ({}));
+      let res = await send(false);
+      let data = await res.json().catch(() => ({}));
+      if (res.status === 409 && data.overlapMonths) {
+        if (!confirm(`${data.error}\n\nCounting it twice overstates those months. Record it anyway?`)) return;
+        res = await send(true);
+        data = await res.json().catch(() => ({}));
+      }
       if (!res.ok) {
         showAlert(data.error || 'Failed to record payment', 'danger', 7000);
         return;

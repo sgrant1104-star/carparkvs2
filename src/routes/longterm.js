@@ -3,10 +3,15 @@ const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { parseKeyNumber } = require('../utils/keyBoxSync');
 const {
-  inferContractMonths,
   buildProratedPayments,
   collapsePaymentsForDisplay,
+  suggestMonthsForPayment,
+  suggestCoverageStart,
+  coverageMonths,
+  findOverlapMonths,
+  isPlausibleDate,
 } = require('../utils/longtermProration');
+const { respreadBatch } = require('../utils/ltRespread');
 const { logActivity, actorFromReq } = require('../utils/audit');
 const { withUppercaseFields } = require('../utils/textCase');
 const router = express.Router();
@@ -153,6 +158,76 @@ router.get('/:id/payments', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/longterm/:id/payments/suggest?amount_ex_gst=&cash_date=&months=&covers_from=
+// What a payment of this size would cover, for the Add Payment form's preview
+// (and its defaults). Read-only.
+router.get('/:id/payments/suggest', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const ltId = parseInt(req.params.id, 10);
+    const lt = await db.prepare(`
+      SELECT id, contract_amount, contract_start_date, expiry_date FROM longterm_customers WHERE id = ? AND carpark_id = ?
+    `).get(ltId, carparkId);
+    if (!lt) return res.status(404).json({ error: 'Long-term customer not found' });
+
+    const amt = parseFloat(req.query.amount_ex_gst);
+    const cashDate = req.query.cash_date ? String(req.query.cash_date).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const existingRows = await db.prepare(`
+      SELECT payment_date, payment_batch_id FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ?
+    `).all(carparkId, ltId);
+
+    const reqMonths = parseInt(req.query.months, 10);
+    const months = Number.isFinite(reqMonths) && reqMonths >= 1 ? Math.min(12, reqMonths) : suggestMonthsForPayment(lt, amt);
+    const reqStart = req.query.covers_from ? String(req.query.covers_from).slice(0, 10) : null;
+    const coversFrom = reqStart && isPlausibleDate(reqStart)
+      ? reqStart
+      : (months === 1 ? cashDate : suggestCoverageStart(lt, existingRows, cashDate));
+    const monthsList = coverageMonths(coversFrom, months);
+    res.json({
+      months, coversFrom, monthsList,
+      overlapMonths: findOverlapMonths(existingRows, monthsList),
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/longterm/:id/payments/batch/:batchId/respread { covers_from, months? }
+// Re-spreads an existing payment over different months (same total). For
+// payments that were counted against the wrong months.
+router.put('/:id/payments/batch/:batchId/respread', requireAuth, async (req, res) => {
+  try {
+    const carparkId = req.session.carparkId || 1;
+    const ltId = parseInt(req.params.id, 10);
+    const batchId = req.params.batchId;
+    if (!Number.isFinite(ltId) || !batchId) return res.status(400).json({ error: 'Invalid id' });
+    const coversFrom = String(req.body?.covers_from || '').slice(0, 10);
+    if (!isPlausibleDate(coversFrom)) return res.status(400).json({ error: 'A valid "covers from" date is required' });
+
+    const current = await db.prepare(`
+      SELECT payment_date, payment_batch_id FROM longterm_payments
+      WHERE carpark_id = ? AND longterm_customer_id = ? AND payment_batch_id = ?
+    `).all(carparkId, ltId, batchId);
+    if (current.length === 0) return res.status(404).json({ error: 'Payment not found' });
+    const months = Math.max(1, Math.min(12, parseInt(req.body?.months, 10) || current.length));
+
+    const others = await db.prepare(`
+      SELECT payment_date, payment_batch_id FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ?
+    `).all(carparkId, ltId);
+    const overlap = findOverlapMonths(others, coverageMonths(coversFrom, months), batchId);
+    if (overlap.length && !req.body?.allow_overlap) {
+      return res.status(409).json({
+        error: `That would count this payment in ${overlap.join(', ')}, which another payment already covers.`,
+        overlapMonths: overlap,
+      });
+    }
+
+    const { userId, userName } = actorFromReq(req);
+    const result = await respreadBatch(db, { carparkId, ltId, batchId, coversFrom, months, userId, userName });
+    res.json({ success: true, months: result.months, spread: result.rows.map(r => ({ date: r.payment_date, amount: r.amount_ex_gst })) });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 // POST /api/longterm/:id/payments
 router.post('/:id/payments', requireAuth, async (req, res) => {
   try {
@@ -185,10 +260,31 @@ router.post('/:id/payments', requireAuth, async (req, res) => {
     const txRef = transaction_reference ? String(transaction_reference).trim() : null;
     const payNotes = notes ? String(notes).trim() : null;
 
-    const months = inferContractMonths(lt, amt);
-    const startDate = lt.contract_start_date
-      ? String(lt.contract_start_date).slice(0, 10)
-      : pDate;
+    // Months covered and where coverage starts are explicit (the form shows
+    // and lets staff change both); the defaults only apply if they're omitted.
+    // A new payment starts after whatever earlier payments already cover — it
+    // used to always start at the contract start, so renewals and monthly
+    // payments landed on months that had already been counted.
+    const existingRows = await db.prepare(`
+      SELECT payment_date, payment_batch_id FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ?
+    `).all(carparkId, ltId);
+    const reqMonths = parseInt(req.body?.months, 10);
+    const months = Number.isFinite(reqMonths) && reqMonths >= 1
+      ? Math.min(12, reqMonths)
+      : suggestMonthsForPayment(lt, amt);
+    const reqStart = req.body?.covers_from ? String(req.body.covers_from).slice(0, 10) : null;
+    const startDate = reqStart && isPlausibleDate(reqStart)
+      ? reqStart
+      : (months === 1 ? pDate : suggestCoverageStart(lt, existingRows, pDate));
+
+    const overlap = findOverlapMonths(existingRows, coverageMonths(startDate, months));
+    if (overlap.length && !req.body?.allow_overlap) {
+      return res.status(409).json({
+        error: `This payment would be counted in ${overlap.join(', ')}, which an earlier payment already covers.`,
+        overlapMonths: overlap, coversFrom: startDate, months,
+      });
+    }
+
     const proration = buildProratedPayments({
       totalAmountExGst: amt,
       cashReceivedDate: pDate,
@@ -197,6 +293,7 @@ router.post('/:id/payments', requireAuth, async (req, res) => {
       baseNotes: payNotes,
       transactionReference: txRef,
     });
+    if (months === 1) proration.rows[0].payment_date = startDate;
 
     const insert = db.prepare(`
       INSERT INTO longterm_payments

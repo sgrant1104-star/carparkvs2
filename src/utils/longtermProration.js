@@ -161,6 +161,63 @@ function inferContractMonths(customer, amountExGst) {
   return 1;
 }
 
+/**
+ * Default number of months a NEW payment covers. Deliberately only looks at
+ * the payment itself: an amount matching a known term total, or the
+ * customer's own contract amount (when it spans 2-12 months). It no longer
+ * assumes every payment covers the customer's whole contract — a normal
+ * monthly payment against a 3-month contract used to be spread over the
+ * contract span. Staff can always set the months explicitly.
+ */
+function suggestMonthsForPayment(customer, amountExGst) {
+  const amt = Number(amountExGst);
+  if (!Number.isFinite(amt) || amt <= 0) return 1;
+  for (const [m, total] of Object.entries(LT_TERM_TOTALS)) {
+    if (parseInt(m, 10) > 1 && nearEqual(amt, total)) return parseInt(m, 10);
+  }
+  const start = customer.contract_start_date ? String(customer.contract_start_date).slice(0, 10) : null;
+  const expiry = customer.expiry_date ? String(customer.expiry_date).slice(0, 10) : null;
+  const contractAmt = customer.contract_amount != null && customer.contract_amount !== ''
+    ? parseFloat(customer.contract_amount) : null;
+  if (contractAmt != null && nearEqual(amt, contractAmt) && start && expiry) {
+    const m = monthsBetweenYmd(start, expiry);
+    if (m >= 2 && m <= 12) return m;
+  }
+  return 1;
+}
+
+/**
+ * Where a new multi-month payment's coverage should start: the month after
+ * whatever this customer's earlier payments already cover, or the contract
+ * start for their first payment. (It used to always start at the contract
+ * start, so every renewal landed on months an earlier payment had already
+ * counted.)
+ */
+function suggestCoverageStart(customer, existingRows, fallbackYmd) {
+  const contractStart = customer.contract_start_date ? String(customer.contract_start_date).slice(0, 10) : null;
+  const dates = (existingRows || []).map(r => String(r.payment_date || '').slice(0, 10)).filter(Boolean).sort();
+  const last = dates[dates.length - 1];
+  if (last && (!contractStart || last >= contractStart)) return addMonthsYmd(last, 1);
+  return contractStart || String(fallbackYmd).slice(0, 10);
+}
+
+/** The YYYY-MM months a spread of `months` starting at `startYmd` recognises. */
+function coverageMonths(startYmd, months) {
+  const out = [];
+  for (let i = 0; i < Math.max(1, months); i++) out.push(addMonthsYmd(startYmd, i).slice(0, 7));
+  return out;
+}
+
+/** Months in `newMonths` that an existing payment (other than excludeBatchId) already recognises. */
+function findOverlapMonths(existingRows, newMonths, excludeBatchId = null) {
+  const taken = new Set();
+  for (const r of existingRows || []) {
+    if (excludeBatchId && r.payment_batch_id === excludeBatchId) continue;
+    taken.add(String(r.payment_date || '').slice(0, 7));
+  }
+  return newMonths.filter(m => taken.has(m));
+}
+
 /** Split total into N parts; remainder on last slice (2 dp). */
 function splitAmount(total, parts) {
   if (parts <= 1) return [Math.round(total * 100) / 100];
@@ -279,6 +336,10 @@ module.exports = {
   inferContractMonths,
   inferMonthsFromAmountOnly,
   inferMonthsForBackfill,
+  suggestMonthsForPayment,
+  suggestCoverageStart,
+  coverageMonths,
+  findOverlapMonths,
   isPlausibleDate,
   splitAmount,
   buildProratedPayments,
