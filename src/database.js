@@ -719,47 +719,6 @@ async function initializeDatabase() {
     await db.prepare("UPDATE key_box SET status = 'in_use', invoice_id = 3, longterm_customer_id = NULL, holder_type = 'invoice' WHERE carpark_id = 1 AND key_number = 22").run();
   }
 
-  // ── One-time data corrections (2026-10-22) ──────────────────────────────
-  // LT8's 12-month $1650 prepay was spread Mar 2026 - Feb 2027 by the July
-  // backfill (counted from the day cash arrived) although the contract and
-  // payment cover 14 Oct 2025 - 13 Oct 2026.
-  // The same fix for the other customers found by the audit, as confirmed
-  // by Shane: LT25's single-term payment starts at its contract start
-  // (1 Dec 2025); LT7's October payment is one month (Oct); LT19's 9 Oct
-  // payment covers Oct-Dec; LT20's 8 Sep 5-month payment covers Aug-Dec;
-  // LT9's 25 Jun payment covers Jul-Sep. Each is guarded on the customer,
-  // the batch, its row count and its CURRENT first month, so it only acts on
-  // exactly the rows that were audited and is a no-op once applied.
-  try {
-    const { respreadBatch } = require('./utils/ltRespread');
-    const fixes = [
-      { lt: 'LT8',  prefix: 'ltb-1783578819970-', rows: 12, first: '2026-03-31', coversFrom: '2025-10-14', months: 12, why: 'counted from cash date 31 Mar 2026; contract starts 14 Oct 2025' },
-      { lt: 'LT25', prefix: 'ltb-1783579743892-', rows: 12, first: '2026-05-01', coversFrom: '2025-12-01', months: 12, why: 'counted from cash date 1 May 2026; single term starts 1 Dec 2025' },
-      { lt: 'LT7',  prefix: 'ltb-1791153589136-', rows: 2,  first: '2026-08-01', coversFrom: '2026-10-01', months: 1,  why: 'October monthly payment was spread over Aug-Sep, already paid' },
-      { lt: 'LT19', prefix: 'ltb-1791509043213-', rows: 3,  first: '2026-07-04', coversFrom: '2026-10-04', months: 3,  why: '9 Oct payment overlapped Jul-Sep; belongs to Oct-Dec' },
-      { lt: 'LT20', prefix: 'ltb-1788841079487-', rows: 5,  first: '2026-05-01', coversFrom: '2026-08-01', months: 5,  why: '8 Sep 5-month payment overlapped May-Jul; belongs to Aug-Dec' },
-      { lt: 'LT9',  prefix: 'ltb-1783578820282-', rows: 3,  first: '2026-06-25', coversFrom: '2026-07-01', months: 3,  why: '25 Jun payment overlapped June; belongs to Jul-Sep' },
-    ];
-    for (const f of fixes) {
-      const cust = await db.prepare(`SELECT id FROM longterm_customers WHERE lt_number = ? AND carpark_id = 1`).get(f.lt);
-      if (!cust) continue;
-      const b = await db.prepare(`
-        SELECT payment_batch_id AS id, COUNT(*) AS n, MIN(substr(payment_date, 1, 10)) AS first
-        FROM longterm_payments WHERE longterm_customer_id = ? AND payment_batch_id LIKE ? GROUP BY payment_batch_id
-      `).get(cust.id, `${f.prefix}%`);
-      if (b && Number(b.n) === f.rows && b.first === f.first) {
-        await respreadBatch(db, {
-          carparkId: 1, ltId: cust.id, batchId: b.id, coversFrom: f.coversFrom, months: f.months,
-          userName: 'Correction (Claude, per Shane 2026-10-22)',
-          notes: `${f.lt} payment re-spread from ${f.coversFrom} over ${f.months} month(s): ${f.why}`,
-        });
-        console.log(`[DB] One-time correction: ${f.lt} payment re-spread from ${f.coversFrom} over ${f.months} month(s)`);
-      }
-    }
-  } catch (err) {
-    console.error('[DB] One-time long-term re-spread failed:', err.message);
-  }
-
   saveToDisk();
   console.log('[DB] Database ready');
 }
