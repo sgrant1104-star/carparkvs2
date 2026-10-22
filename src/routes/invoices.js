@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const { releaseKey, syncKeyBoxForPickedUp, checkKeyConflict } = require('../utils/keyBoxSync');
 const { heldByOther, releaseToken } = require('../utils/keyHolds');
 const { withUppercaseFields } = require('../utils/textCase');
+const { wordSearchClause } = require('../utils/searchTerms');
 const { businessDateYmd } = require('../utils/businessDate');
 const { logActivity, actorFromReq } = require('../utils/audit');
 const { checkAndCreateEarlyReturnCredit, createManualCredit, findAvailableCredit, applyCreditToInvoice, releaseCreditForInvoice } = require('../utils/customerCredit');
@@ -48,9 +49,9 @@ router.get('/credits', requireAuth, async (req, res) => {
     `;
     const params = [carparkId];
     if (search) {
-      query += ` AND (cc.first_name LIKE ? OR cc.last_name LIKE ? OR cc.phone LIKE ?)`;
-      const s = `%${search}%`;
-      params.push(s, s, s);
+      const w = wordSearchClause(['cc.first_name', 'cc.last_name', 'cc.phone', 'CAST(si.invoice_number AS TEXT)'], search);
+      query += w.sql;
+      params.push(...w.params);
     }
     query += ' ORDER BY cc.created_at DESC';
 
@@ -335,9 +336,9 @@ router.get('/', requireAuth, async (req, res) => {
     if (status)      { query += ' AND i.paid_status = ?';   params.push(status); }
     if (customer_id) { query += ' AND i.customer_id = ?';   params.push(customer_id); }
     if (search) {
-      query += ` AND (i.invoice_number LIKE ? OR i.last_name LIKE ? OR i.first_name LIKE ? OR i.rego LIKE ? OR i.phone LIKE ?)`;
-      const s = `%${search}%`;
-      params.push(s, s, s, s, s);
+      const w = wordSearchClause(['i.invoice_number', 'i.last_name', 'i.first_name', 'i.rego', 'i.phone', 'ac.company_name'], search);
+      query += w.sql;
+      params.push(...w.params);
     }
     const lim = Math.min(500, Math.max(1, parseInt(limit, 10) || 200));
     const off = Math.max(0, parseInt(offset, 10) || 0);

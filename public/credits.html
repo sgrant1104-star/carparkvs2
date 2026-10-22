@@ -153,8 +153,8 @@
           <td>${c.status === 'used'
             ? '<span class="badge bg-secondary">Used</span>'
             : '<span class="badge bg-success">Available</span>'}</td>
-          <td class="small">${c.source_invoice_number ? `#${c.source_invoice_number}` : '—'}</td>
-          <td class="small">${c.used_invoice_number ? `#${c.used_invoice_number}` : '—'}</td>
+          <td class="small">${c.source_invoice_number ? `<a href="/invoice.html?id=${c.source_invoice_id}" title="Open the invoice this credit came from">#${c.source_invoice_number}</a>` : '—'}</td>
+          <td class="small">${c.used_invoice_number ? `<a href="/invoice.html?id=${c.used_invoice_id}" title="Open the invoice this credit was used on">#${c.used_invoice_number}</a>` : '—'}</td>
           <td class="small text-muted" style="max-width:280px;">${escapeHtml(c.reason || '')}</td>
           <td class="small">${fmtDate(c.created_at)}</td>
           <td><button class="btn btn-action btn-outline-danger btn-remove-credit" data-id="${c.id}" data-name="${escapeHtml(c.first_name || '')} ${escapeHtml(c.last_name || '')}" data-amount="${formatCurrency(c.amount)}">Remove</button></td>

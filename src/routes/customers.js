@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { withUppercaseFields } = require('../utils/textCase');
+const { wordSearchClause } = require('../utils/searchTerms');
 const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
@@ -11,9 +12,9 @@ router.get('/', requireAuth, async (req, res) => {
     let query = 'SELECT * FROM customers WHERE carpark_id = ? AND active = 1';
     const params = [carparkId];
     if (search) {
-      query += ` AND (last_name LIKE ? OR first_name LIKE ? OR phone LIKE ? OR email LIKE ?)`;
-      const s = `%${search}%`;
-      params.push(s, s, s, s);
+      const w = wordSearchClause(['last_name', 'first_name', 'phone', 'email'], search);
+      query += w.sql;
+      params.push(...w.params);
     }
     query += ' ORDER BY last_name, first_name LIMIT 50';
     const customers = await db.prepare(query).all(...params);
