@@ -8,6 +8,8 @@ const { methodLabel, invoiceStatusBanner, displayRego } = require('../utils/invo
 const { billingAddressLines } = require('../utils/billingAddress');
 const { getTransporter, emailFrom, smtpErrorMessage, SMTP_MISSING_MSG } = require('../utils/mailer');
 const { markInvoicesEmailed } = require('../utils/accountReminders');
+const ltReminders = require('../utils/ltReminders');
+const { businessDateYmd } = require('../utils/businessDate');
 const router = express.Router();
 
 const LONGTERM_MONTHLY_DEFAULT = 200.00;
@@ -787,6 +789,24 @@ function longTermEmailHTML(carpark, lt, kind, amountDueExGst = null, paidSummary
 </body></html>`;
 }
 
+/**
+ * The long-term payment request, built from what has actually been paid —
+ * the same email the Long Term review screen produces (days left or overdue,
+ * the renewal amount, the dates it covers). It used to ask for the contract
+ * balance, which is $0.00 for anyone who prepaid, with a due date taken from
+ * today's date.
+ */
+async function buildLtPaymentRequest(carparkId, lt) {
+  const payments = await db.prepare('SELECT id, payment_date, amount_ex_gst, payment_batch_id FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ?').all(carparkId, lt.id);
+  const today = businessDateYmd();
+  const status = ltReminders.computeStatus(lt, payments, today);
+  if (!status.nextDue) return { error: 'Add a contract start date or record a payment first, so the due date can be worked out.' };
+  const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
+  const kind = status.expired ? 'expired' : status.days < 0 ? 'overdue' : status.days === 0 ? 'due' : 'reminder';
+  const email = ltReminders.buildReminderEmail({ carpark, customer: lt, status, kind, months: undefined, note: null, todayYmd: today });
+  return { email, status, kind };
+}
+
 // POST /api/email/longterm/:id/payment-request
 router.post('/longterm/:id/payment-request', requireAuth, async (req, res) => {
   try {
@@ -798,13 +818,15 @@ router.post('/longterm/:id/payment-request', requireAuth, async (req, res) => {
     const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
     const transporter = getTransporter();
     if (!transporter) return res.status(503).json({ error: SMTP_MISSING_MSG });
-    const amountDueExGst = await longTermAmountDueExGst(db, carparkId, lt);
-    await transporter.sendMail({
-      from: emailFrom(),
-      to: emailTo,
-      subject: `${carpark ? carpark.name : 'Car Storage'} – Payment due (${lt.lt_number})`,
-      html: longTermEmailHTML(carpark || {}, lt, 'payment', amountDueExGst),
-    });
+    const built = await buildLtPaymentRequest(carparkId, lt);
+    if (built.error) return res.status(400).json({ error: built.error });
+    await transporter.sendMail({ from: emailFrom(), to: emailTo, subject: built.email.subject, html: built.email.html });
+    // keep the customer's history accurate
+    await db.prepare(`
+      INSERT INTO lt_reminders (carpark_id, longterm_customer_id, rule_key, cycle_due_date, kind, status, months, sent_at, sent_by)
+      VALUES (?, ?, 'manual', ?, ?, 'sent', ?, CURRENT_TIMESTAMP, 'staff')
+      ON CONFLICT(longterm_customer_id, cycle_due_date, rule_key) DO UPDATE SET status = 'sent', sent_at = CURRENT_TIMESTAMP, sent_by = 'staff'
+    `).run(carparkId, lt.id, built.status.nextDue, built.kind, built.email.months);
     res.json({ success: true, message: `Payment request sent to ${emailTo}` });
   } catch (err) {
     const msg = /timed?out/i.test(String(err.message || ''))
@@ -822,7 +844,13 @@ router.get('/longterm/:id/preview', requireAuth, async (req, res) => {
     const lt = await db.prepare('SELECT * FROM longterm_customers WHERE id = ? AND carpark_id = ?').get(req.params.id, carparkId);
     if (!lt) return res.status(404).json({ error: 'Long-term customer not found' });
     const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
-    const amountDueExGst = kind === 'payment' ? await longTermAmountDueExGst(db, carparkId, lt) : null;
+    if (kind === 'payment') {
+      const built = await buildLtPaymentRequest(carparkId, lt);
+      if (built.error) return res.status(400).json({ error: built.error });
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(built.email.html);
+    }
+    const amountDueExGst = null;
     const paidSummary = await longTermPaidSummary(db, carparkId, lt);
     if (kind === 'receipt' && paidSummary.paidExGst <= 0) {
       return res.status(400).json({ error: 'No payment has been recorded for this customer yet — add a payment first.' });
