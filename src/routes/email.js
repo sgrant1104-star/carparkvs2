@@ -638,6 +638,16 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
         ${banner.note ? `<div style="font-size:12px;font-weight:normal;margin-top:4px;">${banner.note}</div>` : ''}
       </div>`;
 
+    // Bank details only while something is still to be paid (unpaid, on account, or internet banking to be confirmed).
+    const bankHtml = (banner.kind !== 'paid' && carpark && carpark.bank_account_number) ? `
+      <div style="margin-top:16px;padding:12px 14px;background:#f2f7fa;border-radius:6px;font-size:13px;line-height:1.6;">
+        <strong>Pay by internet banking</strong><br>
+        ${carpark.bank_name ? `Bank: ${escHtml(carpark.bank_name)}<br>` : ''}
+        ${carpark.bank_account_name ? `Account name: ${escHtml(carpark.bank_account_name)}<br>` : ''}
+        Account number: ${escHtml(carpark.bank_account_number)}<br>
+        Reference: ${escHtml(carpark.bank_reference || `Invoice #${invoice.invoice_number}`)}
+      </div>` : '';
+
     const transporterEarly = getTransporter();
     if (!transporterEarly) return res.status(503).json({ error: SMTP_MISSING_MSG });
 
@@ -688,6 +698,7 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     <table style="width:100%;border-collapse:collapse;">
       ${paymentRows}
     </table>
+    ${bankHtml}
 
     ${invoice.notes ? `<p style="margin-top:16px;padding:10px;background:#fff3cd;border-radius:4px;font-size:13px;"><strong>Notes:</strong> ${escHtml(invoice.notes)}</p>` : ''}
 

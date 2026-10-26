@@ -466,6 +466,7 @@ async function loadInvoice(invoiceNumber, invoiceId) {
     : `<span class="badge bg-success">SAVED</span>`;
   const _sbt2 = document.getElementById('save-btn-text');
   if (_sbt2) _sbt2.textContent = 'UPDATE INVOICE';
+  updateIbHint();
   document.getElementById('btn-print-receipt').disabled = false;
   document.getElementById('btn-email-receipt').disabled = false;
   document.getElementById('btn-void-invoice').disabled = !!inv.void;
@@ -1045,6 +1046,17 @@ document.getElementById('inv-picked-up').addEventListener('change', async (e) =>
     console.warn('Key release failed:', err);
   }
 });
+
+/** Reminds staff that internet banking only counts once it has been confirmed. */
+function updateIbHint() {
+  const el = document.getElementById('ib-hint');
+  if (!el) return;
+  const a = document.getElementById('inv-paid-status').value;
+  const b = (document.getElementById('inv-paid-status-2') || {}).value;
+  el.classList.toggle('d-none', !(a === 'Internet Banking' || b === 'Internet Banking'));
+}
+document.getElementById('inv-paid-status').addEventListener('change', updateIbHint);
+if (document.getElementById('inv-paid-status-2')) document.getElementById('inv-paid-status-2').addEventListener('change', updateIbHint);
 
 // Auto-fill payment when status selected
 document.getElementById('inv-paid-status').addEventListener('change', () => {

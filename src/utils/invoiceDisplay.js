@@ -55,13 +55,17 @@ function invoiceStatusBanner(invoice) {
     };
   }
 
+  // Internet banking is only counted as received once staff have seen it in
+  // the bank statement — say that plainly instead of "pending confirmation".
   if (st.pending > 0.01) {
     return {
       kind: 'pending',
       label: st.owing > 0.01
-        ? `PENDING ${currency(st.pending)} + DUE ${currency(st.owing)}`
-        : `PAYMENT PENDING CONFIRMATION: ${currency(st.pending)}`,
-      color: '#d68910', note: null, ...st, onAcc, ibPending,
+        ? `${currency(ibPending)} TO BE CONFIRMED + ${currency(st.owing)} DUE`
+        : `INTERNET BANKING ${currency(ibPending)}: TO BE CONFIRMED`,
+      color: '#d68910',
+      note: 'We will confirm this once the payment shows in our account. Please use the reference below.',
+      ...st, onAcc, ibPending,
     };
   }
 

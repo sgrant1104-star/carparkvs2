@@ -93,7 +93,7 @@ function drawInvoicePdf(doc, invoice, carpark) {
   doc.text(`Payment: ${methodLabel(invoice.paid_status)} — ${currency(invoice.payment_amount)}`);
   if (invoice.payment_amount_2 > 0) doc.text(`2nd payment: ${methodLabel(invoice.paid_status_2)} — ${currency(invoice.payment_amount_2)}`);
   if (banner.ibPending > 0.01) {
-    doc.font('Helvetica-Bold').fillColor('#d68910').text(`Awaiting confirmation: ${currency(banner.ibPending)}`);
+    doc.font('Helvetica-Bold').fillColor('#d68910').text(`Internet banking, to be confirmed: ${currency(banner.ibPending)}`);
     doc.font('Helvetica').fillColor('#333');
   }
   if (owing > 0.01) {
@@ -102,8 +102,9 @@ function drawInvoicePdf(doc, invoice, carpark) {
   }
   line();
 
-  if (carpark.bank_account_number) {
-    doc.fontSize(9).font('Helvetica-Bold').fillColor('#2c3e50').text('Pay via online banking');
+  // Only when there is still something to pay — a paid receipt shouldn't invite another payment.
+  if (banner.kind !== 'paid' && carpark.bank_account_number) {
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#2c3e50').text('Pay by internet banking');
     doc.font('Helvetica').fillColor('#333');
     if (carpark.bank_name) doc.text(`Bank: ${carpark.bank_name}`);
     if (carpark.bank_account_name) doc.text(`Account name: ${carpark.bank_account_name}`);
