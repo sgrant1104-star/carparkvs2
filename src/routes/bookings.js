@@ -3,6 +3,8 @@ const { db } = require('../database');
 const { requireCustomerAuth } = require('../middleware/customerAuth');
 const { calculateShortStayPrice } = require('../utils/pricing');
 const { getAccountInvoicesWithOutstanding } = require('../utils/paymentAllocation');
+const accountHold = require('../utils/accountHold');
+const { businessDateYmd } = require('../utils/businessDate');
 const { notifyAdminNewBooking, notifyCustomerBookingSubmitted, notifyAdminBookingCancelledByCustomer } = require('../utils/bookingEmails');
 const router = express.Router();
 
@@ -115,6 +117,8 @@ router.get('/account-lookup', requireCustomerAuth, async (req, res) => {
       recordFailure(key);
       return res.status(404).json({ error: 'Account number not recognized — check the number or contact us' });
     }
+    const held = await accountHold.blockFor(db, { carparkId, account, todayYmd: businessDateYmd() });
+    if (held) return res.status(403).json({ error: held.customerMessage, accountOnHold: true });
 
     const invoices = await getAccountInvoicesWithOutstanding(db, { carparkId, accountCustomerId: account.id });
     const outstandingBalance = Math.round(invoices.reduce((s, i) => s + i.outstanding_amount, 0) * 100) / 100;
@@ -143,7 +147,7 @@ router.get('/estimate-price', requireCustomerAuth, async (req, res) => {
     let accountCustomerId = null;
     if (req.query.accountNumber) {
       const account = await resolveAccountByNumber(carparkId, req.query.accountNumber);
-      if (account) accountCustomerId = account.id;
+      if (account && !(await accountHold.blockFor(db, { carparkId, account, todayYmd: businessDateYmd() }))) accountCustomerId = account.id;
     }
     const result = await calculateShortStayPrice(db, { carparkId, nights: req.query.nights, accountCustomerId });
     res.json({ nights: result.nights, dailyRate: result.dailyRate, total: result.total });
@@ -191,6 +195,8 @@ router.post('/', requireCustomerAuth, async (req, res) => {
     if (wantsAccount) {
       const account = await resolveAccountByNumber(carparkId, req.body?.accountNumber);
       if (!account) return res.status(400).json({ error: 'Account number not recognized — check the number or contact us' });
+      const held = await accountHold.blockFor(db, { carparkId, account, todayYmd: businessDateYmd() });
+      if (held) return res.status(403).json({ error: held.customerMessage, accountOnHold: true });
       accountCustomerId = account.id;
       accountCompanyName = account.company_name;
     }

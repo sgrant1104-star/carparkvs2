@@ -7,6 +7,7 @@ const { logActivity, actorFromReq } = require('../utils/audit');
 const { generateAccountNumber } = require('../utils/accountNumber');
 const { withUppercaseFields } = require('../utils/textCase');
 const accountReminders = require('../utils/accountReminders');
+const accountHold = require('../utils/accountHold');
 const router = express.Router();
 
 router.get('/', requireAuth, async (req, res) => {
@@ -42,8 +43,11 @@ router.get('/', requireAuth, async (req, res) => {
       const monthOut = Math.round(monthInvoices.reduce((s, i) => s + i.outstanding_amount, 0) * 100) / 100;
       const billed = parseFloat(a.month_billed) || 0;
 
+      const holdOd = accountHold.overdueOf(invoicesWithOutstanding, today);
       rows.push({
         ...a,
+        hold_active: !!a.on_hold && holdOd.amount > 0.01,
+        hold_overdue: holdOd.amount,
         month_outstanding: monthOut,
         month_payment_status: billed <= 0 ? '—' : (monthOut <= 0.01 ? 'Paid' : 'Outstanding'),
         balance_outstanding: balanceOut,
@@ -76,12 +80,22 @@ router.get('/overview', requireAuth, async (req, res) => {
       WHERE carpark_id = ? AND status = 'sent' AND kind IN ('early','overdue','statement') GROUP BY account_customer_id
     `).all(carparkId)).map((r) => [r.id, r.sent_at]));
 
-    const accounts = rows.map(({ account, unpaid, status }) => ({
+    const accounts = [];
+    for (const { account, unpaid, status } of rows) {
+      let onHold = !!account.on_hold;
+      if (onHold && status.overdueAmt <= 0.01) {
+        await accountHold.holdState(db, { carparkId, account, todayYmd: today }); // lifts a stale hold
+        onHold = false;
+      }
+      accounts.push({
+      onHold, hold: onHold ? { reason: account.hold_reason || '', heldAt: account.held_at || null, heldBy: account.held_by || '' } : null,
       id: account.id, company_name: account.company_name, account_number: account.account_number || '',
       contact_name: account.contact_name || '', email: accountReminders.billingEmail(account),
       status, invoices: unpaid,
       draftKinds: draftByAccount.get(account.id) || [], lastReminderSentAt: lastSent.get(account.id) || null,
-    })).sort((a, b) => (a.status.days == null ? 99999 : a.status.days) - (b.status.days == null ? 99999 : b.status.days));
+      });
+    }
+    accounts.sort((a, b) => (a.status.days == null ? 99999 : a.status.days) - (b.status.days == null ? 99999 : b.status.days));
 
     const sum = (list, pick) => Math.round(list.reduce((t, x) => t + pick(x), 0) * 100) / 100;
     const overdueAccts = accounts.filter((a) => a.status.overdueAmt > 0);
@@ -294,6 +308,24 @@ router.post('/', requireAuth, async (req, res) => {
     await logActivity(db, { carparkId, tableName: 'account_customers', recordId: account.id, action: 'create', before: null, after: account, userId, userName });
     res.status(201).json(account);
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/accounts/:id/hold { reason } — no new on-account bookings until what is overdue is paid
+router.post('/:id/hold', requireAuth, async (req, res) => {
+  try {
+    const { userId, userName } = actorFromReq(req);
+    const r = await accountHold.setHold(db, { carparkId: req.session.carparkId || 1, accountId: parseInt(req.params.id, 10), reason: req.body && req.body.reason, todayYmd: businessDateYmd(), userId, userName: userName || 'staff' });
+    res.json({ success: true, ...r });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// POST /api/accounts/:id/release — lift the hold now
+router.post('/:id/release', requireAuth, async (req, res) => {
+  try {
+    const { userId, userName } = actorFromReq(req);
+    await accountHold.releaseHold(db, { carparkId: req.session.carparkId || 1, accountId: parseInt(req.params.id, 10), userId, userName: userName || 'staff' });
+    res.json({ success: true });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 router.put('/:id', requireAuth, async (req, res) => {

@@ -614,6 +614,24 @@ async function initializeDatabase() {
     }
   }
 
+  // Put an account "on hold" (no new on-account bookings) until it has paid what is overdue.
+  try { x(`ALTER TABLE account_customers ADD COLUMN on_hold INTEGER DEFAULT 0`); } catch (_) {}
+  try { x(`ALTER TABLE account_customers ADD COLUMN hold_reason TEXT`); } catch (_) {}
+  try { x(`ALTER TABLE account_customers ADD COLUMN held_at DATETIME`); } catch (_) {}
+  try { x(`ALTER TABLE account_customers ADD COLUMN held_by TEXT`); } catch (_) {}
+
+  // ONE-TIME TIDY (2026-10-27): two account records that were never used (no
+  // invoices, payments or bookings) and duplicate an account that is in use.
+  // Guarded by name and by "never used", so it can only ever touch these two.
+  try {
+    for (const [id, name] of [[16, 'Far North District Council'], [17, 'Top Energy Limited']]) {
+      x(`UPDATE account_customers SET active = 0 WHERE id = ${id} AND company_name = '${name}' AND active = 1
+         AND NOT EXISTS (SELECT 1 FROM invoices WHERE account_customer_id = ${id})
+         AND NOT EXISTS (SELECT 1 FROM account_payments WHERE account_customer_id = ${id})
+         AND NOT EXISTS (SELECT 1 FROM bookings WHERE account_customer_id = ${id})`);
+    }
+  } catch (_) {}
+
   // On-account emails (invoice / statement / reminder / overdue notice) are
   // drafted by the system and reviewed by staff before they go. One row per
   // account, kind and cycle so the same one is never drafted twice.

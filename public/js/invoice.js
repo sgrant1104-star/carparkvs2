@@ -168,7 +168,7 @@ async function initInvoicePage() {
     accountCustomers.forEach(a => {
       const opt = document.createElement('option');
       opt.value = a.id;
-      opt.textContent = a.company_name;
+      opt.textContent = a.company_name + (a.hold_active ? ' — ON HOLD' : '');
       acctSel.appendChild(opt);
     });
   }
@@ -663,8 +663,22 @@ function applyInvoiceFromPreviousVisit(inv, options = {}) {
   checkCustomerCredit();
 }
 
+/** An account on hold can't take a new on-account booking (the server enforces it too). */
+function accountOnHoldBlock(acctOrId) {
+  const id = acctOrId && typeof acctOrId === 'object' ? acctOrId.id : acctOrId;
+  const a = accountCustomers.find((x) => String(x.id) === String(id));
+  if (!a || !a.hold_active) return false;
+  showAlert(`${a.company_name} is ON HOLD — they have $${Number(a.hold_overdue || 0).toFixed(2)} overdue. Take payment now instead, or record their payment on the Accounts page first.`, 'danger', 10000);
+  const sel = document.getElementById('inv-account-customer');
+  if (String(sel.value) === String(a.id)) sel.value = '';
+  setPricingModeLabel('manual');
+  clearOnAccountPaymentLock();
+  return true;
+}
+
 function applyAccountCustomerPricingFromLookup(acct) {
   if (!acct) return;
+  if (!currentInvoiceId && accountOnHoldBlock(acct)) return;
   const billing = (acct.billing_email || acct.email || '').trim();
   if (billing) document.getElementById('inv-email').value = billing;
   const d = acct.discount_percent || 0;
@@ -857,6 +871,7 @@ document.getElementById('inv-account-customer').addEventListener('change', () =>
     return;
   }
   const id = document.getElementById('inv-account-customer').value;
+  if (accountOnHoldBlock(id)) return;
   const acct = accountCustomers.find(a => String(a.id) === String(id));
   if (acct) {
     const billing = (acct.billing_email || acct.email || '').trim();

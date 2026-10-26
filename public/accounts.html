@@ -313,6 +313,7 @@
         ['all', 'Everyone', all.length],
         ['overdue', 'Overdue', all.filter((a) => a.status.bucket === 'overdue').length],
         ['tosend', 'Invoices to send', all.filter((a) => a.status.unsentCount > 0).length],
+        ['hold', 'On hold', all.filter((a) => a.onHold).length],
         ['upcoming', 'Not yet due', all.filter((a) => a.status.bucket === 'upcoming').length],
         ['paid', 'Paid up', all.filter((a) => a.status.bucket === 'paid').length],
       ];
@@ -322,7 +323,7 @@
 
       const words = (document.getElementById('ac-search').value || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
       const shown = all.filter((a) => {
-        if (ovFilter === 'tosend' ? a.status.unsentCount === 0 : (ovFilter !== 'all' && a.status.bucket !== ovFilter)) return false;
+        if (ovFilter === 'tosend' ? a.status.unsentCount === 0 : ovFilter === 'hold' ? !a.onHold : (ovFilter !== 'all' && a.status.bucket !== ovFilter)) return false;
         if (!words.length) return true;
         const hay = `${a.company_name} ${a.account_number} ${a.contact_name} ${a.invoices.map((i) => i.number).join(' ')}`.toLowerCase();
         return words.every((w) => hay.includes(w));
@@ -366,11 +367,16 @@
                 <td class="num"><button type="button" class="acv-toggle" data-act="payinv" data-id="${a.id}" data-inv="${i.id}" data-amt="${i.outstanding}">Record payment</button></td>
               </tr>`).join('')}</tbody>
             </table>
+            <div class="d-flex flex-wrap align-items-center gap-3 mt-3">
+              ${a.onHold
+                ? `<span class="acv-muted"><strong style="color:#9b1c11">On hold</strong> since ${nzDay(a.hold.heldAt)}${a.hold.heldBy ? ' by ' + escapeHtml(a.hold.heldBy) : ''}${a.hold.reason ? ' — ' + escapeHtml(a.hold.reason) : ''}. No new on-account bookings until the overdue amount is paid.</span><button type="button" class="btn btn-sm btn-outline-secondary" data-act="release" data-id="${a.id}">Release hold</button>`
+                : (st.overdueAmt > 0 ? `<button type="button" class="btn btn-sm btn-outline-danger" data-act="hold" data-id="${a.id}">Put on hold…</button><span class="acv-muted">Stops new on-account bookings until what is overdue has been paid.</span>` : '')}
+            </div>
           </div>` : '';
         return `
           <div class="acv-row">
             <div>
-              <button type="button" class="acv-name" data-act="view" data-id="${a.id}">${escapeHtml(a.company_name)}</button>
+              <button type="button" class="acv-name" data-act="view" data-id="${a.id}">${escapeHtml(a.company_name)}</button>${a.onHold ? ' <span class="acv-pill" style="background:#9b1c11;color:#ffffff;margin-left:6px" title="No new on-account bookings until the overdue amount is paid">ON HOLD</span>' : ''}
               <div class="mt-1"><span class="acv-badge">${escapeHtml(a.account_number || '—')}</span> <span class="acv-muted">&nbsp;${a.email ? escapeHtml(a.contact_name) : '<span class="text-warning-emphasis fw-semibold">No billing email</span>'}</span></div>
             </div>
             <div>
@@ -404,6 +410,25 @@
       grid.querySelectorAll('[data-act="pay"]').forEach((el) => el.addEventListener('click', () => {
         const a = accountFor(el);
         if (a) showAccountDetail(a.id, a.company_name, { pay: true });
+      }));
+      grid.querySelectorAll('[data-act="hold"]').forEach((el) => el.addEventListener('click', async () => {
+        const a = accountFor(el);
+        if (!a) return;
+        const reason = prompt(`Put ${a.company_name} on hold?\n\nNo new on-account bookings can be made for them until the overdue ${money(a.status.overdueAmt)} is paid.\n\nReason (optional):`, '');
+        if (reason === null) return;
+        const r = await fetch(`/api/accounts/${a.id}/hold`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { showAlert(d.error || 'Could not put on hold', 'danger', 7000); return; }
+        showAlert(`${a.company_name} is now on hold`, 'warning');
+        await loadAccounts();
+      }));
+      grid.querySelectorAll('[data-act="release"]').forEach((el) => el.addEventListener('click', async () => {
+        const a = accountFor(el);
+        if (!a || !confirm(`Release the hold on ${a.company_name}? They'll be able to book on account again.`)) return;
+        const r = await fetch(`/api/accounts/${a.id}/release`, { method: 'POST' });
+        if (!r.ok) { const d = await r.json().catch(() => ({})); showAlert(d.error || 'Could not release', 'danger'); return; }
+        showAlert(`Hold on ${a.company_name} released`, 'success');
+        await loadAccounts();
       }));
       grid.querySelectorAll('[data-act="payinv"]').forEach((el) => el.addEventListener('click', () => {
         const a = accountFor(el);
@@ -475,7 +500,8 @@
 
     async function showAccountDetail(id, name, opts = {}) {
       currentAccountId = id;
-      document.getElementById('detail-company-name').textContent = name;
+      const heldAcct = ovData && ovData.accounts.find((x) => String(x.id) === String(id));
+      document.getElementById('detail-company-name').textContent = name + (heldAcct && heldAcct.onHold ? '  (ON HOLD)' : '');
       document.getElementById('account-detail').classList.remove('d-none');
       if (!opts.pay) document.getElementById('account-detail').scrollIntoView({ behavior: 'smooth' });
       await loadStatement();

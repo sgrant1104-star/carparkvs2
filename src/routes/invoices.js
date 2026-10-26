@@ -11,6 +11,7 @@ const { checkAndCreateEarlyReturnCredit, createManualCredit, findAvailableCredit
 const { deallocateInvoice } = require('../utils/paymentAllocation');
 const { streamInvoicePdf } = require('../utils/invoicePdf');
 const { calculateShortStayPrice } = require('../utils/pricing');
+const accountHold = require('../utils/accountHold');
 const router = express.Router();
 
 // GET /api/invoices/credits/lookup?phone=&first_name=&last_name=
@@ -385,6 +386,11 @@ router.post('/', requireAuth, async (req, res) => {
     const existing = await db.prepare('SELECT id FROM invoices WHERE invoice_number = ? AND carpark_id = ?').get(invoice_number, carparkId);
     if (existing) return res.status(400).json({ error: 'Invoice number already exists' });
 
+    if (account_customer_id) {
+      const hold = await accountHold.blockFor(db, { carparkId, accountId: account_customer_id, todayYmd: businessDateYmd() });
+      if (hold) return res.status(409).json({ error: hold.staffMessage, accountOnHold: true });
+    }
+
     const finalPickedUp = picked_up || 'Car In Yard';
 
     // A key can't physically be in two cars at once — block the save instead
@@ -457,6 +463,12 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     const existing = await db.prepare('SELECT * FROM invoices WHERE id = ? AND carpark_id = ?').get(id, carparkId);
     if (!existing) return res.status(404).json({ error: 'Invoice not found' });
+
+    // Only a NEW link to an account is blocked — invoices already on the account can still be edited.
+    if (account_customer_id && String(account_customer_id) !== String(existing.account_customer_id || '')) {
+      const hold = await accountHold.blockFor(db, { carparkId, accountId: account_customer_id, todayYmd: businessDateYmd() });
+      if (hold) return res.status(409).json({ error: hold.staffMessage, accountOnHold: true });
+    }
 
     const finalPickedUp = picked_up || 'Car In Yard';
 
