@@ -379,6 +379,11 @@ async function loadInvoice(invoiceNumber, invoiceId) {
   document.getElementById('inv-first-name').value = inv.first_name || '';
   document.getElementById('inv-phone').value = inv.phone || '';
   document.getElementById('inv-email').value = inv.email || '';
+  if (!document.getElementById('inv-email').value && inv.account_customer_id) {
+    const acctForEmail = accountCustomers.find((a) => String(a.id) === String(inv.account_customer_id));
+    const billingForEmail = acctForEmail ? String(acctForEmail.billing_email || acctForEmail.email || '').trim() : '';
+    if (billingForEmail) document.getElementById('inv-email').value = billingForEmail;
+  }
   document.getElementById('inv-notes').value = inv.notes || '';
   document.getElementById('inv-flight-info').value = inv.flight_info || '';
   document.getElementById('inv-flight-type').value = inv.flight_type || 'Standard - On Flight';
@@ -521,7 +526,19 @@ function syncReturnDateFromNights() {
   loadFlightsForDate(document.getElementById('inv-return-date').value);
 }
 
+/** On-account bookings are INVOICED (nothing has been paid yet); everything else gets a receipt. */
+function updateReceiptWording() {
+  const sel = document.getElementById('inv-account-customer');
+  const word = sel && sel.value ? 'Invoice' : 'Receipt';
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  set('print-receipt-label', 'Print ' + word);
+  set('email-receipt-label', 'Email ' + word);
+  set('receipt-type-label', word + ' Type');
+  set('receipt-type-email-opt', 'Email ' + word);
+}
+
 function setOnAccountPaymentLock(reasonLabel, silent) {
+  updateReceiptWording();
   paymentLockReason = reasonLabel || 'On Account';
   const paidStatus = document.getElementById('inv-paid-status');
   const splitToggle = document.getElementById('split-payment-toggle');
@@ -544,6 +561,7 @@ function setOnAccountPaymentLock(reasonLabel, silent) {
 }
 
 function clearOnAccountPaymentLock() {
+  updateReceiptWording();
   paymentLockReason = '';
   setLongTermPricingMode(false);
   const paidStatus = document.getElementById('inv-paid-status');
@@ -631,7 +649,8 @@ function applyInvoiceFromPreviousVisit(inv, options = {}) {
   setField('inv-last-name', inv.last_name);
   setField('inv-first-name', inv.first_name);
   setField('inv-phone', inv.phone);
-  setField('inv-email', inv.email);
+  // An on-account booking is billed to the account's email — a previous visit's address must not replace it.
+  if (!document.getElementById('inv-account-customer').value) setField('inv-email', inv.email);
   if (inv.flight_info != null && String(inv.flight_info).trim() !== '') {
     const el = document.getElementById('inv-flight-info');
     if (el && (!mergeOnlyMissing || !String(el.value || '').trim())) el.value = inv.flight_info;
@@ -651,7 +670,8 @@ function applyInvoiceFromPreviousVisit(inv, options = {}) {
   }
   const alertText = inv.customer_alert || inv.customer_alert_stored;
   if (alertText) setCustomerAlertText(alertText);
-  if (!skipAccount && inv.account_customer_id) {
+  // Never swap an account staff have already chosen for the one on a previous visit.
+  if (!skipAccount && inv.account_customer_id && !document.getElementById('inv-account-customer').value) {
     document.getElementById('inv-account-customer').value = String(inv.account_customer_id);
     const acct = accountCustomers.find(a => String(a.id) === String(inv.account_customer_id));
     if (acct) applyAccountCustomerPricingFromLookup(acct);
@@ -879,6 +899,7 @@ document.getElementById('inv-account-customer').addEventListener('change', () =>
   }
   setPricingModeLabel('account-rate-card');
   setOnAccountPaymentLock('On Account', true);
+  updateReceiptWording();
 });
 
 // ─── Event listeners ──────────────────────────────────────────────────────────
@@ -1400,7 +1421,8 @@ document.getElementById('btn-print-receipt').addEventListener('click', () => {
 document.getElementById('btn-email-receipt').addEventListener('click', async () => {
   if (!currentInvoiceId) return;
   const email = document.getElementById('inv-email').value;
-  if (!email) { showAlert('No email address on this invoice – please enter one and save first.', 'warning'); return; }
+  const onAccount = !!document.getElementById('inv-account-customer').value;
+  if (!email && !onAccount) { showAlert('No email address on this invoice – please enter one and save first.', 'warning'); return; }
 
   const btn = document.getElementById('btn-email-receipt');
   btn.disabled = true;
@@ -1410,7 +1432,7 @@ document.getElementById('btn-email-receipt').addEventListener('click', async () 
     const res = await fetch(`/api/email/receipt/${currentInvoiceId}`, { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
-      showAlert(`✅ Receipt sent to ${escapeHtml(email)}`, 'success');
+      showAlert(`✅ ${escapeHtml(data.message || 'Sent')}`, 'success');
     } else {
       showAlert('Failed to send receipt: ' + (data.error || 'Unknown error'), 'danger');
     }
@@ -1418,7 +1440,7 @@ document.getElementById('btn-email-receipt').addEventListener('click', async () 
     showAlert('Error sending receipt: ' + err.message, 'danger');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-envelope me-1"></i> Email Receipt';
+    btn.innerHTML = `<i class="bi bi-envelope me-1"></i> <span id="email-receipt-label">Email ${document.getElementById('inv-account-customer').value ? 'Invoice' : 'Receipt'}</span>`;
   }
 });
 

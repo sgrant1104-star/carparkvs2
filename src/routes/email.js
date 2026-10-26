@@ -7,7 +7,7 @@ const { buildInvoicePdfBuffer } = require('../utils/invoicePdf');
 const { methodLabel, invoiceStatusBanner, displayRego } = require('../utils/invoiceDisplay');
 const { billingAddressLines } = require('../utils/billingAddress');
 const { getTransporter, emailFrom, smtpErrorMessage, SMTP_MISSING_MSG } = require('../utils/mailer');
-const { markInvoicesEmailed } = require('../utils/accountReminders');
+const { markInvoicesEmailed, invoiceDueYmd } = require('../utils/accountReminders');
 const ltReminders = require('../utils/ltReminders');
 const { businessDateYmd } = require('../utils/businessDate');
 const router = express.Router();
@@ -579,15 +579,20 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
   const carparkId = req.session.carparkId || 1;
   try {
     const invoice = await db.prepare(`
-      SELECT i.*, ac.company_name as account_name, ac.billing_address as account_billing_address
+      SELECT i.*, ac.company_name as account_name, ac.billing_address as account_billing_address,
+             ac.billing_email as account_billing_email, ac.email as account_email
       FROM invoices i
       LEFT JOIN account_customers ac ON ac.id = i.account_customer_id
       WHERE i.id = ? AND i.carpark_id = ?
     `).get(invoiceId, carparkId);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
-    const emailTo = invoice.email;
-    if (!emailTo) return res.status(400).json({ error: 'No email address on this invoice' });
+    // On-account bookings are invoiced to the account's billing email (the traveller's
+    // address on the booking is only a fallback); everyone else gets a receipt.
+    const isAccount = !!invoice.account_customer_id;
+    const docWord = isAccount ? 'Invoice' : 'Receipt';
+    const emailTo = String((isAccount ? (invoice.account_billing_email || invoice.account_email || invoice.email) : invoice.email) || '').trim();
+    if (!emailTo) return res.status(400).json({ error: isAccount ? 'No billing email on this account or invoice — add one on the Accounts page' : 'No email address on this invoice' });
 
     const carpark = await db.prepare('SELECT * FROM carparks WHERE id = ?').get(carparkId);
     const ltMatch = invoice.rego
@@ -644,7 +649,7 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     <p style="margin:4px 0 0;font-size:13px;opacity:.8;">${carpark ? carpark.address || '' : ''}</p>
   </div>
   <div style="background:#f8f9fa;border:1px solid #dee2e6;border-top:none;padding:20px;border-radius:0 0 8px 8px;">
-    <h2 style="color:#2c3e50;margin-top:0;">Receipt / Invoice #${invoice.invoice_number}</h2>
+    <h2 style="color:#2c3e50;margin-top:0;">${isAccount ? 'Invoice' : 'Receipt / Invoice'} #${invoice.invoice_number}</h2>
 
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
       ${billToLines.length ? `<tr><td style="padding:5px 0;width:140px;color:#666;vertical-align:top;">Bill to</td>
@@ -661,6 +666,8 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
           <td style="padding:5px 0;">${fmt(invoice.return_date)}${invoice.return_time ? ' at ' + invoice.return_time : ''}</td></tr>
       <tr><td style="padding:5px 0;color:#666;">Stay</td>
           <td style="padding:5px 0;">${invoice.stay_nights || 0} night(s)</td></tr>
+      ${isAccount ? `<tr><td style="padding:5px 0;color:#666;">Payment due</td>
+          <td style="padding:5px 0;font-weight:bold;">${fmtYmd(invoiceDueYmd(invoice.date_in))}</td></tr>` : ''}
       ${invoice.flight_info ? `<tr><td style="padding:5px 0;color:#666;">Flight</td>
           <td style="padding:5px 0;">${invoice.flight_info} (${invoice.flight_type || ''})</td></tr>` : ''}
     </table>
@@ -698,7 +705,7 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     const attachments = [];
     try {
       const pdfBuf = await buildInvoicePdfBuffer(invoice, carpark || {});
-      attachments.push({ filename: `Receipt-${invoice.invoice_number}.pdf`, content: pdfBuf });
+      attachments.push({ filename: `${docWord}-${invoice.invoice_number}.pdf`, content: pdfBuf });
     } catch (pdfErr) {
       console.error(`[email receipt] Failed to build PDF for invoice #${invoice.invoice_number}:`, pdfErr.message);
     }
@@ -706,13 +713,13 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     await transporterEarly.sendMail({
       from: emailFrom(),
       to: emailTo,
-      subject: `Receipt – ${carpark ? carpark.name : 'Car Storage'} – Invoice #${invoice.invoice_number}`,
+      subject: `${docWord} – ${carpark ? carpark.name : 'Car Storage'} – Invoice #${invoice.invoice_number}`,
       html,
       attachments,
     });
 
     if (invoice.account_customer_id) await markInvoicesEmailed(db, [invoice.id], { to: emailTo, by: 'invoice email' });
-    res.json({ success: true, message: `Receipt sent to ${emailTo}` });
+    res.json({ success: true, to: emailTo, message: `${docWord} sent to ${emailTo}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

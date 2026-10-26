@@ -19,7 +19,7 @@ function drawInvoicePdf(doc, invoice, carpark) {
   doc.y = 100;
 
   doc.fillColor('#2c3e50').fontSize(11).font('Helvetica-Bold')
-    .text(`Receipt / Invoice #${invoice.invoice_number}`, { align: 'center' });
+    .text(`${invoice.account_customer_id ? 'Invoice' : 'Receipt / Invoice'} #${invoice.invoice_number}`, { align: 'center' });
   doc.moveDown(0.3);
   line();
 
@@ -119,7 +119,7 @@ function drawInvoicePdf(doc, invoice, carpark) {
 /** Streams the receipt PDF directly to an HTTP response (browser download/print). */
 function streamInvoicePdf(res, invoice, carpark) {
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="receipt-${invoice.invoice_number}.pdf"`);
+  res.setHeader('Content-Disposition', `inline; filename="${invoice.account_customer_id ? 'invoice' : 'receipt'}-${invoice.invoice_number}.pdf"`);
   const doc = new PDFDocument({ size: 'A5', margin: 36 });
   doc.pipe(res);
   drawInvoicePdf(doc, invoice, carpark);

@@ -317,10 +317,10 @@
                 </select>
               </div>
               <div class="col-5">
-                <label class="form-label">Receipt Type</label>
+                <label class="form-label" id="receipt-type-label">Receipt Type</label>
                 <select class="form-select" id="receipt-type">
                   <option value="pdf">Print (PDF)</option>
-                  <option value="email">Email Receipt</option>
+                  <option value="email" id="receipt-type-email-opt">Email Receipt</option>
                 </select>
               </div>
             </div>
@@ -336,12 +336,12 @@
             <div class="row g-2">
               <div class="col-6">
                 <button type="button" class="btn btn-outline-primary w-100" id="btn-print-receipt" disabled>
-                  <i class="bi bi-printer me-1"></i> Print Receipt
+                  <i class="bi bi-printer me-1"></i> <span id="print-receipt-label">Print Receipt</span>
                 </button>
               </div>
               <div class="col-6">
                 <button type="button" class="btn btn-outline-success w-100" id="btn-email-receipt" disabled>
-                  <i class="bi bi-envelope me-1"></i> Email Receipt
+                  <i class="bi bi-envelope me-1"></i> <span id="email-receipt-label">Email Receipt</span>
                 </button>
               </div>
             </div>
