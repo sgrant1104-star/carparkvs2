@@ -104,8 +104,8 @@
           <p class="text-muted small">Select month/year and click Load Statement</p>
         </div>
 
-        <div class="border-top pt-3 mt-3">
-          <div class="form-section-title"><i class="bi bi-cash-coin me-2"></i>Payments (paid vs outstanding)</div>
+        <div class="border-top pt-3 mt-3" id="acct-payments-section">
+          <div class="form-section-title"><i class="bi bi-cash-coin me-2"></i>Record a payment — paid vs outstanding</div>
           <div class="row g-2 mb-2">
             <div class="col-md-3">
               <label class="form-label">Amount</label>
@@ -354,7 +354,7 @@
         const detail = open ? `
           <div class="acv-detail">
             <table>
-              <thead><tr><th>Invoice</th><th>Vehicle</th><th>Issued</th><th>Due</th><th>Status</th><th>Emailed</th><th class="num">Owing</th></tr></thead>
+              <thead><tr><th>Invoice</th><th>Vehicle</th><th>Issued</th><th>Due</th><th>Status</th><th>Emailed</th><th class="num">Owing</th><th></th></tr></thead>
               <tbody>${a.invoices.map((i) => `<tr>
                 <td><strong>${escapeHtml(String(i.number))}</strong></td>
                 <td>${escapeHtml(i.rego || '')}</td>
@@ -363,6 +363,7 @@
                 <td><span class="acv-inv" style="${i.days < 0 ? BUCKET.overdue.chip : BUCKET.upcoming.chip}">${whenText(i.days)}</span></td>
                 <td>${i.emailed ? `Sent ${nzDay(i.emailedAt)}` : '<span class="acv-inv" style="' + UNSENT_CHIP + '">Not sent</span>'}</td>
                 <td class="num">${money(i.outstanding)}</td>
+                <td class="num"><button type="button" class="acv-toggle" data-act="payinv" data-id="${a.id}" data-inv="${i.id}" data-amt="${i.outstanding}">Record payment</button></td>
               </tr>`).join('')}</tbody>
             </table>
           </div>` : '';
@@ -388,6 +389,7 @@
             <div class="acv-muted" style="line-height:1.4">${reminderText(a)}</div>
             <div class="d-flex gap-2 justify-content-end flex-wrap">
               <button type="button" class="btn btn-sm ${act.cls}" data-act="go" data-id="${a.id}">${act.label}</button>
+              ${st.owing > 0 ? `<button type="button" class="btn btn-sm btn-outline-success" data-act="pay" data-id="${a.id}">Record payment</button>` : ''}
               <button type="button" class="btn btn-sm btn-outline-secondary" data-act="edit" data-id="${a.id}">Edit</button>
             </div>
           </div>${detail}`;
@@ -398,6 +400,15 @@
         if (a) showAccountDetail(a.id, a.company_name);
       }));
       grid.querySelectorAll('[data-act="edit"]').forEach((el) => el.addEventListener('click', () => openEditAcct(el.dataset.id)));
+      const accountFor = (el) => ovData.accounts.find((x) => String(x.id) === el.dataset.id);
+      grid.querySelectorAll('[data-act="pay"]').forEach((el) => el.addEventListener('click', () => {
+        const a = accountFor(el);
+        if (a) showAccountDetail(a.id, a.company_name, { pay: true });
+      }));
+      grid.querySelectorAll('[data-act="payinv"]').forEach((el) => el.addEventListener('click', () => {
+        const a = accountFor(el);
+        if (a) showAccountDetail(a.id, a.company_name, { pay: true, invoiceId: el.dataset.inv, amount: el.dataset.amt });
+      }));
       grid.querySelectorAll('[data-act="toggle"]').forEach((el) => el.addEventListener('click', () => {
         const id = Number(el.dataset.id);
         if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
@@ -462,12 +473,19 @@
       new bootstrap.Modal('#acctModal').show();
     }
 
-    function showAccountDetail(id, name) {
+    async function showAccountDetail(id, name, opts = {}) {
       currentAccountId = id;
       document.getElementById('detail-company-name').textContent = name;
       document.getElementById('account-detail').classList.remove('d-none');
-      document.getElementById('account-detail').scrollIntoView({ behavior: 'smooth' });
-      loadStatement();
+      if (!opts.pay) document.getElementById('account-detail').scrollIntoView({ behavior: 'smooth' });
+      await loadStatement();
+      if (opts.pay) {
+        document.getElementById('acct-payments-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (opts.invoiceId) document.getElementById('acct-pay-invoice').value = String(opts.invoiceId);
+        const amt = document.getElementById('acct-pay-amount');
+        if (opts.amount) amt.value = Number(opts.amount).toFixed(2);
+        amt.focus();
+      }
     }
 
     /** Default payment date to match the statement month (avoids April when paying March). */
