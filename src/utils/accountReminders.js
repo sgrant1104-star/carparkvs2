@@ -311,13 +311,13 @@ function greetingName(account) {
   return titleCase(c || account.company_name || 'there');
 }
 
-function bankBlock(carpark, account) {
-  const ref = account.account_number || account.company_name || '';
+function bankBlock(carpark, account, invoiceRef = null) {
+  const ref = invoiceRef || account.account_number || account.company_name || '';
   const lines = [
     carpark && carpark.bank_name ? `<p style="margin:2px 0"><strong>Bank:</strong> ${esc(carpark.bank_name)}</p>` : '',
     carpark && carpark.bank_account_name ? `<p style="margin:2px 0"><strong>Account name:</strong> ${esc(carpark.bank_account_name)}</p>` : '',
     carpark && carpark.bank_account_number ? `<p style="margin:2px 0"><strong>Account number:</strong> ${esc(carpark.bank_account_number)}</p>` : '',
-    `<p style="margin:2px 0"><strong>Reference:</strong> ${esc(carpark && carpark.bank_reference ? `${carpark.bank_reference} — ${ref}` : ref)}</p>`,
+    `<p style="margin:2px 0"><strong>Reference:</strong> ${esc(invoiceRef ? `${invoiceRef} (your invoice number)` : (carpark && carpark.bank_reference ? `${carpark.bank_reference} — ${ref}` : ref))}</p>`,
   ].join('');
   const link = account.payment_link
     ? `<p><a href="${esc(account.payment_link)}" style="background:#27ae60;color:#fff;padding:10px 20px;border-radius:5px;text-decoration:none;display:inline-block;margin-top:10px;">Pay Online</a></p>`
@@ -364,7 +364,7 @@ function buildInvoiceEmail({ carpark, account, invoice, note }) {
     <tr><td style="${td}border-top:1px solid #dee2e6;color:#666;">Issued</td><td style="${td}border-top:1px solid #dee2e6;text-align:right;color:#666;">${esc(longDate(invoice.date_in))}</td></tr>
     <tr><td style="${td}border-top:1px solid #dee2e6;"><strong>Due</strong></td><td style="${td}border-top:1px solid #dee2e6;text-align:right;"><strong>${esc(longDate(due))}</strong></td></tr>
   </table>
-  ${bankBlock(carpark, account)}`,
+  ${bankBlock(carpark, account, String(invoice.invoice_number))}`,
   });
   return { subject, html, to: billingEmail(account), attachNames: [`Invoice-${invoice.invoice_number}.pdf`], total, due };
 }

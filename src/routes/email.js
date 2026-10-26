@@ -645,7 +645,7 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
         ${carpark.bank_name ? `Bank: ${escHtml(carpark.bank_name)}<br>` : ''}
         ${carpark.bank_account_name ? `Account name: ${escHtml(carpark.bank_account_name)}<br>` : ''}
         Account number: ${escHtml(carpark.bank_account_number)}<br>
-        Reference: ${escHtml(carpark.bank_reference || `Invoice #${invoice.invoice_number}`)}
+        Reference: <strong>${escHtml(invoice.invoice_number)}</strong> (your invoice number)
       </div>` : '';
 
     const transporterEarly = getTransporter();

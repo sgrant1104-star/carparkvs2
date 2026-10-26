@@ -109,7 +109,7 @@ function drawInvoicePdf(doc, invoice, carpark) {
     if (carpark.bank_name) doc.text(`Bank: ${carpark.bank_name}`);
     if (carpark.bank_account_name) doc.text(`Account name: ${carpark.bank_account_name}`);
     doc.text(`Account number: ${carpark.bank_account_number}`);
-    doc.text(`Reference: ${carpark.bank_reference || `Invoice #${invoice.invoice_number}`}`);
+    doc.text(`Reference: ${invoice.invoice_number}  (your invoice number)`);
     line();
   }
 

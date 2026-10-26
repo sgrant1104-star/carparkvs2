@@ -140,6 +140,7 @@
     const invRow = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(a3.id);
     const ie = A.buildInvoiceEmail({ carpark, account: accountRow, invoice: invRow, note: 'Thanks <b>again</b>' });
     assert(ie.subject.includes(`Invoice ${a3.number}`) && /\$230\.00/.test(ie.subject) && /20 November 2026/.test(ie.subject), `invoice subject names the invoice, amount and due date (${ie.subject})`);
+    assert(new RegExp(`Reference:</strong> ${a3.number} \\(your invoice number\\)`).test(ie.html), 'an invoice email uses the invoice number as the payment reference');
     assert(ie.attachNames[0] === `Invoice-${a3.number}.pdf` && ie.to === 'alpha@example.test', 'invoice email goes to the billing email with the PDF named after the invoice');
     assert(ie.html.includes('Hi Dana,') && !ie.html.includes('<b>again</b>') && ie.html.includes('&lt;b&gt;again'), 'greets the contact by first name and escapes the personal note');
 
