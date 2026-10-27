@@ -84,6 +84,12 @@ router.get('/overview', requireAuth, async (req, res) => {
       WHERE carpark_id = ? AND status = 'sent' GROUP BY longterm_customer_id
     `).all(carparkId);
     const lastSent = new Map(lastRem.map((r) => [r.id, r.sent_at]));
+    // Has a reminder already gone out for the payment that is due next?
+    const sentCycles = await db.prepare(`
+      SELECT longterm_customer_id AS id, cycle_due_date FROM lt_reminders
+      WHERE carpark_id = ? AND status = 'sent'
+    `).all(carparkId);
+    const sentForCycle = new Set(sentCycles.map((r) => `${r.id}|${String(r.cycle_due_date).slice(0, 10)}`));
     const drafted = await db.prepare(`
       SELECT longterm_customer_id AS id, kind FROM lt_reminders
       WHERE carpark_id = ? AND status = 'drafted' AND (snoozed_until IS NULL OR snoozed_until <= ?)
@@ -96,6 +102,7 @@ router.get('/overview', requireAuth, async (req, res) => {
       key_in_yard: !!customer.lt_in_yard,
       status,
       lastReminderSentAt: lastSent.get(customer.id) || null,
+      sentForNextDue: !!status.nextDue && sentForCycle.has(`${customer.id}|${status.nextDue}`),
       draftKind: draftKind.get(customer.id) || null,
     }));
 

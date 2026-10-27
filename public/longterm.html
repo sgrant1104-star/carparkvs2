@@ -375,6 +375,7 @@
 
     function reminderText(c) {
       if (c.draftKind) return '<span class="text-warning-emphasis fw-semibold">Reminder drafted — waiting for your OK</span>';
+      if (c.sentForNextDue) return `<span class="text-success fw-semibold">&#10003; Reminder sent ${nzDay(c.lastReminderSentAt)}</span><br>Waiting for payment`;
       if (c.lastReminderSentAt) return `Last reminder sent ${nzDay(c.lastReminderSentAt)}`;
       return '—';
     }
@@ -442,7 +443,9 @@
         const regos = [c.rego_1, c.rego_2].filter(Boolean).join(' · ');
         const dueLine = st.nextDue ? `due ${fmtD(st.nextDue)}` : (st.bucket === 'none' ? 'no payments recorded' : '');
         const action = active
-          ? `<button type="button" class="btn btn-sm ${c.draftKind ? 'btn-warning' : b.btn}" data-act="request" data-id="${c.id}">${c.draftKind ? 'Review reminder' : ACTION_LABEL[st.bucket]}</button>`
+          ? (c.sentForNextDue && !c.draftKind
+            ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-act="request" data-id="${c.id}">Send again</button>`
+            : `<button type="button" class="btn btn-sm ${c.draftKind ? 'btn-warning' : b.btn}" data-act="request" data-id="${c.id}">${c.draftKind ? 'Review reminder' : ACTION_LABEL[st.bucket]}</button>`)
           : '';
         return `
           <div class="ltv-row">
