@@ -39,6 +39,34 @@ async function apiFetch(url, options = {}) {
   return res;
 }
 
+// When the login lapses (8-hour cookie, or the server restarted) every call
+// fails with 401 and pages show vague "Failed to load" / "Error saving"
+// messages. Say what actually happened, and keep the open form so nothing
+// typed is lost: sign in from a new tab, then press Save again.
+(function watchForExpiredLogin() {
+  const realFetch = window.fetch;
+  const url = (input) => String(typeof input === 'string' ? input : (input && input.url) || '');
+  window.fetch = async function (input, init) {
+    const res = await realFetch.call(this, input, init);
+    const u = url(input);
+    if (u.startsWith('/api/') && !u.startsWith('/api/auth/')) {
+      const bar = document.getElementById('login-expired-bar');
+      if (res.status === 401 && !bar && document.body) {
+        const el = document.createElement('div');
+        el.id = 'login-expired-bar';
+        el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:20000;background:#b02a37;color:#fff;padding:10px 16px;text-align:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+        el.innerHTML = 'Your login has expired, so nothing can be saved or loaded. '
+          + '<a href="/login.html" target="_blank" rel="noopener" style="color:#fff;font-weight:700;text-decoration:underline">Sign in again (opens a new tab)</a>'
+          + ', then come back here and press Save — what you have typed is still on this page.';
+        document.body.appendChild(el);
+      } else if (res.ok && bar) {
+        bar.remove();
+      }
+    }
+    return res;
+  };
+})();
+
 // Show alert/toast notification
 function showAlert(message, type = 'success', duration = 3500) {
   const container = document.getElementById('alert-container') || (() => {
