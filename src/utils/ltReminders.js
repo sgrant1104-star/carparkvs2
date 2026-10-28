@@ -254,12 +254,14 @@ const dayWord = (n) => `${n} day${n === 1 ? '' : 's'}`;
 /**
  * @returns {{ subject, html, to, months, amounts, coversFrom, coversTo }}
  */
-function buildReminderEmail({ carpark, customer, status, kind, months, note, todayYmd }) {
+function buildReminderEmail({ carpark, customer, status, kind, months, note, todayYmd, coversFrom }) {
   const m = Number(months) || status.nextMonths || 1;
   const amt = amounts(status.lastTerm, m);
   // A renewal offer to an ended contract starts today — the period it would
   // otherwise "cover" (from the last payment) has already gone.
-  const from = kind === 'expired' ? todayYmd : (status.nextDue || todayYmd);
+  // Staff can choose the start date (e.g. carry on from when the last term ended).
+  const chosenFrom = /^\d{4}-\d{2}-\d{2}$/.test(String(coversFrom || '')) ? String(coversFrom) : null;
+  const from = chosenFrom || (kind === 'expired' ? todayYmd : (status.nextDue || todayYmd));
   const to = addCalendarDaysYmd(addMonthsYmd(from, m), -1);
   const lt = customer.lt_number;
   const first = firstName(customer.name);

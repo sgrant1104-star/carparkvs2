@@ -92,6 +92,8 @@
     const cExp = (await R.loadCustomersWithStatus(db, cp, TODAY, { includeArchived: true })).find((x) => x.customer.id === idOld);
     const mExp = R.buildReminderEmail({ carpark, customer: cExp.customer, status: cExp.status, kind: 'expired', months: 3, todayYmd: TODAY });
     assert(mExp.coversFrom === TODAY && /23 October 2026 – 22 January 2027/.test(mExp.html), `a renewal offer to an ended contract starts today, not in the past (${mExp.coversFrom})`);
+    const mExp6 = R.buildReminderEmail({ carpark, customer: cExp.customer, status: cExp.status, kind: 'expired', months: 6, todayYmd: TODAY, coversFrom: cExp.status.nextDue });
+    assert(mExp6.coversFrom === cExp.status.nextDue && mExp6.months === 6, 'staff can start a renewal from the day the last term ended (' + mExp6.coversFrom + ' to ' + mExp6.coversTo + ')');
     const cOver = (await R.loadCustomersWithStatus(db, cp, TODAY)).find((x) => x.customer.id === idOver);
     const mOver = R.buildReminderEmail({ carpark, customer: cOver.customer, status: cOver.status, kind: 'overdue', months: 12, note: 'See you Friday <b>', todayYmd: TODAY });
     assert(/9 days overdue/.test(mOver.subject), `overdue subject says "9 days overdue" (${mOver.subject})`);

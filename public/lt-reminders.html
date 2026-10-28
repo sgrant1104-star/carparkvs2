@@ -65,6 +65,12 @@
               <div class="rv-label mb-2">Renewal term — dates and amount update by themselves</div>
               <div class="d-flex flex-wrap gap-2" id="pv-terms"></div>
               <div class="rv-muted mt-2" id="pv-covers"></div>
+              <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+                <label class="rv-label mb-0" for="pv-from">Starts</label>
+                <input type="date" class="form-control" id="pv-from" style="width:auto;min-height:40px">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-from-due" style="display:none"></button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-from-today" style="display:none">From today</button>
+              </div>
             </div>
 
             <div>
@@ -118,7 +124,7 @@
       expired:  { label: 'Renewal offer',    style: 'background:#ece7f6;color:#4b2f86' },
     };
 
-    let state = { drafts: [], settings: null, rules: [], sel: null, checked: {}, months: {}, note: {}, sentIds: {} };
+    let state = { drafts: [], settings: null, rules: [], sel: null, checked: {}, months: {}, note: {}, from: {}, sentIds: {} };
     const wantedDraft = Number(new URLSearchParams(location.search).get('draft')) || null;
 
     const whenText = (d) => d == null ? '' : d < 0 ? `${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} overdue` : d === 0 ? 'due today' : `${d} day${d === 1 ? '' : 's'} left`;
@@ -136,6 +142,7 @@
       if (!res.ok) { showAlert('Could not load reminders', 'danger'); return; }
       const data = await res.json();
       state.drafts = data.drafts;
+      state.today = data.today;
       state.settings = data.settings;
       state.rules = data.rules;
       state.drafts.forEach((d) => { if (!(d.id in state.checked)) state.checked[d.id] = d.kind !== 'expired' && d.hasEmail; });
@@ -193,6 +200,7 @@
       const noteEl = document.getElementById('pv-note');
       if (noteEl.dataset.for !== String(d.id)) { noteEl.value = state.note[d.id] || ''; noteEl.dataset.for = String(d.id); }
       const qs = new URLSearchParams({ months: m });
+      if (state.from[d.id]) qs.set('from', state.from[d.id]);
       if (noteEl.value.trim()) qs.set('note', noteEl.value.trim());
       const res = await fetch(`/api/lt-reminders/${d.id}/preview?${qs.toString()}`);
       if (seq !== previewSeq) return;
@@ -203,6 +211,17 @@
       document.getElementById('pv-subject').textContent = p.subject;
       document.getElementById('pv-frame').srcdoc = p.html;
       document.getElementById('pv-covers').textContent = `Covers ${fmtD(p.coversFrom)} – ${fmtD(p.coversTo)}`;
+      // Start date: change it, or jump to "carry on from when the last term ended" / "from today".
+      const fromEl = document.getElementById('pv-from');
+      fromEl.value = p.coversFrom;
+      const dueBtn = document.getElementById('btn-from-due');
+      const todayBtn = document.getElementById('btn-from-today');
+      dueBtn.style.display = p.nextDue && p.coversFrom !== p.nextDue ? '' : 'none';
+      dueBtn.textContent = p.nextDue ? `Carry on from ${fmtD(p.nextDue)}` : '';
+      dueBtn.onclick = () => { state.from[d.id] = p.nextDue; loadPreview(); };
+      todayBtn.style.display = p.coversFrom !== state.today ? '' : 'none';
+      todayBtn.onclick = () => { state.from[d.id] = state.today; loadPreview(); };
+      fromEl.onchange = () => { state.from[d.id] = fromEl.value || null; loadPreview(); };
       const warn = document.getElementById('pv-warn');
       warn.classList.toggle('d-none', !d.warning);
       warn.textContent = d.warning || '';
@@ -244,7 +263,7 @@
       btn.disabled = true;
       const res = await fetch(`/api/lt-reminders/${d.id}/send`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ months: monthsFor(d), note: state.note[d.id] || '' }),
+        body: JSON.stringify({ months: monthsFor(d), note: state.note[d.id] || '', from: state.from[d.id] || undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { showAlert(data.error || 'Could not send', 'danger', 7000); btn.disabled = false; return; }
@@ -254,7 +273,7 @@
     });
 
     document.getElementById('btn-send-checked').addEventListener('click', async () => {
-      const items = state.drafts.filter((d) => state.checked[d.id] && d.hasEmail).map((d) => ({ id: d.id, months: monthsFor(d), note: state.note[d.id] || '' }));
+      const items = state.drafts.filter((d) => state.checked[d.id] && d.hasEmail).map((d) => ({ id: d.id, months: monthsFor(d), note: state.note[d.id] || '', from: state.from[d.id] || undefined }));
       if (!items.length) return;
       if (!confirm(`Send ${items.length} reminder${items.length === 1 ? '' : 's'} now?`)) return;
       const btn = document.getElementById('btn-send-checked');
