@@ -106,6 +106,19 @@
     const m3 = R.buildReminderEmail({ carpark, customer: cSoon.customer, status: cSoon.status, kind: 'reminder', months: 3, todayYmd: TODAY });
     assert(/\$575\.00/.test(m3.html) && /31 October 2026 – 30 January 2027/.test(m3.html), 'choosing 3 months changes the amount and the covered dates');
 
+    // A renewed contract (new start after the old payments ran out) is due from its new start, for its own length and price
+    {
+      const cust = { contract_start_date: '2026-10-07', expiry_date: '2027-04-07', contract_amount: 1000 };
+      const old = [['2026-04-06', 166.66], ['2026-05-06', 166.66], ['2026-06-06', 166.68]].map(([d, a], i) => ({ id: i + 1, payment_date: d, amount_ex_gst: a, payment_batch_id: 'old' }));
+      const st = R.computeStatus(cust, old, TODAY);
+      assert(st.nextDue === '2026-10-07' && st.nextMonths === 6 && st.nextAmountInc === 1150, `renewed contract is due from its new start for 6 months at $1,150 (${st.nextDue}, ${st.nextMonths}m, $${st.nextAmountInc})`);
+      assert(st.paidThrough === '2026-07-05', 'paid-through still shows what the old payments covered');
+      const em = R.buildReminderEmail({ carpark, customer: { ...cust, lt_number: 'LT9', name: 'REX', email: 'r@e.x' }, status: st, kind: 'overdue', months: undefined, todayYmd: TODAY });
+      assert(em.months === 6 && em.amounts.inc === 1150 && em.coversFrom === '2026-10-07' && em.coversTo === '2027-04-06', `its email asks for 6 months, 7 Oct 2026 – 6 Apr 2027 (${em.coversFrom} to ${em.coversTo}, $${em.amounts.inc})`);
+      const paidUp = R.computeStatus({ ...cust, contract_start_date: '2026-04-06', expiry_date: '2026-10-06' }, old, TODAY);
+      assert(paidUp.nextDue === '2026-07-06', 'a contract whose payments already cover its start is unchanged (still due the day after paid-through)');
+    }
+
     // Paying clears the draft
     await db.prepare(`INSERT INTO longterm_payments (carpark_id, longterm_customer_id, payment_date, amount_ex_gst, payment_method, payment_batch_id, cash_received_date) VALUES (?, ?, '2026-10-14', 137.5, 'Internet Bank', 'x1', '2026-10-14')`).run(cp, idOver);
     const g3 = await R.generateDrafts(db, { carparkId: cp, todayYmd: TODAY });

@@ -78,6 +78,17 @@ function computeStatus(customer, payments, todayYmd) {
     nextDue = contractStart;
   }
 
+  // A renewed contract: the new term starts after the old payments run out (e.g. a
+  // lapsed customer carried on with a fresh start date). What is due is that new
+  // term — from its start, for its length and its price — not "the same as last time".
+  const termExGst = customer.contract_amount != null && customer.contract_amount !== '' ? parseFloat(customer.contract_amount) : null;
+  if (rows.length && contractStart && contractEnd && contractStart > nextDue && termExGst > 0) {
+    let termMonths = null;
+    for (let n = 1; n <= 36; n++) if (addMonthsYmd(contractStart, n) === contractEnd) { termMonths = n; break; }
+    nextDue = contractStart;
+    if (termMonths) lastTerm = { months: termMonths, totalExGst: round2(termExGst) };
+  }
+
   const days = nextDue ? diffDays(todayYmd, nextDue) : null;
   let bucket = 'none';
   if (days != null) bucket = days < 0 ? 'overdue' : days <= 14 ? 'soon' : days <= 60 ? 'upcoming' : 'paid';

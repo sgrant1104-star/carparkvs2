@@ -741,9 +741,10 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
 
 /** Total actually paid by a long-term customer so far (ex GST), plus their contract total. */
 async function longTermPaidSummary(db, carparkId, lt) {
+  const termStart = lt.contract_start_date ? String(lt.contract_start_date).slice(0, 10) : '0000-00-00';
   const row = await db.prepare(`
-    SELECT COALESCE(SUM(amount_ex_gst), 0) AS paid FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ?
-  `).get(carparkId, lt.id);
+    SELECT COALESCE(SUM(amount_ex_gst), 0) AS paid FROM longterm_payments WHERE carpark_id = ? AND longterm_customer_id = ? AND substr(payment_date, 1, 10) >= ?
+  `).get(carparkId, lt.id, termStart);
   const contractExGst = lt.contract_amount != null && lt.contract_amount !== '' ? parseFloat(lt.contract_amount) : 0;
   return { paidExGst: Math.round((parseFloat(row?.paid || 0)) * 100) / 100, contractExGst: contractExGst || 0 };
 }

@@ -176,7 +176,7 @@ router.get('/:id/payments', requireAuth, async (req, res) => {
     // to have their payment history viewed (that's the whole point of
     // archiving instead of deleting).
     const lt = await db.prepare(`
-      SELECT id, contract_amount
+      SELECT id, contract_amount, contract_start_date
       FROM longterm_customers
       WHERE id = ? AND carpark_id = ?
     `).get(ltId, carparkId);
@@ -198,12 +198,15 @@ router.get('/:id/payments', requireAuth, async (req, res) => {
       ORDER BY payment_date DESC, created_at DESC
     `).all(carparkId, ltId);
 
+    // Payments from an earlier term (dated before this contract's start) are history,
+    // not part of what has been paid towards the current term.
+    const termStart = lt.contract_start_date ? String(lt.contract_start_date).slice(0, 10) : '0000-00-00';
     const paidRow = await db.prepare(`
       SELECT COALESCE(SUM(amount_ex_gst), 0) AS paid_ex_gst,
              COUNT(*) AS count
       FROM longterm_payments
-      WHERE carpark_id = ? AND longterm_customer_id = ?
-    `).get(carparkId, ltId);
+      WHERE carpark_id = ? AND longterm_customer_id = ? AND substr(payment_date, 1, 10) >= ?
+    `).get(carparkId, ltId, termStart);
 
     const contractExGst = lt.contract_amount != null && lt.contract_amount !== '' ? parseFloat(lt.contract_amount) : 0;
     const paidExGst = parseFloat(paidRow?.paid_ex_gst || 0);
