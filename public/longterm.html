@@ -292,6 +292,8 @@
       return LT_TERM_TOTALS[months] || 0;
     }
 
+    document.getElementById('lt-expiry').addEventListener('change', (e) => { e.target.dataset.baseline = e.target.value || ''; });
+
     function applyTermMonths(months) {
       const expiryEl = document.getElementById('lt-expiry');
       const startEl = document.getElementById('lt-start-date');
@@ -299,7 +301,12 @@
       // Renewing an existing contract extends from whatever expiry is
       // already on file (so renewing early doesn't reset the clock back to
       // today); a brand-new contract counts the term from its start date.
-      const base = (isExisting && expiryEl.value) ? expiryEl.value : (startEl.value || localDateStr(new Date()));
+      // The term buttons REPLACE the choice rather than add to it: always count
+      // from the expiry the contract had when it was opened (or last typed by
+      // hand), so clicking +6 Months twice still means one 6-month term.
+      if (isExisting && expiryEl.dataset.baseline === undefined) expiryEl.dataset.baseline = expiryEl.value || '';
+      const baseExpiry = isExisting ? expiryEl.dataset.baseline : '';
+      const base = (isExisting && baseExpiry) ? baseExpiry : (startEl.value || localDateStr(new Date()));
       expiryEl.value = addMonthsYmd(base, months);
       const total = termTotalAmount(months);
       const el = document.getElementById('lt-contract-amount');
@@ -312,7 +319,7 @@
       const psEl = document.getElementById('lt-payment-status');
       if (psEl) psEl.value = 'Unpaid';
       if (isExisting) {
-        showAlert(`Expiry set to ${expiryEl.value} (${base === startEl.value ? 'from contract start' : 'extended from current expiry'}) — marked Unpaid for the new term`, 'info', 5000);
+        showAlert(`Expiry set to ${expiryEl.value} (${base === startEl.value ? 'from contract start' : 'extended from the expiry on file'}) — marked Unpaid for the new term`, 'info', 5000);
       }
     }
 
@@ -817,6 +824,7 @@
       const sd = document.getElementById('lt-start-date');
       if (sd) sd.value = lt.contract_start_date ? String(lt.contract_start_date).slice(0, 10) : '';
       document.getElementById('lt-expiry').value = lt.expiry_date ? lt.expiry_date.split('T')[0] : '';
+      document.getElementById('lt-expiry').dataset.baseline = document.getElementById('lt-expiry').value;
       document.getElementById('lt-notes').value = lt.notes || '';
       const ca = document.getElementById('lt-contract-amount');
       if (ca) ca.value = lt.contract_amount != null && lt.contract_amount !== '' ? toInc(parseFloat(lt.contract_amount)).toFixed(2) : '';
