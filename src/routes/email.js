@@ -590,7 +590,7 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     // On-account bookings are invoiced to the account's billing email (the traveller's
     // address on the booking is only a fallback); everyone else gets a receipt.
     const isAccount = !!invoice.account_customer_id;
-    const docWord = isAccount ? 'Invoice' : 'Receipt';
+    let docWord = isAccount ? 'Invoice' : 'Receipt';
     const emailTo = String((isAccount ? (invoice.account_billing_email || invoice.account_email || invoice.email) : invoice.email) || '').trim();
     if (!emailTo) return res.status(400).json({ error: isAccount ? 'No billing email on this account or invoice — add one on the Accounts page' : 'No email address on this invoice' });
 
@@ -618,10 +618,11 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     const addrLines = billingAddressLines(invoice.account_billing_address);
     const billToLines = addrLines.length ? addrLines : (invoice.account_name ? [invoice.account_name] : []);
 
+    const showFirstPayment = parseFloat(invoice.payment_amount) > 0 || invoice.paid_status !== 'To Pay';
     const paymentRows = `
-      <tr><td style="padding:6px 10px;border-bottom:1px solid #eee;"><strong>Payment</strong></td>
+      ${showFirstPayment ? `<tr><td style="padding:6px 10px;border-bottom:1px solid #eee;"><strong>Payment</strong></td>
           <td style="padding:6px 10px;border-bottom:1px solid #eee;">${methodLabel(invoice.paid_status)}</td>
-          <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">${currency(invoice.payment_amount)}</td></tr>
+          <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">${currency(invoice.payment_amount)}</td></tr>` : ''}
       ${invoice.payment_amount_2 > 0 ? `
       <tr><td style="padding:6px 10px;border-bottom:1px solid #eee;"><strong>2nd Payment</strong></td>
           <td style="padding:6px 10px;border-bottom:1px solid #eee;">${methodLabel(invoice.paid_status_2)}</td>
@@ -632,6 +633,8 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     // On Account and unconfirmed Internet Banking are NOT counted as paid —
     // they're money owed/promised, not money received.
     const banner = invoiceStatusBanner(invoice);
+    // Nothing paid yet -> it is an invoice (to pay), not a receipt.
+    if (banner.kind === 'due') docWord = 'Invoice';
     const statusBannerHtml = `
       <div style="background:${banner.color};color:#fff;text-align:center;padding:12px;border-radius:6px;margin:16px 0;font-size:16px;font-weight:bold;">
         ${banner.label}
@@ -659,7 +662,7 @@ router.post('/receipt/:invoiceId', requireAuth, async (req, res) => {
     <p style="margin:4px 0 0;font-size:13px;opacity:.8;">${carpark ? carpark.address || '' : ''}</p>
   </div>
   <div style="background:#f8f9fa;border:1px solid #dee2e6;border-top:none;padding:20px;border-radius:0 0 8px 8px;">
-    <h2 style="color:#2c3e50;margin-top:0;">${isAccount ? 'Invoice' : 'Receipt / Invoice'} #${invoice.invoice_number}</h2>
+    <h2 style="color:#2c3e50;margin-top:0;">${docWord === 'Invoice' ? 'Invoice' : 'Receipt / Invoice'} #${invoice.invoice_number}</h2>
 
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
       ${billToLines.length ? `<tr><td style="padding:5px 0;width:140px;color:#666;vertical-align:top;">Bill to</td>

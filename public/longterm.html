@@ -283,7 +283,11 @@
     function addMonthsYmd(ymd, months) {
       const base = ymd ? new Date(`${ymd}T00:00:00`) : new Date();
       const d = new Date(base);
+      const day = d.getDate();
+      d.setDate(1);
       d.setMonth(d.getMonth() + months);
+      // Stay inside the target month: 31 Dec + 6 months is 30 Jun, not 1 Jul.
+      d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
       return localDateStr(d);
     }
 

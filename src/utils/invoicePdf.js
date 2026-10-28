@@ -18,8 +18,9 @@ function drawInvoicePdf(doc, invoice, carpark) {
     .text([carpark.address, carpark.phone].filter(Boolean).join(' · '), 46, 68, { width: 327, align: 'center' });
   doc.y = 100;
 
+  const isInvoiceDoc = !!invoice.account_customer_id || invoiceStatusBanner(invoice).kind === 'due';
   doc.fillColor('#2c3e50').fontSize(11).font('Helvetica-Bold')
-    .text(`${invoice.account_customer_id ? 'Invoice' : 'Receipt / Invoice'} #${invoice.invoice_number}`, { align: 'center' });
+    .text(`${isInvoiceDoc ? 'Invoice' : 'Receipt / Invoice'} #${invoice.invoice_number}`, { align: 'center' });
   doc.moveDown(0.3);
   line();
 
@@ -90,7 +91,7 @@ function drawInvoicePdf(doc, invoice, carpark) {
     doc.moveDown(0.3);
   }
   if (invoice.credit_applied > 0) doc.text(`Credit applied: ${currency(invoice.credit_applied)}`);
-  doc.text(`Payment: ${methodLabel(invoice.paid_status)} — ${currency(invoice.payment_amount)}`);
+  if (parseFloat(invoice.payment_amount) > 0 || invoice.paid_status !== 'To Pay') doc.text(`Payment: ${methodLabel(invoice.paid_status)} — ${currency(invoice.payment_amount)}`);
   if (invoice.payment_amount_2 > 0) doc.text(`2nd payment: ${methodLabel(invoice.paid_status_2)} — ${currency(invoice.payment_amount_2)}`);
   if (banner.ibPending > 0.01) {
     doc.font('Helvetica-Bold').fillColor('#d68910').text(`Internet banking, to be confirmed: ${currency(banner.ibPending)}`);
@@ -120,7 +121,7 @@ function drawInvoicePdf(doc, invoice, carpark) {
 /** Streams the receipt PDF directly to an HTTP response (browser download/print). */
 function streamInvoicePdf(res, invoice, carpark) {
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${invoice.account_customer_id ? 'invoice' : 'receipt'}-${invoice.invoice_number}.pdf"`);
+  res.setHeader('Content-Disposition', `inline; filename="${(invoice.account_customer_id || invoiceStatusBanner(invoice).kind === 'due') ? 'invoice' : 'receipt'}-${invoice.invoice_number}.pdf"`);
   const doc = new PDFDocument({ size: 'A5', margin: 36 });
   doc.pipe(res);
   drawInvoicePdf(doc, invoice, carpark);
