@@ -139,6 +139,10 @@
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-term-6m">+6 Months</button>
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-term-12m">+12 Months / Annual</button>
               </div>
+              <div class="small mt-2 d-none" id="lt-term-basis-wrap">Count the term from:
+                <select class="form-select form-select-sm d-inline-block w-auto ms-1" id="lt-term-basis"></select>
+              </div>
+              <div class="small fw-semibold mt-1" id="lt-term-result" style="color:#1a5276"></div>
               <div class="small text-muted mt-1">Prepay for 3/6/12 months is <strong>auto-spread</strong> across the contract for monthly reports.</div>
             </div>
             <div class="col-md-4">
@@ -296,22 +300,80 @@
       return LT_TERM_TOTALS[months] || 0;
     }
 
-    document.getElementById('lt-expiry').addEventListener('change', (e) => { e.target.dataset.baseline = e.target.value || ''; });
+    // ── Contract term buttons ────────────────────────────────────────────────
+    // The buttons REPLACE the term (clicking +6 twice is still one 6-month term).
+    // They count from either the contract start date or the expiry the contract
+    // had when it was opened — the chosen basis is shown, and the picked term is
+    // highlighted, so it is clear what the dates mean.
+    let selectedTerm = null;
+    const TERM_BTN = { 1: 'btn-term-1m', 3: 'btn-term-3m', 6: 'btn-term-6m', 12: 'btn-term-12m' };
+    const dmy = (ymd) => { const p = ymdParts(ymd); return p ? String(p[2]).padStart(2, '0') + '/' + String(p[1]).padStart(2, '0') + '/' + p[0] : '—'; };
 
-    function applyTermMonths(months) {
+    function termBasisDates() {
+      const expiryEl = document.getElementById('lt-expiry');
+      const isExisting = !!document.getElementById('lt-id').value;
+      if (isExisting && expiryEl.dataset.baseline === undefined) expiryEl.dataset.baseline = expiryEl.value || '';
+      return { expiry: isExisting ? (expiryEl.dataset.baseline || '') : '', start: document.getElementById('lt-start-date').value || '' };
+    }
+
+    function refreshTermUi() {
+      const expiryEl = document.getElementById('lt-expiry');
+      const isExisting = !!document.getElementById('lt-id').value;
+      const dates = termBasisDates();
+      const wrap = document.getElementById('lt-term-basis-wrap');
+      const sel = document.getElementById('lt-term-basis');
+      const keep = sel.value;
+      const opts = [];
+      if (isExisting && dates.expiry) opts.push(['expiry', 'Current expiry (' + dmy(dates.expiry) + ')']);
+      opts.push(['start', 'Contract start date (' + dmy(dates.start) + ')']);
+      sel.innerHTML = opts.map((o) => '<option value="' + o[0] + '">' + o[1] + '</option>').join('');
+      if (opts.some((o) => o[0] === keep)) sel.value = keep;
+      wrap.classList.toggle('d-none', !(isExisting && dates.expiry));
+      Object.entries(TERM_BTN).forEach(([m, id]) => {
+        const b = document.getElementById(id);
+        const on = selectedTerm === Number(m);
+        b.classList.toggle('btn-secondary', on);
+        b.classList.toggle('active', on);
+        b.classList.toggle('btn-outline-secondary', !on);
+      });
+      const res = document.getElementById('lt-term-result');
+      res.textContent = selectedTerm && expiryEl.value
+        ? (selectedTerm === 1 ? '1 month' : selectedTerm + ' months') + ' selected — expires ' + dmy(expiryEl.value)
+        : '';
+    }
+
+    /** Called when a contract is opened: count from the start date if it is already past the expiry (a lapsed contract being renewed), else from the expiry. */
+    function resetTermUi() {
+      const expiryEl = document.getElementById('lt-expiry');
+      delete expiryEl.dataset.baseline;
+      const dates = termBasisDates();
+      refreshTermUi();
+      // A term that has only just begun and is not paid yet (or a start date already past the
+      // expiry) is a fresh term — count from its start date. Otherwise it is a renewal: extend from the expiry.
+      const unpaid = document.getElementById('lt-payment-status').value !== 'Paid';
+      const recentStart = dates.start && dates.start >= addMonthsYmd(localDateStr(new Date()), -2);
+      const freshTerm = dates.start && ((dates.expiry && dates.start > dates.expiry) || (unpaid && recentStart));
+      document.getElementById('lt-term-basis').value = (dates.expiry && !freshTerm) ? 'expiry' : 'start';
+      // highlight the term the dates already add up to
+      selectedTerm = null;
+      if (expiryEl.value && dates.start) for (const m of [1, 3, 6, 12]) if (addMonthsYmd(dates.start, m) === expiryEl.value) selectedTerm = m;
+      refreshTermUi();
+    }
+
+    document.getElementById('lt-expiry').addEventListener('change', (e) => { e.target.dataset.baseline = e.target.value || ''; selectedTerm = null; refreshTermUi(); });
+    document.getElementById('lt-start-date').addEventListener('change', () => { selectedTerm = null; refreshTermUi(); });
+    document.getElementById('lt-term-basis').addEventListener('change', () => { if (selectedTerm) applyTermMonths(selectedTerm, true); else refreshTermUi(); });
+
+    function applyTermMonths(months, quiet) {
       const expiryEl = document.getElementById('lt-expiry');
       const startEl = document.getElementById('lt-start-date');
       const isExisting = !!document.getElementById('lt-id').value;
-      // Renewing an existing contract extends from whatever expiry is
-      // already on file (so renewing early doesn't reset the clock back to
-      // today); a brand-new contract counts the term from its start date.
-      // The term buttons REPLACE the choice rather than add to it: always count
-      // from the expiry the contract had when it was opened (or last typed by
-      // hand), so clicking +6 Months twice still means one 6-month term.
-      if (isExisting && expiryEl.dataset.baseline === undefined) expiryEl.dataset.baseline = expiryEl.value || '';
-      const baseExpiry = isExisting ? expiryEl.dataset.baseline : '';
-      const base = (isExisting && baseExpiry) ? baseExpiry : (startEl.value || localDateStr(new Date()));
+      const dates = termBasisDates();
+      const basis = isExisting && dates.expiry ? document.getElementById('lt-term-basis').value : 'start';
+      const base = basis === 'expiry' ? dates.expiry : (startEl.value || localDateStr(new Date()));
       expiryEl.value = addMonthsYmd(base, months);
+      selectedTerm = months;
+      refreshTermUi();
       const total = termTotalAmount(months);
       const el = document.getElementById('lt-contract-amount');
       if (el) el.value = total > 0 ? toInc(total).toFixed(2) : '';
@@ -322,8 +384,8 @@
       // already-paid historical term.
       const psEl = document.getElementById('lt-payment-status');
       if (psEl) psEl.value = 'Unpaid';
-      if (isExisting) {
-        showAlert(`Expiry set to ${expiryEl.value} (${base === startEl.value ? 'from contract start' : 'extended from the expiry on file'}) — marked Unpaid for the new term`, 'info', 5000);
+      if (isExisting && !quiet) {
+        showAlert('Expiry set to ' + dmy(expiryEl.value) + ' (' + months + ' month' + (months === 1 ? '' : 's') + ' from ' + (basis === 'expiry' ? 'the current expiry' : 'the contract start date') + ') — marked Unpaid for the new term', 'info', 5000);
       }
     }
 
@@ -828,12 +890,12 @@
       const sd = document.getElementById('lt-start-date');
       if (sd) sd.value = lt.contract_start_date ? String(lt.contract_start_date).slice(0, 10) : '';
       document.getElementById('lt-expiry').value = lt.expiry_date ? lt.expiry_date.split('T')[0] : '';
-      document.getElementById('lt-expiry').dataset.baseline = document.getElementById('lt-expiry').value;
       document.getElementById('lt-notes').value = lt.notes || '';
       const ca = document.getElementById('lt-contract-amount');
       if (ca) ca.value = lt.contract_amount != null && lt.contract_amount !== '' ? toInc(parseFloat(lt.contract_amount)).toFixed(2) : '';
       const ps = document.getElementById('lt-payment-status');
       if (ps) ps.value = lt.payment_status || 'Unpaid';
+      resetTermUi();
       // openEditModal is used for both:
       //  - list objects from /api/longterm (fields: lt_key_slot / lt_in_yard)
       //  - detail objects from /api/longterm/:id (fields: key_number / key_in_yard)
