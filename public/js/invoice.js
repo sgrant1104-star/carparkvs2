@@ -333,13 +333,14 @@ async function prefillFromPrebooking(prebookingId) {
     // Customer verified a real account number when booking — carry that
     // straight into the account dropdown so staff don't have to re-pick it,
     // and so pricing below reflects the account's actual rate.
+    // Nights first: the account price below is for however many nights the dates give,
+    // and it must finish before the general price calc so neither overwrites the other.
+    updateNightsAndDisplay();
     if (b.accountCustomerId) {
       document.getElementById('inv-account-customer').value = String(b.accountCustomerId);
       const acct = accountCustomers.find(a => String(a.id) === String(b.accountCustomerId));
-      if (acct) applyAccountCustomerPricingFromLookup(acct);
+      if (acct) await applyAccountCustomerPricingFromLookup(acct);
     }
-
-    updateNightsAndDisplay();
     await calculatePriceNow();
     showAlert(
       b.isLongTerm
@@ -705,7 +706,7 @@ function applyAccountCustomerPricingFromLookup(acct) {
   const d = acct.discount_percent || 0;
   showAlert(`On-account customer: ${escapeHtml(acct.company_name)}${d > 0 ? ` (${d}% discount on short-term rates)` : ''}`, 'info');
   const nights = parseInt(document.getElementById('inv-nights').value, 10) || 1;
-  fetch(`/api/invoices/calculate-price?nights=${nights}&account_customer_id=${acct.id}`)
+  return fetch(`/api/invoices/calculate-price?nights=${nights}&account_customer_id=${acct.id}`)
     .then(r => r.json())
     .then(p => {
       if (!p || p.error) return;
