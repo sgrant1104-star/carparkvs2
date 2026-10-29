@@ -105,6 +105,13 @@
               <input type="time" class="form-control" id="edit-time-out">
             </div>
             <div class="col-12">
+              <label class="form-label">Business account</label>
+              <select class="form-select" id="edit-account">
+                <option value="">Not on account (pays on arrival)</option>
+              </select>
+              <div class="form-text">Customer booked online as a normal customer but is on account? Pick their account here — the invoice is billed to it and uses the account's rates. Allocating carries it straight into check-in.</div>
+            </div>
+            <div class="col-12">
               <label class="form-label">Notes</label>
               <textarea class="form-control" id="edit-notes" rows="2"></textarea>
             </div>
@@ -286,6 +293,7 @@
       document.getElementById('edit-date-out').value = String(b.dateOut).slice(0, 10);
       document.getElementById('edit-time-out').value = b.timeOut || '';
       document.getElementById('edit-notes').value = b.notes || '';
+      document.getElementById('edit-account').value = b.accountCustomerId ? String(b.accountCustomerId) : '';
       document.getElementById('edit-confirmed-note').classList.toggle('d-none', b.status !== 'confirmed');
       new bootstrap.Modal('#editModal').show();
     }
@@ -304,6 +312,7 @@
         dateOut: document.getElementById('edit-date-out').value,
         timeOut: document.getElementById('edit-time-out').value,
         notes: document.getElementById('edit-notes').value,
+        accountCustomerId: document.getElementById('edit-account').value,
       };
       const res = await fetch(`/api/prebookings/${id}`, {
         method: 'PUT',
@@ -313,7 +322,7 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { showAlert(data.error || 'Could not save changes', 'danger'); return; }
       bootstrap.Modal.getInstance('#editModal').hide();
-      showAlert(data.customerEmailed ? 'Booking updated — the customer has been emailed the new details.' : 'Booking updated', 'success', 5000);
+      showAlert(data.customerEmailed ? 'Booking updated — the customer has been emailed the new details.' : (data.accountChanged ? 'Booking updated — account changed (the customer was not emailed).' : 'Booking updated'), 'success', 5000);
       loadPrebookings();
     });
 
@@ -326,8 +335,23 @@
       });
     });
 
+    async function loadAccountOptions() {
+      try {
+        const res = await fetch('/api/accounts');
+        if (!res.ok) return;
+        const sel = document.getElementById('edit-account');
+        (await res.json()).forEach((a) => {
+          const o = document.createElement('option');
+          o.value = String(a.id);
+          o.textContent = a.company_name;
+          sel.appendChild(o);
+        });
+      } catch (_) { /* dropdown just stays at "Not on account" */ }
+    }
+
     async function init() {
       await checkAuth();
+      await loadAccountOptions();
       await loadPrebookings();
       updateNavCarsCount();
     }

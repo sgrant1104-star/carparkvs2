@@ -3,6 +3,7 @@ const { db } = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { businessDateYmd, addCalendarDaysYmd } = require('../utils/businessDate');
 const { logActivity, actorFromReq } = require('../utils/audit');
+const accountHold = require('../utils/accountHold');
 const {
   notifyCustomerBookingConfirmed,
   notifyCustomerBookingUpdated,
@@ -199,7 +200,28 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Pick-up time must be after drop-off time on the same day' });
     }
 
+    // Staff can put the booking on a business account (customer booked online as a
+    // normal customer but is on account) or take it off again. Blank = no account.
+    let accountCustomerId = booking.account_customer_id || null;
+    let accountCompanyName = null;
+    if (body.accountCustomerId !== undefined) {
+      const wanted = String(body.accountCustomerId || '').trim();
+      if (!wanted) {
+        accountCustomerId = null;
+      } else if (wanted !== String(booking.account_customer_id || '')) {
+        const account = await db.prepare('SELECT id, company_name, active FROM account_customers WHERE id = ? AND carpark_id = ?').get(wanted, carparkId);
+        if (!account || !account.active) return res.status(400).json({ error: 'That account was not found or is no longer active.' });
+        // Only a NEW link is blocked while the account is on hold — same rule as invoices.
+        const hold = await accountHold.blockFor(db, { carparkId, accountId: account.id, todayYmd: businessDateYmd() });
+        if (hold) return res.status(409).json({ error: hold.staffMessage, accountOnHold: true });
+        accountCustomerId = account.id;
+        accountCompanyName = account.company_name;
+      }
+    }
+    const accountChanged = String(accountCustomerId || '') !== String(booking.account_customer_id || '');
+
     const next = {
+      account_customer_id: accountCustomerId,
       rego,
       vehicle_make: pick('vehicleMake', booking.vehicle_make || '') || null,
       vehicle_model: pick('vehicleModel', booking.vehicle_model || '') || null,
@@ -216,11 +238,11 @@ router.put('/:id', requireAuth, async (req, res) => {
     await db.prepare(`
       UPDATE bookings SET
         rego = ?, vehicle_make = ?, vehicle_model = ?, vehicle_color = ?, phone = ?, email = ?,
-        date_in = ?, time_in = ?, date_out = ?, time_out = ?, notes = ?
+        date_in = ?, time_in = ?, date_out = ?, time_out = ?, notes = ?, account_customer_id = ?
       WHERE id = ? AND carpark_id = ?
     `).run(
       next.rego, next.vehicle_make, next.vehicle_model, next.vehicle_color, next.phone, next.email,
-      next.date_in, next.time_in, next.date_out, next.time_out, next.notes,
+      next.date_in, next.time_in, next.date_out, next.time_out, next.notes, next.account_customer_id,
       req.params.id, carparkId
     );
 
@@ -228,7 +250,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     await logActivity(db, {
       carparkId, tableName: 'bookings', recordId: booking.id, action: 'update',
       before: booking, after: { ...booking, ...next },
-      notes: `Edited pre-booking for ${booking.first_name} ${booking.last_name}`, userId, userName,
+      notes: `Edited pre-booking for ${booking.first_name} ${booking.last_name}${accountChanged ? (accountCustomerId ? ` — put on account ${accountCompanyName || '#' + accountCustomerId}` : ' — taken off account') : ''}`, userId, userName,
     });
 
     const datesChanged =
@@ -241,7 +263,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       await notifyCustomerBookingUpdated({ ...booking, ...next });
     }
 
-    res.json({ success: true, customerEmailed: emailed });
+    res.json({ success: true, customerEmailed: emailed, accountChanged });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

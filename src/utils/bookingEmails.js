@@ -113,7 +113,8 @@ async function notifyCustomerBookingUpdated(booking) {
     <p>Hi ${booking.first_name || booking.firstName || ''},</p>
     <p>We've updated your parking booking. The details are now:</p>
     ${detailsTable(booking)}
-    <p style="margin-top:16px;color:#666;">If this doesn't look right, please get in touch.</p>
+    <p style="margin-top:16px;color:#666;">${paymentNote(booking)}</p>
+    <p style="margin-top:8px;color:#666;">If this doesn't look right, please get in touch.</p>
   `);
   await send(booking.email, 'Your booking has been updated - BOI Car Storage', html, 'customer: updated');
 }
