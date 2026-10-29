@@ -66,7 +66,10 @@
           </div>
           <div id="longTermWarning" class="alert alert-warning small d-none mb-3"></div>
 
-          <div class="form-check mb-2">
+          <div id="linkedAccountBox" class="alert alert-success small d-none mb-3">
+            <i class="bi bi-building-check me-1"></i>Your business account <strong id="linkedAccountName"></strong> is on your profile — this booking will be billed to it at your account rate.
+          </div>
+          <div class="form-check mb-2" id="accountToggleWrap">
             <input class="form-check-input" type="checkbox" id="wantsAccount">
             <label class="form-check-label" for="wantsAccount">
               I have a business account with BOI Car Storage
@@ -125,8 +128,26 @@
   </div>
 
   <script>
-    fetch('/api/customer-auth/me', { credentials: 'include' }).then((r) => {
-      if (!r.ok) window.location.href = '/portal/login.html';
+    // Set from the customer's profile (staff link a business account / long-term to it).
+    let linkedAccount = null;
+    fetch('/api/customer-auth/me', { credentials: 'include' }).then(async (r) => {
+      if (!r.ok) { window.location.href = '/portal/login.html'; return; }
+      const me = await r.json();
+      if (me.linkedAccount) {
+        linkedAccount = me.linkedAccount;
+        document.getElementById('linkedAccountName').textContent = me.linkedAccount.companyName;
+        document.getElementById('linkedAccountBox').classList.remove('d-none');
+        document.getElementById('accountToggleWrap').classList.add('d-none');
+      }
+      if (me.isLongTerm) {
+        document.getElementById('isLongTerm').checked = true;
+        // A long-term stay starts at 28 days — default the pick-up there so the form isn't born invalid.
+        const out = new Date(); out.setDate(out.getDate() + MIN_LONGTERM_DAYS);
+        document.getElementById('dateOut').value = localDateStr(out);
+        checkLongTermMinimum();
+      }
+      updateEstimate();
+      updateSubmitState();
     }).catch(() => { window.location.href = '/portal/login.html'; });
 
     // Sensible defaults: drop-off now, pick-up tomorrow at the usual 2:35pm changeover.
@@ -235,7 +256,7 @@
       const el = document.getElementById('paymentNote');
       if (document.getElementById('isLongTerm').checked) {
         el.textContent = 'Long-term bookings are priced individually — we\'ll be in touch about your rate. Nothing is charged online.';
-      } else if (document.getElementById('wantsAccount').checked && accountVerified) {
+      } else if (linkedAccount || (document.getElementById('wantsAccount').checked && accountVerified)) {
         el.textContent = 'This booking will be billed to your business account on your monthly statement; nothing is charged on arrival.';
       } else {
         el.textContent = 'Payment is taken on arrival; nothing is charged online.';
@@ -244,6 +265,7 @@
 
     let estimateSeq = 0;
     async function updateEstimate() {
+      estimateSeq++; // any price request already in flight is now stale (e.g. long-term was just ticked)
       updatePaymentNote();
       const dateIn = document.getElementById('dateIn').value;
       const timeIn = document.getElementById('timeIn').value;
@@ -264,7 +286,7 @@
         ? document.getElementById('accountNumber').value.trim() : '';
       const qs = new URLSearchParams({ nights });
       if (accountNumber) qs.set('accountNumber', accountNumber);
-      const mySeq = ++estimateSeq;
+      const mySeq = estimateSeq;
       try {
         const res = await fetch(`/api/bookings/estimate-price?${qs.toString()}`, { credentials: 'include' });
         if (mySeq !== estimateSeq) return; // a newer request has since started; ignore this stale response

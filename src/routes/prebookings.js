@@ -219,9 +219,12 @@ router.put('/:id', requireAuth, async (req, res) => {
       }
     }
     const accountChanged = String(accountCustomerId || '') !== String(booking.account_customer_id || '');
+    const isLongTerm = body.isLongTerm !== undefined ? (body.isLongTerm ? 1 : 0) : (booking.is_long_term ? 1 : 0);
+    const longTermChanged = isLongTerm !== (booking.is_long_term ? 1 : 0);
 
     const next = {
       account_customer_id: accountCustomerId,
+      is_long_term: isLongTerm,
       rego,
       vehicle_make: pick('vehicleMake', booking.vehicle_make || '') || null,
       vehicle_model: pick('vehicleModel', booking.vehicle_model || '') || null,
@@ -238,19 +241,28 @@ router.put('/:id', requireAuth, async (req, res) => {
     await db.prepare(`
       UPDATE bookings SET
         rego = ?, vehicle_make = ?, vehicle_model = ?, vehicle_color = ?, phone = ?, email = ?,
-        date_in = ?, time_in = ?, date_out = ?, time_out = ?, notes = ?, account_customer_id = ?
+        date_in = ?, time_in = ?, date_out = ?, time_out = ?, notes = ?, account_customer_id = ?, is_long_term = ?
       WHERE id = ? AND carpark_id = ?
     `).run(
       next.rego, next.vehicle_make, next.vehicle_model, next.vehicle_color, next.phone, next.email,
-      next.date_in, next.time_in, next.date_out, next.time_out, next.notes, next.account_customer_id,
+      next.date_in, next.time_in, next.date_out, next.time_out, next.notes, next.account_customer_id, next.is_long_term,
       req.params.id, carparkId
     );
+
+    // Carry the change onto the customer's website sign-up, so their next online bookings
+    // come in on the account / as long-term by themselves (and are priced that way).
+    let profileUpdated = false;
+    if ((accountChanged || longTermChanged) && booking.customer_account_id) {
+      await db.prepare('UPDATE customer_accounts SET account_customer_id = ?, is_long_term = ? WHERE id = ?')
+        .run(next.account_customer_id, next.is_long_term, booking.customer_account_id);
+      profileUpdated = true;
+    }
 
     const { userId, userName } = actorFromReq(req);
     await logActivity(db, {
       carparkId, tableName: 'bookings', recordId: booking.id, action: 'update',
       before: booking, after: { ...booking, ...next },
-      notes: `Edited pre-booking for ${booking.first_name} ${booking.last_name}${accountChanged ? (accountCustomerId ? ` — put on account ${accountCompanyName || '#' + accountCustomerId}` : ' — taken off account') : ''}`, userId, userName,
+      notes: `Edited pre-booking for ${booking.first_name} ${booking.last_name}${accountChanged ? (accountCustomerId ? ` — put on account ${accountCompanyName || '#' + accountCustomerId}` : ' — taken off account') : ''}${longTermChanged ? (isLongTerm ? ' — marked long-term' : ' — long-term removed') : ''}${profileUpdated ? ' (website sign-up updated too)' : ''}`, userId, userName,
     });
 
     const datesChanged =
@@ -263,7 +275,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       await notifyCustomerBookingUpdated({ ...booking, ...next });
     }
 
-    res.json({ success: true, customerEmailed: emailed, accountChanged });
+    res.json({ success: true, customerEmailed: emailed, accountChanged: accountChanged || longTermChanged, profileUpdated });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -109,7 +109,11 @@
               <select class="form-select" id="edit-account">
                 <option value="">Not on account (pays on arrival)</option>
               </select>
-              <div class="form-text">Customer booked online as a normal customer but is on account? Pick their account here — the invoice is billed to it and uses the account's rates. Allocating carries it straight into check-in.</div>
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="edit-longterm">
+                <label class="form-check-label" for="edit-longterm">Long-term customer (priced individually)</label>
+              </div>
+              <div class="form-text">Customer booked online as a normal customer but is on account or long-term? Set it here — this booking is billed that way, and their website sign-up is updated too so their next bookings come in correctly with the right pricing. Allocating carries it straight into check-in.</div>
             </div>
             <div class="col-12">
               <label class="form-label">Notes</label>
@@ -294,6 +298,7 @@
       document.getElementById('edit-time-out').value = b.timeOut || '';
       document.getElementById('edit-notes').value = b.notes || '';
       document.getElementById('edit-account').value = b.accountCustomerId ? String(b.accountCustomerId) : '';
+      document.getElementById('edit-longterm').checked = !!b.isLongTerm;
       document.getElementById('edit-confirmed-note').classList.toggle('d-none', b.status !== 'confirmed');
       new bootstrap.Modal('#editModal').show();
     }
@@ -313,6 +318,7 @@
         timeOut: document.getElementById('edit-time-out').value,
         notes: document.getElementById('edit-notes').value,
         accountCustomerId: document.getElementById('edit-account').value,
+        isLongTerm: document.getElementById('edit-longterm').checked,
       };
       const res = await fetch(`/api/prebookings/${id}`, {
         method: 'PUT',
@@ -322,7 +328,7 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { showAlert(data.error || 'Could not save changes', 'danger'); return; }
       bootstrap.Modal.getInstance('#editModal').hide();
-      showAlert(data.customerEmailed ? 'Booking updated — the customer has been emailed the new details.' : (data.accountChanged ? 'Booking updated — account changed (the customer was not emailed).' : 'Booking updated'), 'success', 5000);
+      showAlert(data.customerEmailed ? 'Booking updated — the customer has been emailed the new details.' : (data.accountChanged ? 'Booking updated — their website sign-up was updated too, so future bookings come in the same way (the customer was not emailed).' : 'Booking updated'), 'success', 5000);
       loadPrebookings();
     });
 

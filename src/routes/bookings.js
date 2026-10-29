@@ -47,6 +47,13 @@ async function resolveAccountByNumber(carparkId, accountNumber) {
   `).get(carparkId, code);
 }
 
+/** The business account staff have linked to this website customer (null if none or no longer active). */
+async function linkedAccountFor(carparkId, customerId) {
+  const c = await db.prepare('SELECT account_customer_id FROM customer_accounts WHERE id = ?').get(customerId);
+  if (!c || !c.account_customer_id) return null;
+  return db.prepare('SELECT * FROM account_customers WHERE id = ? AND carpark_id = ? AND active = 1').get(c.account_customer_id, carparkId) || null;
+}
+
 function isValidYmd(s) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 }
@@ -145,10 +152,11 @@ router.get('/estimate-price', requireCustomerAuth, async (req, res) => {
     }
     const carparkId = 1;
     let accountCustomerId = null;
-    if (req.query.accountNumber) {
-      const account = await resolveAccountByNumber(carparkId, req.query.accountNumber);
-      if (account && !(await accountHold.blockFor(db, { carparkId, account, todayYmd: businessDateYmd() }))) accountCustomerId = account.id;
-    }
+    // A typed account number wins; otherwise use the account staff linked to this customer.
+    const account = req.query.accountNumber
+      ? await resolveAccountByNumber(carparkId, req.query.accountNumber)
+      : await linkedAccountFor(carparkId, req.customerSession.customerId);
+    if (account && !(await accountHold.blockFor(db, { carparkId, account, todayYmd: businessDateYmd() }))) accountCustomerId = account.id;
     const result = await calculateShortStayPrice(db, { carparkId, nights: req.query.nights, accountCustomerId });
     res.json({ nights: result.nights, dailyRate: result.dailyRate, total: result.total });
   } catch (err) {
@@ -172,7 +180,10 @@ router.post('/', requireCustomerAuth, async (req, res) => {
     const dateOut = String(req.body?.dateOut || '').trim();
     const timeOut = String(req.body?.timeOut || '').trim();
     const notes = String(req.body?.notes || '').trim();
-    const isLongTerm = !!req.body?.isLongTerm;
+    const customer = await db.prepare('SELECT * FROM customer_accounts WHERE id = ?').get(customerId);
+    if (!customer) return res.status(401).json({ error: 'Not authenticated' });
+    // If the form didn't say, fall back to what staff set on the customer's profile.
+    const isLongTerm = req.body?.isLongTerm !== undefined ? !!req.body.isLongTerm : !!customer.is_long_term;
     const wantsAccount = !!req.body?.wantsAccount;
 
     if (!rego) return res.status(400).json({ error: 'Vehicle registration is required' });
@@ -199,10 +210,16 @@ router.post('/', requireCustomerAuth, async (req, res) => {
       if (held) return res.status(403).json({ error: held.customerMessage, accountOnHold: true });
       accountCustomerId = account.id;
       accountCompanyName = account.company_name;
+    } else {
+      // Staff have linked this customer to a business account — every online booking goes on it.
+      const linked = await linkedAccountFor(carparkId, customerId);
+      if (linked) {
+        const held = await accountHold.blockFor(db, { carparkId, account: linked, todayYmd: businessDateYmd() });
+        if (held) return res.status(403).json({ error: held.customerMessage, accountOnHold: true });
+        accountCustomerId = linked.id;
+        accountCompanyName = linked.company_name;
+      }
     }
-
-    const customer = await db.prepare('SELECT * FROM customer_accounts WHERE id = ?').get(customerId);
-    if (!customer) return res.status(401).json({ error: 'Not authenticated' });
 
     const result = await db.prepare(`
       INSERT INTO bookings

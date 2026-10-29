@@ -159,7 +159,13 @@ router.get('/me', async (req, res) => {
   try {
     const customer = await db.prepare('SELECT * FROM customer_accounts WHERE id = ?').get(req.customerSession.customerId);
     if (!customer) return res.status(401).json({ error: 'Not authenticated' });
-    res.json(publicProfile(customer));
+    // Staff-set: this customer books on a business account / long-term by default.
+    let linkedAccount = null;
+    if (customer.account_customer_id) {
+      const a = await db.prepare('SELECT company_name FROM account_customers WHERE id = ? AND active = 1').get(customer.account_customer_id);
+      if (a) linkedAccount = { companyName: a.company_name };
+    }
+    res.json({ ...publicProfile(customer), linkedAccount, isLongTerm: !!customer.is_long_term });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

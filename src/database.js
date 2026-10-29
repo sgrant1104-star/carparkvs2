@@ -264,6 +264,10 @@ async function initializeDatabase() {
   // happens to run long.
   try { x(`ALTER TABLE bookings ADD COLUMN account_customer_id INTEGER`); } catch (_) {}
   try { x(`ALTER TABLE bookings ADD COLUMN is_long_term INTEGER DEFAULT 0`); } catch (_) {}
+  // Set by staff when a website customer turns out to be on a business account / long-term:
+  // their future online bookings then come in that way automatically (and are priced that way).
+  try { x(`ALTER TABLE customer_accounts ADD COLUMN account_customer_id INTEGER`); } catch (_) {}
+  try { x(`ALTER TABLE customer_accounts ADD COLUMN is_long_term INTEGER DEFAULT 0`); } catch (_) {}
 
   x(`CREATE TABLE IF NOT EXISTS longterm_customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
