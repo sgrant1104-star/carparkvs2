@@ -76,6 +76,13 @@ function computeStatus(customer, payments, todayYmd) {
     };
   } else if (contractStart) {
     nextDue = contractStart;
+    // Nothing paid yet: what they owe is the contract as written (its own length and price).
+    const unpaidTermExGst = customer.contract_amount != null && customer.contract_amount !== '' ? parseFloat(customer.contract_amount) : null;
+    if (contractEnd && unpaidTermExGst > 0) {
+      for (let n = 1; n <= 36; n++) {
+        if (addMonthsYmd(contractStart, n) === contractEnd) { lastTerm = { months: n, totalExGst: round2(unpaidTermExGst) }; break; }
+      }
+    }
   }
 
   // A renewed contract: the new term starts after the old payments run out (e.g. a
@@ -265,9 +272,21 @@ const dayWord = (n) => `${n} day${n === 1 ? '' : 's'}`;
 /**
  * @returns {{ subject, html, to, months, amounts, coversFrom, coversTo }}
  */
-function buildReminderEmail({ carpark, customer, status, kind, months, note, todayYmd, coversFrom }) {
+/** Extra terms staff added to one request: [{ from: 'YYYY-MM-DD', months }] — cleaned, max 6. */
+function cleanExtraTerms(raw) {
+  let list = raw;
+  if (typeof list === 'string') { try { list = JSON.parse(list); } catch (_) { list = []; } }
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((t) => ({ from: String((t && t.from) || ''), months: parseInt(t && t.months, 10) }))
+    .filter((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.from) && t.months >= 1 && t.months <= 36)
+    .slice(0, 6);
+}
+
+function buildReminderEmail({ carpark, customer, status, kind, months, note, todayYmd, coversFrom, extraTerms }) {
   const m = Number(months) || status.nextMonths || 1;
   const amt = amounts(status.lastTerm, m);
+  const extras = cleanExtraTerms(extraTerms);
   // A renewal offer to an ended contract starts today — the period it would
   // otherwise "cover" (from the last payment) has already gone.
   // Staff can choose the start date (e.g. carry on from when the last term ended).
@@ -301,6 +320,32 @@ function buildReminderEmail({ carpark, customer, status, kind, months, note, tod
     intro = [`Your long-term contract ${lt} is paid up to ${longDate(status.paidThrough)}, so you have ${dayWord(n)} left. Your next payment is due on ${dueText}.`, 'To keep your space without a gap, here is your renewal:'];
   }
 
+  // Several terms owing (e.g. last year's unpaid contract and this year's): one email, each term
+  // laid out as its own invoice with its own dates and amount, then the total to pay.
+  const terms = [{ from, to, months: m, amt }].concat(extras.map((t) => ({
+    from: t.from, months: t.months, to: addCalendarDaysYmd(addMonthsYmd(t.from, t.months), -1), amt: amounts(status.lastTerm, t.months),
+  })));
+  const totalInc = round2(terms.reduce((s, t) => s + t.amt.inc, 0));
+  if (extras.length) {
+    subject = `${first}, payment outstanding on your long-term parking (${lt})`;
+    intro = [`The following payments for your long-term contract ${lt} are outstanding.`, `Please pay the total below by ${longDate(addCalendarDaysYmd(todayYmd, 7))}.`];
+  }
+  const rowStyle = 'padding:8px 12px;border-top:1px solid #dee2e6;color:#666;';
+  const priceTable = extras.length
+    ? `<table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f2f7fa;border-radius:8px;">
+    ${terms.map((t, i) => `<tr><td colspan="2" style="padding:12px 12px 4px;${i ? 'border-top:2px solid #dee2e6;' : ''}"><strong>Invoice ${i + 1} of ${terms.length}</strong> — ${esc(longDate(t.from))} – ${esc(longDate(t.to))}</td></tr>
+    <tr><td style="${rowStyle}">Amount ex GST</td><td style="${rowStyle}text-align:right;">${money(t.amt.ex)}</td></tr>
+    <tr><td style="${rowStyle}">GST (15%)</td><td style="${rowStyle}text-align:right;">${money(t.amt.gst)}</td></tr>
+    <tr><td style="padding:8px 12px;"><strong>${t.months === 1 ? 'Monthly payment' : `${t.months}-month payment`} (inc GST)</strong></td><td style="padding:8px 12px;text-align:right;"><strong>${money(t.amt.inc)}</strong></td></tr>`).join('\n    ')}
+    <tr><td style="padding:12px;border-top:2px solid #1a5276;"><strong>Total to pay (inc GST)</strong></td><td style="padding:12px;border-top:2px solid #1a5276;text-align:right;font-size:18px;"><strong>${money(totalInc)}</strong></td></tr>
+  </table>`
+    : `<table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f2f7fa;border-radius:8px;">
+    <tr><td style="padding:12px;"><strong>${esc(termWord.charAt(0).toUpperCase() + termWord.slice(1))} (inc GST)</strong></td><td style="padding:12px;text-align:right;font-size:18px;"><strong>${money(amt.inc)}</strong></td></tr>
+    <tr><td style="${rowStyle}">Amount ex GST</td><td style="${rowStyle}text-align:right;">${money(amt.ex)}</td></tr>
+    <tr><td style="${rowStyle}">GST (15%)</td><td style="${rowStyle}text-align:right;">${money(amt.gst)}</td></tr>
+    <tr><td style="${rowStyle}">Covers</td><td style="${rowStyle}text-align:right;">${esc(longDate(from))} – ${esc(longDate(to))}</td></tr>
+  </table>`;
+
   const bank = [
     carpark && carpark.bank_name ? `<p style="margin:2px 0"><strong>Bank:</strong> ${esc(carpark.bank_name)}</p>` : '',
     carpark && carpark.bank_account_name ? `<p style="margin:2px 0"><strong>Account name:</strong> ${esc(carpark.bank_account_name)}</p>` : '',
@@ -313,12 +358,7 @@ function buildReminderEmail({ carpark, customer, status, kind, months, note, tod
   <h2 style="color:#1a5276;margin:0 0 14px;">${esc(carpark && carpark.name ? carpark.name : 'Car Storage')}</h2>
   <p>Hi ${esc(first)},</p>
   ${intro.map((t) => `<p>${esc(t)}</p>`).join('\n  ')}
-  <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f2f7fa;border-radius:8px;">
-    <tr><td style="padding:12px;"><strong>${esc(termWord.charAt(0).toUpperCase() + termWord.slice(1))} (inc GST)</strong></td><td style="padding:12px;text-align:right;font-size:18px;"><strong>${money(amt.inc)}</strong></td></tr>
-    <tr><td style="padding:8px 12px;border-top:1px solid #dee2e6;color:#666;">Amount ex GST</td><td style="padding:8px 12px;border-top:1px solid #dee2e6;text-align:right;color:#666;">${money(amt.ex)}</td></tr>
-    <tr><td style="padding:8px 12px;border-top:1px solid #dee2e6;color:#666;">GST (15%)</td><td style="padding:8px 12px;border-top:1px solid #dee2e6;text-align:right;color:#666;">${money(amt.gst)}</td></tr>
-    <tr><td style="padding:8px 12px;border-top:1px solid #dee2e6;color:#666;">Covers</td><td style="padding:8px 12px;border-top:1px solid #dee2e6;text-align:right;color:#666;">${esc(longDate(from))} – ${esc(longDate(to))}</td></tr>
-  </table>
+  ${priceTable}
   <p>Please pay by internet banking:</p>
   ${bank}
   ${note ? `<p style="background:#fff8e6;border-radius:6px;padding:10px 12px;margin-top:16px;">${esc(note)}</p>` : ''}
@@ -326,7 +366,10 @@ function buildReminderEmail({ carpark, customer, status, kind, months, note, tod
   <p style="color:#7f8c8d;font-size:12px;margin-top:18px;">${esc(carpark && carpark.address ? carpark.address : '')}<br>${esc(carpark && carpark.phone ? carpark.phone : '')}</p>
 </body></html>`;
 
-  return { subject, html, to: String(customer.email || '').trim(), months: m, amounts: amt, coversFrom: from, coversTo: to };
+  return {
+    subject, html, to: String(customer.email || '').trim(), months: m, amounts: amt, coversFrom: from, coversTo: to,
+    extraTerms: extras, terms: terms.map((t) => ({ from: t.from, to: t.to, months: t.months, inc: t.amt.inc })), totalInc,
+  };
 }
 
 /**
@@ -369,6 +412,6 @@ module.exports = {
   runDailyJob,
   computeStatus, priceExGst, amounts,
   getSettings, saveSettings, loadCustomersWithStatus,
-  generateDrafts, listDrafts, buildReminderEmail,
+  generateDrafts, listDrafts, buildReminderEmail, cleanExtraTerms,
   diffDays, firstName,
 };

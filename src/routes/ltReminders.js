@@ -18,10 +18,11 @@ async function loadOne(carparkId, id, todayYmd) {
   return { d, customer, status, carpark };
 }
 
-function buildFor(ctx, { months, note, from }, todayYmd) {
+function buildFor(ctx, { months, note, from, extra }, todayYmd) {
   return R.buildReminderEmail({
     carpark: ctx.carpark, customer: ctx.customer, status: ctx.status,
     kind: ctx.d.kind, months: months || ctx.d.months, note: (note || '').trim() || null, todayYmd, coversFrom: from,
+    extraTerms: extra,
   });
 }
 
@@ -105,23 +106,24 @@ router.get('/:id/preview', requireAuth, async (req, res) => {
     const ctx = await loadOne(carparkId, req.params.id, today);
     if (!ctx) return res.status(404).json({ error: 'Reminder not found' });
     const months = parseInt(req.query.months, 10) || undefined;
-    const email = buildFor(ctx, { months, note: req.query.note, from: req.query.from }, today);
+    const email = buildFor(ctx, { months, note: req.query.note, from: req.query.from, extra: req.query.extra }, today);
     res.json({
       nextDue: ctx.status.nextDue, defaultFrom: ctx.d.kind === 'expired' ? today : ctx.status.nextDue,
       subject: email.subject, html: email.html, to: email.to || null,
       months: email.months, amounts: email.amounts, coversFrom: email.coversFrom, coversTo: email.coversTo,
+      terms: email.terms, totalInc: email.totalInc,
       days: ctx.status.days, lastTerm: ctx.status.lastTerm,
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-async function sendOne(req, id, { months, note, from }) {
+async function sendOne(req, id, { months, note, from, extra }) {
   const carparkId = req.session.carparkId || 1;
   const today = businessDateYmd();
   const ctx = await loadOne(carparkId, id, today);
   if (!ctx) return { id, ok: false, error: 'Reminder not found' };
   if (ctx.d.status === 'sent') return { id, ok: false, error: 'Already sent' };
-  const email = buildFor(ctx, { months, note, from }, today);
+  const email = buildFor(ctx, { months, note, from, extra }, today);
   if (!email.to) return { id, ok: false, error: `No email address on file for ${ctx.customer.name}` };
   const transporter = getTransporter();
   if (!transporter) return { id, ok: false, error: SMTP_MISSING_MSG };
@@ -135,15 +137,15 @@ async function sendOne(req, id, { months, note, from }) {
     .run(userName || 'staff', email.months, (note || '').trim() || null, id);
   await logActivity(db, {
     carparkId, tableName: 'lt_reminders', recordId: Number(id), action: 'send',
-    before: null, after: { lt: ctx.customer.lt_number, to: email.to, kind: ctx.d.kind, rule: ctx.d.rule_key, months: email.months, amountInc: email.amounts.inc },
-    notes: `Sent ${ctx.d.kind} reminder to ${ctx.customer.name} (${ctx.customer.lt_number})`, userId, userName,
+    before: null, after: { lt: ctx.customer.lt_number, to: email.to, kind: ctx.d.kind, rule: ctx.d.rule_key, months: email.months, amountInc: email.amounts.inc, terms: email.terms.length > 1 ? email.terms : undefined, totalInc: email.terms.length > 1 ? email.totalInc : undefined },
+    notes: `Sent ${email.terms.length > 1 ? `${email.terms.length}-term payment request (${email.terms.map((t) => `${t.from} – ${t.to}`).join(' and ')})` : `${ctx.d.kind} reminder`} to ${ctx.customer.name} (${ctx.customer.lt_number})`, userId, userName,
   });
   return { id, ok: true, to: email.to, lt: ctx.customer.lt_number, name: ctx.customer.name };
 }
 
 router.post('/:id/send', requireAuth, async (req, res) => {
   try {
-    const r = await sendOne(req, req.params.id, { months: parseInt(req.body?.months, 10) || undefined, note: req.body?.note, from: req.body?.from });
+    const r = await sendOne(req, req.params.id, { months: parseInt(req.body?.months, 10) || undefined, note: req.body?.note, from: req.body?.from, extra: req.body?.extra });
     res.status(r.ok ? 200 : 400).json(r.ok ? { success: true, ...r } : { error: r.error });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -153,7 +155,7 @@ router.post('/send-batch', requireAuth, async (req, res) => {
   try {
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
     const results = [];
-    for (const it of items) results.push(await sendOne(req, it.id, { months: parseInt(it.months, 10) || undefined, note: it.note, from: it.from }));
+    for (const it of items) results.push(await sendOne(req, it.id, { months: parseInt(it.months, 10) || undefined, note: it.note, from: it.from, extra: it.extra }));
     res.json({ results, sent: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

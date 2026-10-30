@@ -71,6 +71,7 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-from-due" style="display:none"></button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-from-today" style="display:none">From today</button>
               </div>
+              <div id="pv-extra" class="mt-3"></div>
             </div>
 
             <div>
@@ -124,7 +125,9 @@
       expired:  { label: 'Renewal offer',    style: 'background:#ece7f6;color:#4b2f86' },
     };
 
-    let state = { drafts: [], settings: null, rules: [], sel: null, checked: {}, months: {}, note: {}, from: {}, sentIds: {} };
+    let state = { drafts: [], settings: null, rules: [], sel: null, checked: {}, months: {}, note: {}, from: {}, extra: {}, sentIds: {} };
+    const extraOf = (d) => state.extra[d.id] || [];
+    const addDaysYmd = (ymd, n) => { const t = new Date(`${ymd}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
     const wantedDraft = Number(new URLSearchParams(location.search).get('draft')) || null;
 
     const whenText = (d) => d == null ? '' : d < 0 ? `${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} overdue` : d === 0 ? 'due today' : `${d} day${d === 1 ? '' : 's'} left`;
@@ -201,6 +204,7 @@
       if (noteEl.dataset.for !== String(d.id)) { noteEl.value = state.note[d.id] || ''; noteEl.dataset.for = String(d.id); }
       const qs = new URLSearchParams({ months: m });
       if (state.from[d.id]) qs.set('from', state.from[d.id]);
+      if (extraOf(d).length) qs.set('extra', JSON.stringify(extraOf(d)));
       if (noteEl.value.trim()) qs.set('note', noteEl.value.trim());
       const res = await fetch(`/api/lt-reminders/${d.id}/preview?${qs.toString()}`);
       if (seq !== previewSeq) return;
@@ -222,6 +226,7 @@
       todayBtn.style.display = p.coversFrom !== state.today ? '' : 'none';
       todayBtn.onclick = () => { state.from[d.id] = state.today; loadPreview(); };
       fromEl.onchange = () => { state.from[d.id] = fromEl.value || null; loadPreview(); };
+      renderExtraTerms(d, p);
       const warn = document.getElementById('pv-warn');
       warn.classList.toggle('d-none', !d.warning);
       warn.textContent = d.warning || '';
@@ -241,6 +246,33 @@
       const send = document.getElementById('btn-send-one');
       send.disabled = !d.hasEmail;
       send.textContent = `Approve & send to ${document.getElementById('pv-first').textContent}`;
+    }
+
+    // More than one term owing (e.g. last year unpaid + this year): each extra term is its own
+    // invoice block in the same email, with the total to pay at the bottom.
+    function renderExtraTerms(d, p) {
+      const box = document.getElementById('pv-extra');
+      const extras = extraOf(d);
+      const last = p.terms[p.terms.length - 1];
+      const nextFrom = addDaysYmd(last.to, 1);
+      const monthOpts = (cur) => [1, 3, 6, 12].concat([1, 3, 6, 12].includes(cur) ? [] : [cur])
+        .map((x) => `<option value="${x}" ${x === cur ? 'selected' : ''}>${x === 1 ? '1 month' : x + ' months'}</option>`).join('');
+      box.innerHTML = `
+        <div class="rv-label mb-2">Owing for more than one term?</div>
+        ${extras.map((t, i) => `
+          <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+            <span class="rv-muted fw-semibold">Invoice ${i + 2}</span>
+            <input type="date" class="form-control" data-xfrom="${i}" value="${t.from}" style="width:auto;min-height:40px" aria-label="Starts">
+            <select class="form-select" data-xmonths="${i}" style="width:auto;min-height:40px" aria-label="Length">${monthOpts(t.months)}</select>
+            <span class="rv-muted">${p.terms[i + 1] ? `${money(p.terms[i + 1].inc)} · to ${fmtD(p.terms[i + 1].to)}` : ''}</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-xdel="${i}">Remove</button>
+          </div>`).join('')}
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-add-term">+ Also invoice another term (from ${fmtD(nextFrom)})</button>
+        ${extras.length ? `<div class="fw-bold mt-2">Total to pay: ${money(p.totalInc)} <span class="rv-muted fw-normal">across ${p.terms.length} invoices, in one email</span></div>` : ''}`;
+      document.getElementById('btn-add-term').onclick = () => { state.extra[d.id] = extras.concat([{ from: nextFrom, months: last.months }]); loadPreview(); };
+      box.querySelectorAll('[data-xdel]').forEach((b) => b.onclick = () => { state.extra[d.id] = extras.filter((_, i) => i !== Number(b.dataset.xdel)); loadPreview(); });
+      box.querySelectorAll('[data-xfrom]').forEach((el) => el.onchange = () => { const x = extras.slice(); x[Number(el.dataset.xfrom)] = { ...x[Number(el.dataset.xfrom)], from: el.value }; state.extra[d.id] = x.filter((t) => t.from); loadPreview(); });
+      box.querySelectorAll('[data-xmonths]').forEach((el) => el.onchange = () => { const x = extras.slice(); x[Number(el.dataset.xmonths)] = { ...x[Number(el.dataset.xmonths)], months: Number(el.value) }; state.extra[d.id] = x; loadPreview(); });
     }
 
     document.getElementById('pv-note').addEventListener('input', debounce(() => {
@@ -263,7 +295,7 @@
       btn.disabled = true;
       const res = await fetch(`/api/lt-reminders/${d.id}/send`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ months: monthsFor(d), note: state.note[d.id] || '', from: state.from[d.id] || undefined }),
+        body: JSON.stringify({ months: monthsFor(d), note: state.note[d.id] || '', from: state.from[d.id] || undefined, extra: extraOf(d) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { showAlert(data.error || 'Could not send', 'danger', 7000); btn.disabled = false; return; }
@@ -273,7 +305,7 @@
     });
 
     document.getElementById('btn-send-checked').addEventListener('click', async () => {
-      const items = state.drafts.filter((d) => state.checked[d.id] && d.hasEmail).map((d) => ({ id: d.id, months: monthsFor(d), note: state.note[d.id] || '', from: state.from[d.id] || undefined }));
+      const items = state.drafts.filter((d) => state.checked[d.id] && d.hasEmail).map((d) => ({ id: d.id, months: monthsFor(d), note: state.note[d.id] || '', from: state.from[d.id] || undefined, extra: extraOf(d) }));
       if (!items.length) return;
       if (!confirm(`Send ${items.length} reminder${items.length === 1 ? '' : 's'} now?`)) return;
       const btn = document.getElementById('btn-send-checked');

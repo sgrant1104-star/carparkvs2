@@ -144,6 +144,20 @@
     const s = await R.saveSettings(db, cp, { rules: { d30: false, d14: true, d7: true, due: true, o3: false, o7: true }, mode: 'auto' });
     const got = await R.getSettings(db, cp);
     assert(got.mode === 'auto' && got.rules.d30 === false && got.rules.o7 === true, 'reminder rules and send mode are saved');
+
+    // LT4-like: contract 1 Jan 2025 – 1 Jan 2026 never paid; both years are owed in one request
+    const lt4 = { lt_number: 'LT4', name: 'INNES REPAPERA', email: 'x@example.com', contract_start_date: '2025-01-01', expiry_date: '2026-01-01', contract_amount: 1650 };
+    const st4 = R.computeStatus(lt4, [], '2026-10-30');
+    assert(st4.nextDue === '2025-01-01' && st4.expired === true, 'unpaid ended contract: due from its start, flagged ended');
+    assert(st4.nextMonths === 12 && st4.nextAmountInc === 1897.5, 'unpaid contract defaults to its own length (12 months) and price ($1,897.50)');
+    const one = R.buildReminderEmail({ carpark: {}, customer: lt4, status: st4, kind: 'expired', months: 12, todayYmd: '2026-10-30', coversFrom: '2025-01-01' });
+    assert(one.coversFrom === '2025-01-01' && one.coversTo === '2025-12-31' && one.terms.length === 1, 'single term: 1 Jan 2025 – 31 Dec 2025');
+    const two = R.buildReminderEmail({ carpark: {}, customer: lt4, status: st4, kind: 'expired', months: 12, todayYmd: '2026-10-30', coversFrom: '2025-01-01', extraTerms: [{ from: '2026-01-01', months: 12 }] });
+    assert(two.terms.length === 2 && two.terms[1].from === '2026-01-01' && two.terms[1].to === '2026-12-31', 'second invoice covers 1 Jan 2026 – 31 Dec 2026');
+    assert(two.totalInc === 3795, 'total to pay is both years ($3,795.00)');
+    assert(/Invoice 1 of 2/.test(two.html) && /Invoice 2 of 2/.test(two.html) && /\$3,795\.00/.test(two.html) && /1 January 2026/.test(two.html), 'email lays out two invoices and the total');
+    assert(/payment outstanding/.test(two.subject) && !/keep your space/.test(two.subject), 'wording is "outstanding", not a renewal offer');
+    assert(R.cleanExtraTerms('[{"from":"bad","months":12},{"from":"2026-01-01","months":99},{"from":"2026-01-01","months":3}]').length === 1, 'junk extra terms are ignored');
   } finally {
     if (created.length) {
       await db.prepare(`DELETE FROM lt_reminders WHERE longterm_customer_id IN (${created.join(',')})`).run();
