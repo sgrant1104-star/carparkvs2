@@ -16,6 +16,7 @@ let priceTouchedByStaff = false;
 let lastAutoTotal = null;   // the total we last filled in, so a payment amount we filled follows it
 let priceTimer = null;
 let priceSeq = 0;           // only the newest price request is allowed to write to the form
+let lastStayNights = null;  // to notice when the stay length changes under a "charge for X days" discount
 
 // ─── Customer credit (early-return refunds) ────────────────────────────────
 let existingCreditApplied = 0;   // credit_applied as loaded from the server (0 for a new booking)
@@ -289,6 +290,7 @@ async function newInvoice() {
   document.getElementById('inv-time-in').value = now.toTimeString().substr(0, 5);
   priceTouchedByStaff = false;
   lastAutoTotal = null;
+  document.getElementById('inv-charge-days').value = '';
   // Default return: tomorrow
   document.getElementById('inv-return-date').value = addDays(localDateStr(now), 1);
   document.getElementById('inv-return-time').value = '14:35';
@@ -492,10 +494,29 @@ function updateNightsAndDisplay() {
   const returnTime = returnTimeEl ? returnTimeEl.value : '';
   const nights = calcNights24h(dateIn, timeIn, returnDate, returnTime);
   document.getElementById('inv-nights').value = nights;
+  // New dates mean the "charge for X days" discount no longer fits — hand pricing back to the stay.
+  const chargeEl = document.getElementById('inv-charge-days');
+  if (chargeEl.value && lastStayNights !== null && nights !== lastStayNights) {
+    chargeEl.value = '';
+    if (!currentInvoiceId) showAlert('The stay length changed, so "Charge for how many days" was cleared — set it again if you still want a discount.', 'info', 6000);
+  }
+  lastStayNights = nights;
   document.getElementById('date-in-display').textContent = dateIn ? formatDate(dateIn) : 'Not set';
   document.getElementById('time-in-display').textContent = timeIn || '--:--';
   schedulePriceUpdate();
 }
+
+/** Days to charge: staff's own number if they gave one (a discount), otherwise the whole stay. */
+function billedNights() {
+  const own = parseInt(document.getElementById('inv-charge-days').value, 10) || 0;
+  return own > 0 ? own : (parseInt(document.getElementById('inv-nights').value, 10) || 1);
+}
+
+// Changing the charged days re-prices (on a saved, already-paid invoice it asks first, like Calculate).
+document.getElementById('inv-charge-days').addEventListener('change', () => {
+  priceTouchedByStaff = false;
+  if (currentInvoiceId) calculatePriceNow(); else autoPrice();
+});
 
 function schedulePriceUpdate() {
   if (currentInvoiceId) return;
@@ -556,6 +577,10 @@ function syncReturnDateFromNights() {
   const nights = Math.max(0, parseInt(document.getElementById('inv-nights').value, 10) || 0);
   document.getElementById('inv-return-date').value = addDays(dateIn, nights);
   updateNightsAndDisplay();
+  const counted = parseInt(document.getElementById('inv-nights').value, 10) || 0;
+  if (nights > 0 && counted !== nights) {
+    showAlert(`The return time makes that ${counted} night(s) (24-hour blocks from drop-off). To charge ${nights} without changing the dates, use "Charge for how many days?" under Pricing.`, 'info', 9000);
+  }
   loadFlightsForDate(document.getElementById('inv-return-date').value);
 }
 
@@ -736,7 +761,7 @@ function applyAccountCustomerPricingFromLookup(acct) {
   if (billing) document.getElementById('inv-email').value = billing;
   const d = acct.discount_percent || 0;
   showAlert(`On-account customer: ${escapeHtml(acct.company_name)}${d > 0 ? ` (${d}% discount on short-term rates)` : ''}`, 'info');
-  const nights = parseInt(document.getElementById('inv-nights').value, 10) || 1;
+  const nights = billedNights();
   return fetch(`/api/invoices/calculate-price?nights=${nights}&account_customer_id=${acct.id}`)
     .then(r => r.json())
     .then(p => {
@@ -1050,7 +1075,7 @@ document.getElementById('inv-discount-10').addEventListener('change', () => {
   const isChecked = document.getElementById('inv-discount-10').checked;
 
   // Re-fetch a clean calculate if we have the nights value
-  const nights = parseInt(document.getElementById('inv-nights').value) || 1;
+  const nights = billedNights();
   const accountId = document.getElementById('inv-account-customer').value;
   fetch(`/api/invoices/calculate-price?nights=${nights}&account_customer_id=${accountId}`)
     .then(r => r.json())
@@ -1142,7 +1167,8 @@ async function calculatePriceNow(opts) {
       if (!proceed) return;
     }
   }
-  const nights = parseInt(document.getElementById('inv-nights').value) || 1;
+  const stayNights = parseInt(document.getElementById('inv-nights').value) || 1;
+  const nights = billedNights();
   const accountId = document.getElementById('inv-account-customer').value;
   const res = await fetch(`/api/invoices/calculate-price?nights=${nights}&account_customer_id=${accountId}`);
   if (!res.ok) return;
@@ -1165,6 +1191,7 @@ async function calculatePriceNow(opts) {
   lastAutoTotal = Math.round(total * 100) / 100;
   updateAmountDueHint();
   let breakdown = `${nights} day(s) × $${data.dailyRate}/day = $${data.total.toFixed(2)}`;
+  if (nights !== stayNights) breakdown += ` — charging ${nights} of the ${stayNights} days stayed`;
   if (data.pricing_mode === 'account_rate_card') breakdown += ' (account rate card)';
   else if (data.discountPercent > 0) breakdown += ` (${data.discountPercent}% account discount applied)`;
   if (document.getElementById('inv-discount-10').checked) breakdown += ` (-10% discount)`;

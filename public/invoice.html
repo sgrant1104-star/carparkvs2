@@ -228,6 +228,15 @@
                 <div class="fw-bold" id="credit-display">N/A</div>
               </div>
             </div>
+            <div class="row g-2 align-items-center mb-2">
+              <div class="col-8">
+                <label class="form-label fw-bold mb-0" for="inv-charge-days">Charge for how many days?</label>
+                <div class="small text-muted">Blank = the whole stay. Use this to give a discount (e.g. stay 3 days, charge 2) without changing the dates.</div>
+              </div>
+              <div class="col-4">
+                <input type="number" min="1" step="1" class="form-control fw-bold" id="inv-charge-days" placeholder="all">
+              </div>
+            </div>
             <button type="button" class="btn btn-calculate w-100 mb-2" id="btn-calculate">
               <i class="bi bi-calculator me-1"></i> Calculate Price
             </button>
