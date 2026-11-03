@@ -10,6 +10,13 @@ let paymentLockReason = ''; // when set, PAID STATUS is hard-locked to OnAcc
 let longTermPricingActive = false; // when true, LT auto price is in control
 let pricingMode = 'manual'; // manual | longterm | account-rate-card | account-discount
 
+// Automatic pricing for NEW bookings: the price follows the dates, times and account by itself
+// (nobody has to remember to click Calculate). It stops as soon as staff type their own total.
+let priceTouchedByStaff = false;
+let lastAutoTotal = null;   // the total we last filled in, so a payment amount we filled follows it
+let priceTimer = null;
+let priceSeq = 0;           // only the newest price request is allowed to write to the form
+
 // ─── Customer credit (early-return refunds) ────────────────────────────────
 let existingCreditApplied = 0;   // credit_applied as loaded from the server (0 for a new booking)
 let newlyStagedCredit = 0;       // amount staged via the "Apply" button THIS session, not yet consumed server-side
@@ -280,6 +287,8 @@ async function newInvoice() {
   const now = new Date();
   document.getElementById('inv-date-in').value = localDateStr(now);
   document.getElementById('inv-time-in').value = now.toTimeString().substr(0, 5);
+  priceTouchedByStaff = false;
+  lastAutoTotal = null;
   // Default return: tomorrow
   document.getElementById('inv-return-date').value = addDays(localDateStr(now), 1);
   document.getElementById('inv-return-time').value = '14:35';
@@ -485,7 +494,29 @@ function updateNightsAndDisplay() {
   document.getElementById('inv-nights').value = nights;
   document.getElementById('date-in-display').textContent = dateIn ? formatDate(dateIn) : 'Not set';
   document.getElementById('time-in-display').textContent = timeIn || '--:--';
+  schedulePriceUpdate();
 }
+
+function schedulePriceUpdate() {
+  if (currentInvoiceId) return;
+  clearTimeout(priceTimer);
+  priceTimer = setTimeout(autoPrice, 300);
+}
+
+/** Prices a new booking from its dates/times and account. Quietly does nothing when it shouldn't. */
+async function autoPrice() {
+  clearTimeout(priceTimer);
+  priceTimer = null;
+  if (currentInvoiceId || longTermPricingActive || priceTouchedByStaff) return;
+  if (document.getElementById('inv-return-time-tbc').checked || !document.getElementById('inv-return-date').value) return;
+  if ((parseInt(document.getElementById('inv-nights').value, 10) || 0) < 1) return;
+  await calculatePriceNow({ auto: true });
+}
+
+// Typing your own total takes over (clear the box to hand pricing back to the system).
+document.getElementById('inv-total-price').addEventListener('input', () => {
+  priceTouchedByStaff = document.getElementById('inv-total-price').value.trim() !== '';
+});
 
 function setPricingModeLabel(mode) {
   pricingMode = mode || 'manual';
@@ -887,9 +918,14 @@ document.getElementById('inv-rego').addEventListener('keydown', (e) => {
 
 document.getElementById('inv-account-customer').addEventListener('change', () => {
   if (currentInvoiceId) return;
+  // Picking (or removing) an account re-prices the booking at that account's rates.
+  priceTouchedByStaff = false;
   if (!document.getElementById('inv-account-customer').value) {
     setPricingModeLabel('manual');
     clearOnAccountPaymentLock();
+    const ps = document.getElementById('inv-paid-status');
+    if (ps.value === 'OnAcc') { ps.value = 'To Pay'; syncPaymentReceivedDateUi(); }
+    schedulePriceUpdate();
     return;
   }
   const id = document.getElementById('inv-account-customer').value;
@@ -902,6 +938,7 @@ document.getElementById('inv-account-customer').addEventListener('change', () =>
   setPricingModeLabel('account-rate-card');
   setOnAccountPaymentLock('On Account', true);
   updateReceiptWording();
+  schedulePriceUpdate();
 });
 
 // ─── Event listeners ──────────────────────────────────────────────────────────
@@ -1082,11 +1119,14 @@ document.getElementById('inv-paid-status-2').addEventListener('change', () => {
 // Calculate price — also called automatically after pre-filling from an
 // online booking (see prefillFromPrebooking), so staff don't have to click
 // this just to get the number the customer already saw as their estimate.
-async function calculatePriceNow() {
+async function calculatePriceNow(opts) {
+  const auto = !!(opts && opts.auto === true);
   if (longTermPricingActive) {
-    showAlert('Long-term booking detected: price is auto-filled from Long Term settings.', 'info');
+    if (!auto) showAlert('Long-term booking detected: price is auto-filled from Long Term settings.', 'info');
     return;
   }
+  if (!auto) priceTouchedByStaff = false; // pressing Calculate hands pricing back to the system
+  const mySeq = ++priceSeq;
   // On a saved invoice that's already (at least partly) paid, recalculating
   // silently overwrites the actual paid total with a fresh nights x rate
   // figure — which then feeds the early-return credit math on save. Confirm
@@ -1107,6 +1147,9 @@ async function calculatePriceNow() {
   const res = await fetch(`/api/invoices/calculate-price?nights=${nights}&account_customer_id=${accountId}`);
   if (!res.ok) return;
   const data = await res.json();
+  // A newer price request, a saved invoice being opened, or staff typing their own total beat this answer.
+  if (mySeq !== priceSeq) return;
+  if (auto && (currentInvoiceId || priceTouchedByStaff || longTermPricingActive)) return;
 
   let total = data.total;
   if (document.getElementById('inv-discount-10').checked) {
@@ -1114,7 +1157,13 @@ async function calculatePriceNow() {
   }
 
   document.getElementById('inv-total-price').value = total.toFixed(2);
-  document.getElementById('inv-payment-amount').value = total.toFixed(2);
+  const payEl = document.getElementById('inv-payment-amount');
+  const prevPay = parseFloat(payEl.value);
+  // Automatic runs only move a payment amount that we filled ourselves (or that is still empty);
+  // on an account the payment is always the invoiced total.
+  if (!auto || accountId || !prevPay || prevPay === lastAutoTotal) payEl.value = total.toFixed(2);
+  lastAutoTotal = Math.round(total * 100) / 100;
+  updateAmountDueHint();
   let breakdown = `${nights} day(s) × $${data.dailyRate}/day = $${data.total.toFixed(2)}`;
   if (data.pricing_mode === 'account_rate_card') breakdown += ' (account rate card)';
   else if (data.discountPercent > 0) breakdown += ` (${data.discountPercent}% account discount applied)`;
@@ -1229,6 +1278,8 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
   // not on every subsequent edit of the same invoice.
   let staffCode = null;
   if (!currentInvoiceId) {
+    // Last check that a new booking is priced: catch a save pressed before the automatic price landed.
+    if (priceTimer || !(parseFloat(document.getElementById('inv-total-price').value) > 0)) await autoPrice();
     staffCode = await promptStaffCode();
     if (!staffCode) return; // cancelled
   }
