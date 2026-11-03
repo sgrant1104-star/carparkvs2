@@ -174,8 +174,9 @@
       if (!Number.isFinite(t1) || !Number.isFinite(t2)) return 1;
       const diffMs = t2 - t1;
       const dayMs = 24 * 60 * 60 * 1000;
-      if (diffMs <= dayMs) return 1;
-      return Math.max(1, Math.ceil(diffMs / dayMs));
+      if (diffMs <= 0) return 1;
+      // 30 minutes' grace after each 24-hour block (matches the staff check-in form)
+      return Math.max(1, Math.ceil((diffMs - 30 * 60 * 1000) / dayMs));
     }
 
     // Must match MIN_LONGTERM_DAYS in src/routes/bookings.js — the server is

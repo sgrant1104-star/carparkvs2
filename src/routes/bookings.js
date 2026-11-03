@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../database');
 const { requireCustomerAuth } = require('../middleware/customerAuth');
 const { calculateShortStayPrice } = require('../utils/pricing');
+const { nightsWithGrace } = require('../utils/stayDays');
 const { getAccountInvoicesWithOutstanding } = require('../utils/paymentAllocation');
 const accountHold = require('../utils/accountHold');
 const { businessDateYmd } = require('../utils/businessDate');
@@ -70,10 +71,7 @@ function calcNights24h(dateIn, timeIn, dateOut, timeOut) {
   const t1 = Date.parse(`${dateIn}T${timeIn}:00Z`);
   const t2 = Date.parse(`${dateOut}T${timeOut}:00Z`);
   if (!Number.isFinite(t1) || !Number.isFinite(t2)) return 1;
-  const diffMs = t2 - t1;
-  const dayMs = 24 * 60 * 60 * 1000;
-  if (diffMs <= dayMs) return 1;
-  return Math.max(1, Math.ceil(diffMs / dayMs));
+  return nightsWithGrace(t1, t2);
 }
 
 function daysBetweenYmd(fromYmd, toYmd) {

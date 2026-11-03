@@ -203,7 +203,14 @@
           // Only prompt when actually logging the return (not when undoing
           // one back to "Car In Yard" — that's a correction, not a new event).
           let staffCode = null;
+          let lateChoice = null;
           if (status === 'Picked Up') {
+            // Collected after the paid day(s) ended + 30 min grace? Decide what happens to the extra day first.
+            const late = await fetch(`/api/returns/${id}/overstay`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+            if (late && late.late) {
+              lateChoice = await askLatePickup(late);
+              if (!lateChoice) return; // cancelled
+            }
             staffCode = await promptStaffCode();
             if (!staffCode) return; // cancelled
           }
@@ -213,18 +220,72 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               picked_up: status,
+              ...(lateChoice ? { overstay: { choice: lateChoice } } : {}),
               ...(staffCode ? { staff_code: staffCode.code, staff_code_name: staffCode.name } : {})
             })
           });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showAlert(err.error || 'Could not mark as picked up', 'danger', 8000);
+            return;
+          }
           if (res.ok) {
             const result = await res.json().catch(() => ({}));
             showAlert(`Marked as: ${status}`, 'success');
+            if (result.overstay) {
+              showAlert(`Late pick-up: ${result.overstay.extraDays} extra day(s), $${result.overstay.extraAmount.toFixed(2)} — ${result.overstay.summary}.`, 'info', 8000);
+            }
             if (result.credit) {
               showAlert(`💰 Early return — $${result.credit.amount.toFixed(2)} credit saved to this customer's name for next visit.`, 'info');
             }
             loadReturns();
           }
         });
+      });
+    }
+
+    // A car collected after its paid day(s) + 30 min grace: staff choose what happens to the extra day.
+    // Resolves to 'Eftpos' | 'Cash' | 'owing' | 'waive', or null if cancelled.
+    function askLatePickup(l) {
+      return new Promise((resolve) => {
+        const m = (n) => '$' + Number(n).toFixed(2);
+        const el = document.createElement('div');
+        el.className = 'modal fade';
+        el.tabIndex = -1;
+        const days = `${l.extraDays} extra day${l.extraDays === 1 ? '' : 's'}`;
+        const collect = l.paid === 0 && !l.onAccount ? l.total + l.extraAmount : l.extraAmount;
+        const status = l.onAccount
+          ? 'This booking is on account, so the extra day is added to what is billed to the account.'
+          : (l.paid > 0
+              ? `They have already paid ${m(l.paid)} of ${m(l.total)}${l.owingBefore > 0 ? ` (${m(l.owingBefore)} was still owing)` : ''}.`
+              : `Nothing has been paid yet (${m(l.total)} on the booking).`);
+        const btns = l.onAccount
+          ? `<button class="btn btn-primary" data-c="owing">Add ${m(l.extraAmount)} to the account invoice</button>`
+          : `<button class="btn btn-success" data-c="Eftpos">Collect ${m(collect)} — Eftpos</button>
+             <button class="btn btn-success" data-c="Cash">Collect ${m(collect)} — Cash</button>
+             <button class="btn btn-outline-primary" data-c="owing">Add ${m(l.extraAmount)} — still owing</button>`;
+        el.innerHTML = `<div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+          <div class="modal-header"><h5 class="modal-title">Late pick-up</h5></div>
+          <div class="modal-body">
+            <p class="mb-2"><strong>${escapeHtml(l.name || '')}</strong> ${l.rego ? `(${escapeHtml(l.rego)})` : ''} is being collected
+              ${l.minutesPastBlock} minutes after the ${l.bookedDays} day${l.bookedDays === 1 ? '' : 's'} they paid for ended
+              (past the ${l.graceMinutes}-minute grace).</p>
+            <p class="mb-2">That is <strong>${days} — ${m(l.extraAmount)}</strong>.</p>
+            <p class="text-muted mb-0">${status}</p>
+          </div>
+          <div class="modal-footer d-flex flex-wrap gap-2 justify-content-start">
+            ${btns}
+            <button class="btn btn-outline-secondary" data-c="waive">No charge</button>
+            <button class="btn btn-link text-secondary ms-auto" data-c="">Cancel</button>
+          </div></div></div>`;
+        document.body.appendChild(el);
+        const modal = new bootstrap.Modal(el);
+        let done = false;
+        el.querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', () => {
+          done = true; modal.hide(); resolve(b.dataset.c || null);
+        }));
+        el.addEventListener('hidden.bs.modal', () => { if (!done) resolve(null); el.remove(); });
+        modal.show();
       });
     }
 
