@@ -67,6 +67,33 @@ async function apiFetch(url, options = {}) {
   };
 })();
 
+// A screen left open for hours keeps running the code it loaded with. After the app is updated,
+// say so (a yellow bar with a Reload button) rather than letting staff carry on with an old page.
+// Never reloads by itself, so nothing half-typed is lost.
+(function watchForNewVersion() {
+  let loadedBuild = null;
+  let shown = false;
+  async function check() {
+    if (shown) return;
+    try {
+      const r = await fetch('/api/version', { cache: 'no-store' });
+      if (!r.ok) return;
+      const { build } = await r.json();
+      if (loadedBuild === null) { loadedBuild = build; return; }
+      if (build !== loadedBuild && document.body) {
+        shown = true;
+        const el = document.createElement('div');
+        el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:19999;background:#FFC72C;color:#141414;padding:10px 16px;text-align:center;font-size:14px;font-weight:600;box-shadow:0 -2px 8px rgba(0,0,0,.25)';
+        el.innerHTML = 'The app has been updated. Finish and save what you are doing, then '
+          + '<button type="button" style="margin-left:6px;font-weight:700;border:2px solid #141414;background:#141414;color:#FFC72C;border-radius:6px;padding:2px 12px;cursor:pointer" onclick="location.reload()">Reload this page</button>';
+        document.body.appendChild(el);
+      }
+    } catch (_) { /* offline or logged out — try again later */ }
+  }
+  window.addEventListener('load', () => { check(); setInterval(check, 3 * 60 * 1000); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+})();
+
 // Show alert/toast notification
 function showAlert(message, type = 'success', duration = 3500) {
   const container = document.getElementById('alert-container') || (() => {

@@ -17,6 +17,7 @@ let lastAutoTotal = null;   // the total we last filled in, so a payment amount 
 let priceTimer = null;
 let priceSeq = 0;           // only the newest price request is allowed to write to the form
 let lastStayNights = null;  // to notice when the stay length changes under a "charge for X days" discount
+let pricedFor = null;       // the dates/account/discount the total on screen was last worked out (or accepted) for
 
 // ─── Customer credit (early-return refunds) ────────────────────────────────
 let existingCreditApplied = 0;   // credit_applied as loaded from the server (0 for a new booking)
@@ -290,6 +291,7 @@ async function newInvoice() {
   document.getElementById('inv-time-in').value = now.toTimeString().substr(0, 5);
   priceTouchedByStaff = false;
   lastAutoTotal = null;
+  pricedFor = null;
   document.getElementById('inv-charge-days').value = '';
   // Default return: tomorrow
   document.getElementById('inv-return-date').value = addDays(localDateStr(now), 1);
@@ -473,6 +475,7 @@ async function loadInvoice(invoiceNumber, invoiceId) {
   }
 
   updateNightsAndDisplay();
+  pricedFor = priceBasis(); // the saved total is what it is; only ask again if the dates/account change from here
   document.getElementById('inv-status-badge').innerHTML = inv.void
     ? `<span class="badge bg-secondary">VOIDED</span>`
     : `<span class="badge bg-success">SAVED</span>`;
@@ -504,6 +507,73 @@ function updateNightsAndDisplay() {
   document.getElementById('date-in-display').textContent = dateIn ? formatDate(dateIn) : 'Not set';
   document.getElementById('time-in-display').textContent = timeIn || '--:--';
   schedulePriceUpdate();
+}
+
+/** Everything the price depends on, as one string — to tell whether the total still matches the booking. */
+function priceBasis() {
+  const g = (id) => document.getElementById(id);
+  return JSON.stringify([g('inv-nights').value, g('inv-account-customer').value, g('inv-discount-10').checked, g('inv-charge-days').value, g('inv-return-time-tbc').checked]);
+}
+
+/** Three-way question when the total doesn't match the stay: 'fix' | 'keep' | null (go back). */
+function askPriceFix({ nights, expected, total, accountRate, paidOnSaved }) {
+  return new Promise((resolve) => {
+    const m = (n) => '$' + Number(n).toFixed(2);
+    const el = document.createElement('div');
+    el.className = 'modal fade';
+    el.tabIndex = -1;
+    const diff = expected - total;
+    el.innerHTML = `<div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Check the price</h5></div>
+      <div class="modal-body">
+        <p class="mb-2">This stay is <strong>${nights} day${nights === 1 ? '' : 's'}</strong>${accountRate ? ' at the account rate' : ''}, which prices at <strong>${m(expected)}</strong>.</p>
+        <p class="mb-2">The total on the booking is <strong>${m(total)}</strong>.</p>
+        ${paidOnSaved && diff > 0 ? `<p class="mb-0 text-muted">If you change it, ${m(diff)} will show as still to pay.</p>` : ''}
+      </div>
+      <div class="modal-footer d-flex flex-wrap gap-2 justify-content-start">
+        <button class="btn btn-warning fw-bold" data-c="fix">Change the total to ${m(expected)}</button>
+        <button class="btn btn-outline-secondary" data-c="keep">Keep ${m(total)}</button>
+        <button class="btn btn-link text-secondary ms-auto" data-c="">Go back</button>
+      </div></div></div>`;
+    document.body.appendChild(el);
+    const modal = new bootstrap.Modal(el);
+    let done = false;
+    el.querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', () => { done = true; modal.hide(); resolve(b.dataset.c || null); }));
+    el.addEventListener('hidden.bs.modal', () => { if (!done) resolve(null); el.remove(); });
+    modal.show();
+  });
+}
+
+/**
+ * Last line of defence when saving: if the dates, account or discount have changed since the total was
+ * worked out and the total no longer matches what the stay costs, say so instead of saving quietly.
+ * Returns false when staff choose "Go back".
+ */
+async function confirmPriceMatches() {
+  if (longTermPricingActive || paymentLockReason === 'Long Term') return true;
+  if (document.getElementById('inv-return-time-tbc').checked) return true;
+  if (pricedFor === priceBasis()) return true;
+  const nights = billedNights();
+  if (nights < 1) return true;
+  const accountId = document.getElementById('inv-account-customer').value;
+  let d;
+  try {
+    const r = await fetch(`/api/invoices/calculate-price?nights=${nights}&account_customer_id=${accountId}`);
+    if (!r.ok) return true;
+    d = await r.json();
+  } catch (_) { return true; }
+  let expected = d.total;
+  if (document.getElementById('inv-discount-10').checked) expected *= 0.9;
+  expected = Math.round(expected * 100) / 100;
+  const total = parseFloat(document.getElementById('inv-total-price').value) || 0;
+  if (Math.abs(expected - total) < 0.01) { pricedFor = priceBasis(); return true; }
+
+  const paidAlready = !!currentInvoiceId && !!document.getElementById('inv-paid-status').value && document.getElementById('inv-paid-status').value !== 'To Pay' && document.getElementById('inv-paid-status').value !== 'OnAcc';
+  const choice = await askPriceFix({ nights, expected, total, accountRate: !!accountId, paidOnSaved: paidAlready });
+  if (!choice) return false;
+  if (choice === 'fix') await calculatePriceNow({ force: true });
+  pricedFor = priceBasis();
+  return true;
 }
 
 /** Days to charge: staff's own number if they gave one (a discount), otherwise the whole stay. */
@@ -1145,18 +1215,20 @@ document.getElementById('inv-paid-status-2').addEventListener('change', () => {
 // online booking (see prefillFromPrebooking), so staff don't have to click
 // this just to get the number the customer already saw as their estimate.
 async function calculatePriceNow(opts) {
-  const auto = !!(opts && opts.auto === true);
+  const force = !!(opts && opts.force === true); // staff just agreed to the corrected price
+  const auto = !!(opts && opts.auto === true) || force;
   if (longTermPricingActive) {
     if (!auto) showAlert('Long-term booking detected: price is auto-filled from Long Term settings.', 'info');
     return;
   }
   if (!auto) priceTouchedByStaff = false; // pressing Calculate hands pricing back to the system
+  if (force) priceTouchedByStaff = false;
   const mySeq = ++priceSeq;
   // On a saved invoice that's already (at least partly) paid, recalculating
   // silently overwrites the actual paid total with a fresh nights x rate
   // figure — which then feeds the early-return credit math on save. Confirm
   // first so staff don't lose track of what was really charged.
-  if (currentInvoiceId) {
+  if (currentInvoiceId && !force) {
     const paidStatus = document.getElementById('inv-paid-status').value;
     const paidStatus2El = document.getElementById('inv-paid-status-2');
     const paidStatus2 = paidStatus2El ? paidStatus2El.value : '';
@@ -1175,19 +1247,28 @@ async function calculatePriceNow(opts) {
   const data = await res.json();
   // A newer price request, a saved invoice being opened, or staff typing their own total beat this answer.
   if (mySeq !== priceSeq) return;
-  if (auto && (currentInvoiceId || priceTouchedByStaff || longTermPricingActive)) return;
+  if (auto && !force && (currentInvoiceId || priceTouchedByStaff || longTermPricingActive)) return;
 
   let total = data.total;
   if (document.getElementById('inv-discount-10').checked) {
     total = total * 0.9;
   }
 
+  const oldTotal = parseFloat(document.getElementById('inv-total-price').value) || 0;
   document.getElementById('inv-total-price').value = total.toFixed(2);
   const payEl = document.getElementById('inv-payment-amount');
   const prevPay = parseFloat(payEl.value);
-  // Automatic runs only move a payment amount that we filled ourselves (or that is still empty);
-  // on an account the payment is always the invoiced total.
-  if (!auto || accountId || !prevPay || prevPay === lastAutoTotal) payEl.value = total.toFixed(2);
+  if (force) {
+    // Correcting a price staff agreed to: an account's payment always equals the invoiced total; on a new
+    // booking a payment that matched the old total follows it. A payment already taken on a saved invoice never moves.
+    if ((accountId && document.getElementById('inv-paid-status').value === 'OnAcc')
+        || (!currentInvoiceId && (!prevPay || Math.abs(prevPay - oldTotal) < 0.005))) payEl.value = total.toFixed(2);
+  } else if (!auto || accountId || !prevPay || prevPay === lastAutoTotal) {
+    // Automatic runs only move a payment amount that we filled ourselves (or that is still empty);
+    // on an account the payment is always the invoiced total.
+    payEl.value = total.toFixed(2);
+  }
+  pricedFor = priceBasis();
   lastAutoTotal = Math.round(total * 100) / 100;
   updateAmountDueHint();
   let breakdown = `${nights} day(s) × $${data.dailyRate}/day = $${data.total.toFixed(2)}`;
@@ -1307,6 +1388,10 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
   if (!currentInvoiceId) {
     // Last check that a new booking is priced: catch a save pressed before the automatic price landed.
     if (priceTimer || !(parseFloat(document.getElementById('inv-total-price').value) > 0)) await autoPrice();
+  }
+  // New or existing: if the dates/account changed and the total no longer matches the stay, ask first.
+  if (!(await confirmPriceMatches())) return;
+  if (!currentInvoiceId) {
     staffCode = await promptStaffCode();
     if (!staffCode) return; // cancelled
   }
@@ -1410,6 +1495,7 @@ document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
     } else {
       const inv = await res.json();
       currentInvoiceId = inv.id;
+      pricedFor = priceBasis();
       savedKeyNumber = inv.key_number != null ? String(inv.key_number) : null;
       heldKey = null; // the server freed the hold once the key became this invoice's
       document.getElementById('inv-id').value = inv.id;

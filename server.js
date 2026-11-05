@@ -102,6 +102,14 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 
+// Changes on every deploy/restart. Pages ask for it now and then so a screen left open all day can tell
+// staff "the app was updated — reload" instead of quietly running the old code.
+const BUILD_ID = String(Date.now());
+app.get('/api/version', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ build: BUILD_ID });
+});
+
 // API Routes
 app.use('/api/auth',      require('./src/routes/auth'));
 app.use('/api/customer-auth', require('./src/routes/customerAuth'));
