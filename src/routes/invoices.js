@@ -512,7 +512,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (newReturnDate && oldReturnDate && newReturnDate < oldReturnDate) {
       const { userId, userName } = actorFromReq(req);
       earlyReturnCreditFromDateEdit = await checkAndCreateEarlyReturnCredit(db, {
-        carparkId, invoiceId: Number(id), actualReturnDate: newReturnDate, userId, userName,
+        carparkId, invoiceId: Number(id), actualReturnDate: newReturnDate, actualReturnTime: String(return_time || '').slice(0, 5) || null, userId, userName,
       });
     }
 

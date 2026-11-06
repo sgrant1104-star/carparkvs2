@@ -16,6 +16,8 @@
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const { logActivity } = require('./audit');
+const { businessDateYmd } = require('./businessDate');
+const { nightsWithGrace, clockMs, nowClockMs } = require('./stayDays');
 
 function normalizePhone(phone) {
   return String(phone || '').replace(/[^\d]/g, '');
@@ -32,7 +34,7 @@ function daysBetween(fromYmd, toYmd) {
  * from editing the invoice directly). Idempotent — safe to call more than
  * once for the same invoice; only creates a credit the first time.
  */
-async function checkAndCreateEarlyReturnCredit(db, { carparkId, invoiceId, actualReturnDate, userId = null, userName = null }) {
+async function checkAndCreateEarlyReturnCredit(db, { carparkId, invoiceId, actualReturnDate, actualReturnTime = null, now = new Date(), userId = null, userName = null }) {
   const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ? AND carpark_id = ?').get(invoiceId, carparkId);
   if (!invoice || invoice.void) return null;
 
@@ -43,23 +45,32 @@ async function checkAndCreateEarlyReturnCredit(db, { carparkId, invoiceId, actua
   const bookedReturn = String(invoice.return_date || '').slice(0, 10);
   const actual = String(actualReturnDate || '').slice(0, 10);
   if (!bookedReturn || !actual) return null;
+  if (!invoice.date_in) return null;
 
-  // Only a credit if they left BEFORE the paid-for return date.
+  // Same as before: only a credit when they leave BEFORE the booked return date. Collected on the return
+  // day itself — even earlier in the day than booked — has never earned one.
   if (actual >= bookedReturn) return null;
 
-  const bookedNights = Number(invoice.stay_nights) > 0
+  // Days are billed in 24-hour blocks counted from the DROP-OFF time (with 30 minutes' grace), so a
+  // credit is for the whole blocks the customer did NOT use — not for calendar days. Leaving the day
+  // before the return date but at a later time of day than the drop-off still uses the same blocks.
+  const startMs = clockMs(invoice.date_in, invoice.time_in);
+  let actualMs;
+  if (actualReturnTime) actualMs = clockMs(actual, actualReturnTime);                       // a shortened return date: that date + its time
+  else if (actual === businessDateYmd(now)) actualMs = nowClockMs(now);                      // collected just now
+  else actualMs = clockMs(actual, invoice.return_time || '00:00');
+  const usedNights = nightsWithGrace(startMs, actualMs);
+
+  const storedNights = Number(invoice.stay_nights) > 0
     ? Number(invoice.stay_nights)
     : Math.max(1, daysBetween(String(invoice.date_in || '').slice(0, 10), bookedReturn));
-  // Capped at bookedNights - 1: the yard was occupied for at least the
-  // drop-off itself, so at least 1 night is always chargeable, matching the
-  // 1-night-minimum billing rule used everywhere else in the app. Without
-  // this, a same-day drop-off-and-pickup against a short booking could
-  // credit back 100% (or more) of what was paid — there's always at least
-  // one night's worth of real usage to account for. A genuine "never
-  // actually used it at all" case (e.g. a cancelled flight) isn't an early
-  // RETURN and should be handled as a manual credit instead, not through
-  // this automatic calculation.
-  const unusedNights = Math.min(daysBetween(actual, bookedReturn), bookedNights - 1);
+  // Count the booked stay by today's rule too, so a booking made under the old rule (no grace) can't
+  // look "early" just because the rule got more generous.
+  const bookedNights = Math.min(storedNights, invoice.return_date ? nightsWithGrace(startMs, clockMs(bookedReturn, invoice.return_time)) : storedNights);
+  // At least 1 night is always chargeable (the 1-night minimum used everywhere else): usedNights is never
+  // below 1, so this can never credit back the whole booking. A genuine "never used it at all" case
+  // (e.g. a cancelled flight) isn't an early RETURN and is handled as a manual credit instead.
+  const unusedNights = bookedNights - usedNights;
   if (unusedNights <= 0) return null;
 
   const totalPrice = parseFloat(invoice.total_price) || 0;
@@ -69,7 +80,7 @@ async function checkAndCreateEarlyReturnCredit(db, { carparkId, invoiceId, actua
     || (invoice.paid_status_2 && invoice.paid_status_2 !== 'To Pay');
   if (!paidSomething) return null;
 
-  const ratePerNight = totalPrice / bookedNights;
+  const ratePerNight = totalPrice / storedNights;
   const creditAmount = round2(ratePerNight * unusedNights);
   // Skip trivial/rounding-noise credits.
   if (creditAmount < 1) return null;
