@@ -76,12 +76,18 @@ async function checkAndCreateEarlyReturnCredit(db, { carparkId, invoiceId, actua
   const totalPrice = parseFloat(invoice.total_price) || 0;
   if (totalPrice <= 0) return null;
   // Nothing was actually paid — no credit to give back.
-  const paidSomething = (invoice.paid_status && invoice.paid_status !== 'To Pay')
-    || (invoice.paid_status_2 && invoice.paid_status_2 !== 'To Pay');
-  if (!paidSomething) return null;
+  // Money actually received. "On Account" is NOT money in hand — that booking is billed on the account's
+  // statement, so an early return there is an invoice adjustment, never a spendable customer credit.
+  const isPaying = (s) => !!s && s !== 'To Pay' && s !== 'OnAcc';
+  const paidAmount = round2((isPaying(invoice.paid_status) ? parseFloat(invoice.payment_amount) || 0 : 0)
+    + (isPaying(invoice.paid_status_2) ? parseFloat(invoice.payment_amount_2) || 0 : 0));
+  if (paidAmount <= 0 || invoice.account_customer_id) return null;
 
   const ratePerNight = totalPrice / storedNights;
-  const creditAmount = round2(ratePerNight * unusedNights);
+  // Never give back more than the customer paid beyond the nights they used (no double refund when the
+  // price was already lowered).
+  const overpaid = round2(paidAmount - ratePerNight * (storedNights - unusedNights));
+  const creditAmount = Math.min(round2(ratePerNight * unusedNights), overpaid);
   // Skip trivial/rounding-noise credits.
   if (creditAmount < 1) return null;
 
