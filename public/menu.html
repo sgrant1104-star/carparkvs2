@@ -7,177 +7,128 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link href="/css/style.css" rel="stylesheet">
+  <style>
+    .home-search { display:flex; align-items:center; gap:10px; background:#fff; border:1.5px solid var(--line); border-radius:12px; height:46px; padding:0 14px; width:310px; max-width:100%; margin:0; }
+    .home-search:focus-within { border-color:var(--ink); box-shadow:0 0 0 .22rem rgba(255,199,44,.45); }
+    .home-search input { border:0; outline:0; flex:1; min-width:0; font:inherit; background:transparent; color:var(--ink); }
+    .home-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin:22px 0 16px; }
+    @media (max-width:991.98px){ .home-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    .home-h { font-size:1rem; font-weight:800; margin:0; }
+    .hrow { display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid #ECECE6; font-size:.92rem; }
+    .hrow:first-child { border-top:0; }
+    .hrow .tm { width:52px; font-weight:800; font-variant-numeric:tabular-nums; flex:none; }
+    .hrow .who { flex:1; min-width:0; }
+    .hrow .who small { color:var(--muted); margin-left:6px; }
+    .hrow .no { color:var(--muted); font-weight:600; width:56px; flex:none; font-variant-numeric:tabular-nums; }
+    .home-jump { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .home-jump a { display:flex; align-items:center; gap:8px; border:1.5px solid var(--line); border-radius:12px; padding:10px 12px; font-weight:700; font-size:.88rem; color:var(--ink); text-decoration:none; }
+    .home-jump a:hover { border-color:var(--ink); background:var(--yellow-soft); }
+    .home-jump i { font-size:1.05rem; }
+  </style>
 </head>
 <body>
   <div id="navbar-container"></div>
 
   <div class="page-container">
-    <!-- System Title -->
-    <div class="text-center mb-4 mt-2">
-      <h1 style="font-size:1.8rem; font-weight:900; color: var(--primary); letter-spacing:1px; text-decoration:underline;">
-        CAR STORAGE INVOICE SYSTEM
-      </h1>
-      <p class="text-muted mb-0" id="carpark-subtitle">Loading...</p>
+    <!-- Greeting, search and the one big button -->
+    <div class="d-flex align-items-center flex-wrap gap-3">
+      <div class="flex-fill" style="min-width:220px">
+        <div class="text-muted fw-semibold small" id="today-line">&nbsp;</div>
+        <h1 class="m-0" style="font-size:1.8rem;font-weight:800;letter-spacing:-.01em" id="greeting">Good day</h1>
+      </div>
+      <form class="home-search" id="home-search" role="search">
+        <i class="bi bi-search"></i>
+        <input type="search" id="home-search-input" placeholder="Search rego, name or invoice" aria-label="Search bookings" autocomplete="off">
+      </form>
+      <a class="btn btn-primary btn-lg px-4" href="/invoice.html"><i class="bi bi-plus-lg me-1"></i>New booking</a>
     </div>
 
-    <!-- Stats Row -->
-    <div class="row g-3 mb-4">
-      <div class="col-6 col-md-3">
-        <div class="stat-card success">
-          <div class="stat-value" id="stat-cars"><i class="bi bi-arrow-clockwise spin"></i></div>
-          <div class="stat-label"><i class="bi bi-car-front-fill"></i> Cars in Yard</div>
+    <!-- Numbers -->
+    <div class="home-stats">
+      <div class="stat-card">
+        <div class="stat-label">Cars in yard</div>
+        <div class="stat-value" id="stat-cars" style="color:var(--gold-text)"><i class="bi bi-arrow-clockwise spin"></i></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Revenue today</div>
+        <div class="stat-value" id="stat-revenue-today">--</div>
+        <div class="small fw-semibold" id="stat-pending-today" style="color:var(--gold-text);display:none"></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Going out today</div>
+        <div class="stat-value" id="stat-returning">--</div>
+      </div>
+      <div class="stat-card d-flex align-items-center gap-3">
+        <svg width="64" height="64" viewBox="0 0 36 36" role="img" aria-label="Occupancy"><circle cx="18" cy="18" r="15" fill="none" stroke="#ECECE6" stroke-width="4"/><circle id="occ-ring" cx="18" cy="18" r="15" fill="none" stroke="#FFC72C" stroke-width="4" stroke-dasharray="0 94.25" stroke-linecap="round" transform="rotate(-90 18 18)"/></svg>
+        <div><div class="stat-label" style="margin:0">Occupancy</div><div class="stat-value" id="stat-occupancy" style="font-size:1.8rem">--</div></div>
+      </div>
+    </div>
+
+    <div class="row g-3 mt-0">
+      <div class="col-lg-8">
+        <!-- Going out today -->
+        <div class="form-card mb-3">
+          <div class="d-flex justify-content-between align-items-baseline mb-1">
+            <h2 class="home-h">Going out today</h2>
+            <a href="/returns.html" class="fw-bold small">All returns</a>
+          </div>
+          <div id="returning-today"><div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm"></div></div></div>
         </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="stat-card">
-          <div class="stat-value" id="stat-revenue-today">--</div>
-          <div class="stat-label"><i class="bi bi-cash"></i> Revenue Today</div>
-          <div class="small mt-1" id="stat-pending-today" style="color:#d68910;display:none"></div>
+        <!-- Recent bookings -->
+        <div class="form-card mb-3">
+          <div class="d-flex justify-content-between align-items-baseline mb-1">
+            <h2 class="home-h">Recent bookings</h2>
+            <a href="/invoices.html" class="fw-bold small">All invoices</a>
+          </div>
+          <div id="recent-invoices"><div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm"></div></div></div>
         </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="stat-card warning">
-          <div class="stat-value" id="stat-returning">--</div>
-          <div class="stat-label"><i class="bi bi-arrow-return-left"></i> Returning Today</div>
-        </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="stat-card info">
-          <div class="stat-value" id="stat-occupancy">--</div>
-          <div class="stat-label"><i class="bi bi-speedometer2"></i> Occupancy</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Main Action Buttons -->
-    <div class="row g-3 mb-4">
-      <div class="col-6 col-md-4">
-        <a href="/invoice.html" class="menu-card menu-card-invoice">
-          <i class="bi bi-receipt"></i>
-          INVOICE
-        </a>
-      </div>
-      <div class="col-6 col-md-4">
-        <a href="/returns.html" class="menu-card menu-card-returns">
-          <i class="bi bi-car-front"></i>
-          RETURNS
-        </a>
-      </div>
-      <div class="col-6 col-md-4">
-        <a href="/keybox.html" class="menu-card menu-card-keybox">
-          <i class="bi bi-key-fill"></i>
-          KEY BOX
-        </a>
-      </div>
-      <div class="col-6 col-md-4">
-        <a href="/longterm.html" class="menu-card menu-card-longterm">
-          <i class="bi bi-calendar-week-fill"></i>
-          LONG TERM
-        </a>
-      </div>
-      <div class="col-6 col-md-4">
-        <a href="/accounts.html" class="menu-card menu-card-accounts">
-          <i class="bi bi-building"></i>
-          ACCOUNTS
-        </a>
-      </div>
-      <div class="col-6 col-md-4">
-        <a href="/endday.html" class="menu-card menu-card-endday">
-          <i class="bi bi-calendar-check-fill"></i>
-          END DAY
-        </a>
-      </div>
-    </div>
-
-    <!-- Secondary Actions -->
-    <div class="row g-3 mb-4">
-      <div class="col-6 col-md-3">
-        <a href="/reports.html" class="menu-card menu-card-reports" style="padding:18px 15px; font-size:1rem;">
-          <i class="bi bi-bar-chart-fill" style="font-size:1.8rem;"></i>
-          REPORTS
-        </a>
-      </div>
-      <div class="col-6 col-md-3">
-        <a href="/banking.html" class="menu-card menu-card-banking" style="padding:18px 15px; font-size:1rem;">
-          <i class="bi bi-bank2" style="font-size:1.8rem;"></i>
-          BANKING
-        </a>
-      </div>
-      <div class="col-6 col-md-3">
-        <a href="/email.html" class="menu-card menu-card-email" style="padding:18px 15px; font-size:1rem;">
-          <i class="bi bi-envelope-fill" style="font-size:1.8rem;"></i>
-          EMAIL ACCOUNTS
-        </a>
-      </div>
-      <div class="col-6 col-md-3 admin-only">
-        <a href="/admin.html" class="menu-card menu-card-admin" style="padding:18px 15px; font-size:1rem;">
-          <i class="bi bi-gear-fill" style="font-size:1.8rem;"></i>
-          ADMIN
-        </a>
-      </div>
-    </div>
-
-    <!-- Arriving today (pre-bookings) -->
-    <div class="form-card mb-3">
-      <div class="form-section-title d-flex align-items-center justify-content-between">
-        <span><i class="bi bi-inbox me-2"></i>Arriving Today <span class="badge bg-info text-dark" id="arrivals-count">0</span></span>
-        <a href="/prebookings.html" class="btn btn-sm btn-outline-primary">Pre-Bookings</a>
-      </div>
-      <div id="arrivals-today" class="small">
-        <div class="text-center text-muted py-2"><div class="spinner-border spinner-border-sm"></div></div>
-      </div>
-    </div>
-
-    <!-- Quick Stats / Recent Activity -->
-    <div class="row g-3">
-      <div class="col-md-6">
+        <!-- This month -->
         <div class="form-card">
-          <div class="form-section-title"><i class="bi bi-clock-history me-2"></i>Recent Invoices</div>
-          <div id="recent-invoices">
-            <div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm"></div></div>
-          </div>
-          <div class="d-flex flex-wrap gap-2 mt-2">
-            <a href="/invoice.html" class="btn btn-sm btn-outline-primary">New Booking</a>
-            <a href="/invoices.html" class="btn btn-sm btn-outline-secondary">View all invoices</a>
+          <h2 class="home-h mb-3">This month</h2>
+          <div class="row g-3 align-items-center">
+            <div class="col-6 col-md-3">
+              <div style="font-size:1.6rem;font-weight:800" id="month-revenue">--</div>
+              <div class="small text-muted fw-semibold">Confirmed revenue</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div style="font-size:1.6rem;font-weight:800;color:var(--gold-text)" id="month-pending">--</div>
+              <div class="small text-muted fw-semibold">Internet banking (pending)</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div style="font-size:1.6rem;font-weight:800;color:var(--gold-text)" id="on-account-balance">--</div>
+              <div class="small text-muted fw-semibold">On account balance</div>
+            </div>
+            <div class="col-12"><div id="revenue-breakdown"><div class="text-center text-muted py-2"><div class="spinner-border spinner-border-sm"></div></div></div></div>
           </div>
         </div>
       </div>
-      <div class="col-md-6">
-        <div class="form-card">
-          <div class="form-section-title"><i class="bi bi-arrow-return-left me-2"></i>Returning Today</div>
-          <div id="returning-today">
-            <div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm"></div></div>
-          </div>
-          <a href="/returns.html" class="btn btn-sm btn-outline-warning mt-2">View All Returns</a>
-        </div>
-      </div>
-    </div>
 
-    <!-- Revenue Quick Bar -->
-    <div class="form-card mt-3">
-      <div class="form-section-title"><i class="bi bi-graph-up me-2"></i>This Month's Revenue</div>
-      <div class="row g-2 align-items-center">
-        <div class="col-6 col-md-2">
-          <div class="text-center">
-            <div style="font-size:1.6rem; font-weight:700; color:var(--success)" id="month-revenue">--</div>
-            <div class="small text-muted">Confirmed Revenue</div>
-          </div>
+      <div class="col-lg-4">
+        <!-- Needs you -->
+        <div class="form-card mb-3" id="needs-card" style="border-color:var(--yellow)">
+          <h2 class="home-h mb-1" style="color:var(--gold-text)">Needs you</h2>
+          <div id="needs-you"><div class="text-center text-muted py-2"><div class="spinner-border spinner-border-sm"></div></div></div>
         </div>
-        <div class="col-6 col-md-2">
-          <div class="text-center">
-            <div style="font-size:1.6rem; font-weight:700; color:#d68910" id="month-pending">--</div>
-            <div class="small text-muted">Internet Banking <span class="d-block">(Pending)</span></div>
+        <!-- Arriving today -->
+        <div class="form-card mb-3">
+          <div class="d-flex justify-content-between align-items-baseline mb-1">
+            <h2 class="home-h">Arriving today <span class="text-muted fw-semibold">· <span id="arrivals-count">0</span></span></h2>
+            <a href="/prebookings.html" class="fw-bold small">Pre-bookings</a>
           </div>
+          <div id="arrivals-today"><div class="text-center text-muted py-2"><div class="spinner-border spinner-border-sm"></div></div></div>
         </div>
-        <div class="col-6 col-md-2">
-          <div class="text-center">
-            <div style="font-size:1.6rem; font-weight:700; color:#d68910" id="on-account-balance">--</div>
-            <div class="small text-muted">On Account Balance</div>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div id="revenue-breakdown">
-            <div class="text-center text-muted py-2"><div class="spinner-border spinner-border-sm"></div></div>
+        <!-- Everything else -->
+        <div class="form-card">
+          <h2 class="home-h mb-2">Jump to</h2>
+          <div class="home-jump">
+            <a href="/keybox.html"><i class="bi bi-key"></i>Key Box</a>
+            <a href="/longterm.html"><i class="bi bi-calendar-check"></i>Long Term</a>
+            <a href="/accounts.html"><i class="bi bi-building"></i>Accounts</a>
+            <a href="/credits.html"><i class="bi bi-piggy-bank"></i>Credits</a>
+            <a href="/email.html"><i class="bi bi-envelope"></i>Emails</a>
+            <a href="/banking.html"><i class="bi bi-bank"></i>Banking</a>
+            <a href="/reports.html"><i class="bi bi-bar-chart"></i>Reports</a>
+            <a href="/endday.html"><i class="bi bi-moon"></i>End Day</a>
           </div>
         </div>
       </div>
@@ -192,18 +143,28 @@
     // Render navbar
     document.getElementById('navbar-container').innerHTML = renderNavbar('menu');
 
+    // Greeting + date + search
+    (function () {
+      const d = new Date();
+      const h = d.getHours();
+      const part = h < 12 ? 'Good morning' : (h < 17 ? 'Good afternoon' : 'Good evening');
+      document.getElementById('today-line').textContent = d.toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long' });
+      document.getElementById('greeting').textContent = part;
+      document.getElementById('home-search').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const q = document.getElementById('home-search-input').value.trim();
+        window.location.href = '/invoices.html' + (q ? '?search=' + encodeURIComponent(q) : '');
+      });
+    })();
+
     async function loadMenuData() {
       const user = await checkAuth();
       if (!user) return;
+      const first = String(user.name || '').trim().split(/\s+/)[0];
+      const g = document.getElementById('greeting');
+      if (first && !g.dataset.named) { g.textContent = g.textContent + ', ' + first; g.dataset.named = '1'; }
 
-      // Load carpark info
-      const cpRes = await fetch('/api/dashboard/carpark-info');
-      if (cpRes.ok) {
-        const cp = await cpRes.json();
-        document.getElementById('carpark-subtitle').textContent = cp.name + (cp.address ? ' — ' + cp.address : '');
-      }
-
-      // Load dashboard stats (always fresh — occupancy depends on current key_box rows)
+      // Dashboard stats (always fresh — occupancy depends on current key_box rows)
       const statsRes = await fetch('/api/dashboard/stats', { cache: 'no-store' });
       if (!statsRes.ok) return;
       const stats = await statsRes.json();
@@ -213,13 +174,17 @@
       document.getElementById('stat-returning').textContent = stats.carsReturnToday;
       const occ = Number(stats.occupancyRate ?? 0);
       document.getElementById('stat-occupancy').textContent = `${occ.toFixed(1)}%`;
-      document.getElementById('nav-cars-count').textContent = stats.carsInYard + ' Cars';
+      document.getElementById('occ-ring').setAttribute('stroke-dasharray', `${(Math.min(100, occ) / 100 * 94.25).toFixed(1)} 94.25`);
+      const navCars = document.getElementById('nav-cars-count');
+      if (navCars) navCars.textContent = stats.carsInYard;
+      const navTop = document.getElementById('nav-cars-count-top');
+      if (navTop) navTop.textContent = stats.carsInYard + ' cars';
       document.getElementById('month-revenue').textContent = formatCurrency(stats.revenueMonth);
       document.getElementById('month-pending').textContent = formatCurrency(stats.ibPendingMonth || 0);
       document.getElementById('on-account-balance').textContent = formatCurrency(stats.onAccountBalance || 0);
       const pendingTodayEl = document.getElementById('stat-pending-today');
       if ((stats.ibPendingToday || 0) > 0.005) {
-        pendingTodayEl.textContent = `+${formatCurrency(stats.ibPendingToday)} Internet Banking pending`;
+        pendingTodayEl.textContent = `+${formatCurrency(stats.ibPendingToday)} internet banking pending`;
         pendingTodayEl.style.display = '';
       } else {
         pendingTodayEl.style.display = 'none';
@@ -228,7 +193,7 @@
       // Revenue breakdown
       const methodHtml = (stats.revenueByMethod || []).map(m => `
         <div class="d-flex align-items-center mb-1">
-          <div class="me-2 small fw-bold" style="min-width:80px;">${m.paid_status || 'Unknown'}</div>
+          <div class="me-2 small fw-bold" style="min-width:110px;">${escapeHtml(m.paid_status || 'Unknown')}</div>
           <div class="flex-fill">
             <div class="occupancy-bar">
               <div class="occupancy-fill" style="width:${stats.revenueMonth > 0 ? Math.min(100, (m.total/stats.revenueMonth*100)) : 0}%"></div>
@@ -237,47 +202,35 @@
           <div class="ms-2 small fw-bold">${formatCurrency(m.total)}</div>
         </div>
       `).join('');
-      document.getElementById('revenue-breakdown').innerHTML = methodHtml || '<p class="text-muted small">No payments recorded this month</p>';
+      document.getElementById('revenue-breakdown').innerHTML = methodHtml || '<p class="text-muted small mb-0">No payments recorded this month</p>';
 
-      // Recent invoices
+      // Recent bookings
       const recentHtml = (stats.recentInvoices || []).slice(0, 6).map(inv => `
-        <div class="d-flex align-items-center justify-content-between py-1 border-bottom">
-          <div class="small">
-            <strong class="me-1">#${inv.invoice_number}</strong>
-            <span class="text-muted">${escapeHtml(inv.first_name||'')} ${escapeHtml(inv.last_name||'')}</span>
-            <span class="ms-1 text-muted">${escapeHtml(inv.rego||'')}</span>
-          </div>
-          <div class="d-flex align-items-center gap-2">
-            ${statusBadge(inv.paid_status)}
-            <span class="small fw-bold">${formatCurrency(inv.total_price)}</span>
-            <a href="/invoice.html?id=${inv.id}" class="btn btn-action btn-outline-primary">Edit</a>
-          </div>
+        <div class="hrow">
+          <span class="no">${inv.invoice_number}</span>
+          <div class="who"><strong>${escapeHtml(inv.first_name||'')} ${escapeHtml(inv.last_name||'')}</strong><small>${escapeHtml(inv.rego||'')}</small></div>
+          <strong>${formatCurrency(inv.total_price)}</strong>
+          ${statusBadge(inv.paid_status)}
+          <a href="/invoice.html?id=${inv.id}" class="btn btn-sm btn-outline-secondary btn-action">Edit</a>
         </div>
       `).join('');
-      document.getElementById('recent-invoices').innerHTML = recentHtml || '<p class="text-muted small">No recent invoices</p>';
+      document.getElementById('recent-invoices').innerHTML = recentHtml || '<p class="text-muted small mb-0">No recent invoices</p>';
 
-      // Returning today — use same calendar date as dashboard stats (NZ business date)
+      // Going out today — same business date as the dashboard stats
       const retDate = stats.businessDate || today();
       const retRes = await fetch(`/api/returns?date=${encodeURIComponent(retDate)}`);
       if (retRes.ok) {
         const retData = await retRes.json();
         const allReturns = Object.values(retData.groups || {}).flat();
-        const retHtml = allReturns.slice(0, 5).map(inv => `
-          <div class="d-flex align-items-center justify-content-between py-1 border-bottom ${rowClass(inv.paid_status)}">
-            <div class="small ps-1">
-              <strong>${escapeHtml(inv.first_name||'')} ${escapeHtml(inv.last_name||'')}</strong>
-              <span class="text-muted ms-1">${escapeHtml(inv.rego||'')}</span>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-              ${inv.return_time
-                ? `<span class="small text-muted">${inv.return_time}</span>`
-                : '<span class="badge bg-secondary-subtle text-secondary-emphasis">TBC</span>'}
-              ${statusBadge(inv.paid_status)}
-              <a href="/invoice.html?id=${inv.id}" class="btn btn-action btn-outline-secondary">View</a>
-            </div>
+        const retHtml = allReturns.slice(0, 8).map(inv => `
+          <div class="hrow">
+            <span class="tm">${inv.return_time ? escapeHtml(String(inv.return_time).slice(0,5)) : 'TBC'}</span>
+            <div class="who"><strong>${escapeHtml(inv.first_name||'')} ${escapeHtml(inv.last_name||'')}</strong><small>${escapeHtml(inv.rego||'')}</small></div>
+            ${statusBadge(inv.paid_status)}
+            <a href="/returns.html" class="btn btn-sm btn-primary btn-action">Pick up</a>
           </div>
         `).join('');
-        document.getElementById('returning-today').innerHTML = retHtml || '<p class="text-muted small py-2">No cars returning today</p>';
+        document.getElementById('returning-today').innerHTML = retHtml || '<p class="text-muted small py-2 mb-0">No cars going out today</p>';
       }
     }
 
@@ -288,31 +241,29 @@
         if (!res.ok) return;
         const s = await res.json();
         document.getElementById('arrivals-count').textContent = s.arrivingToday;
+
+        // Needs you
+        const needs = [];
+        if (s.awaitingAccept) needs.push(`<div class="hrow"><div class="who"><strong>${s.awaitingAccept}</strong> pre-booking${s.awaitingAccept === 1 ? '' : 's'} to accept</div><a href="/prebookings.html" class="btn btn-sm btn-primary btn-action">Review</a></div>`);
+        if (s.overdue) needs.push(`<div class="hrow"><div class="who"><strong>${s.overdue}</strong> arrival${s.overdue === 1 ? '' : 's'} overdue</div><a href="/prebookings.html" class="btn btn-sm btn-outline-secondary btn-action">Open</a></div>`);
+        document.getElementById('needs-you').innerHTML = needs.join('') || '<p class="text-muted small py-2 mb-0">Nothing waiting — all clear.</p>';
+
         const row = (b, extra) => `
-          <div class="d-flex align-items-center justify-content-between py-1 border-bottom">
-            <div>
-              <strong>${escapeHtml(b.name)}</strong>
-              <span class="text-muted ms-1">${escapeHtml(b.rego || '')}</span>
-              ${extra || ''}
-            </div>
-            <div class="d-flex align-items-center gap-2">
-              <span class="text-muted">${escapeHtml(b.timeIn || 'TBC')}</span>
-              ${b.status === 'confirmed'
-                ? '<span class="badge bg-success">Confirmed</span>'
-                : '<span class="badge bg-warning text-dark">Awaiting accept</span>'}
-              <a href="/invoice.html?prebooking=${b.id}" class="btn btn-action btn-outline-success">Allocate</a>
-            </div>
+          <div class="hrow">
+            <span class="tm">${escapeHtml(b.timeIn || 'TBC')}</span>
+            <div class="who"><strong>${escapeHtml(b.name)}</strong><small>${escapeHtml(b.rego || '')}</small>${extra || ''}</div>
+            <a href="/invoice.html?prebooking=${b.id}" class="btn btn-sm ${b.status === 'confirmed' ? 'btn-primary' : 'btn-outline-secondary'} btn-action">Allocate</a>
           </div>`;
         const parts = [];
         if (s.overdueList.length) {
-          parts.push(`<div class="text-danger fw-bold mt-1">Overdue</div>` + s.overdueList.map(b => row(b, `<span class="badge bg-danger ms-1">${escapeHtml(b.dateIn)}</span>`)).join(''));
+          parts.push(`<div class="fw-bold small mt-1" style="color:var(--red)">Overdue</div>` + s.overdueList.map(b => row(b, `<span class="badge bg-danger ms-1">${escapeHtml(b.dateIn)}</span>`)).join(''));
         }
         if (s.todayList.length) parts.push(s.todayList.map(b => row(b)).join(''));
         if (s.awaitingAccept && !s.todayList.length && !s.overdueList.length) {
-          parts.push(`<div class="text-muted py-1">${s.awaitingAccept} request${s.awaitingAccept === 1 ? '' : 's'} awaiting accept for later dates.</div>`);
+          parts.push(`<div class="text-muted small py-1">${s.awaitingAccept} request${s.awaitingAccept === 1 ? '' : 's'} awaiting accept for later dates.</div>`);
         }
-        el.innerHTML = parts.join('') || '<p class="text-muted small py-2 mb-0">No pre-booked arrivals today</p>' +
-          (s.arrivingTomorrow ? `<div class="text-muted small">${s.arrivingTomorrow} arriving tomorrow.</div>` : '');
+        el.innerHTML = parts.join('') || ('<p class="text-muted small py-2 mb-0">No pre-booked arrivals today</p>' +
+          (s.arrivingTomorrow ? `<div class="text-muted small">${s.arrivingTomorrow} arriving tomorrow.</div>` : ''));
       } catch (e) {}
     }
 

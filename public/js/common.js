@@ -14,6 +14,8 @@ async function checkAuth() {
     if (userEl) userEl.textContent = user.name;
     const roleEl = document.getElementById('nav-user-role');
     if (roleEl) roleEl.textContent = user.role;
+    const avEl = document.getElementById('nav-user-avatar');
+    if (avEl) avEl.textContent = String(user.name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
     // Hide admin links for non-admin
     if (user.role !== 'admin') {
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
@@ -274,7 +276,9 @@ async function updateNavCarsCount() {
     if (res.ok) {
       const data = await res.json();
       const el = document.getElementById('nav-cars-count');
-      if (el) el.textContent = `${data.carsInYard} Cars`;
+      if (el) el.textContent = data.carsInYard;
+      const top = document.getElementById('nav-cars-count-top');
+      if (top) top.textContent = `${data.carsInYard} cars`;
     }
   } catch(e) {}
   updatePrebookingBadge();
@@ -358,60 +362,99 @@ function debounce(fn, delay) {
   };
 }
 
-// Shared navigation HTML
+// Shared navigation: left sidebar on desktop, top bar + slide-out menu on phones/tablets.
 function renderNavbar(activePage) {
-  const navItems = [
-    { href: '/menu.html', label: 'Menu', icon: 'bi-house-fill', key: 'menu' },
-    { href: '/invoice.html', label: 'Bookings', icon: 'bi-receipt', key: 'invoice' },
-    { href: '/prebookings.html', label: 'Pre-Bookings', icon: 'bi-inbox', key: 'prebookings' },
-    { href: '/invoices.html', label: 'All Invoices', icon: 'bi-journal-text', key: 'invoices' },
-    { href: '/returns.html', label: 'Returns', icon: 'bi-car-front', key: 'returns' },
-    { href: '/longterm.html', label: 'Long Term', icon: 'bi-calendar-check', key: 'longterm' },
-    { href: '/accounts.html', label: 'Accounts', icon: 'bi-building', key: 'accounts' },
-    { href: '/credits.html', label: 'Customer Credits', icon: 'bi-piggy-bank', key: 'credits' },
-    { href: '/keybox.html', label: 'Key Box', icon: 'bi-key', key: 'keybox' },
-    { href: '/reports.html', label: 'Reports', icon: 'bi-bar-chart', key: 'reports' },
-    { href: '/banking.html', label: 'Banking', icon: 'bi-bank', key: 'banking' },
-    { href: '/endday.html', label: 'End Day', icon: 'bi-calendar-check-fill', key: 'endday' },
-    { href: '/email.html', label: 'Emails', icon: 'bi-envelope', key: 'email' },
-    { href: '/admin.html', label: 'Admin', icon: 'bi-gear', key: 'admin', adminOnly: true }
+  const groups = [
+    { title: 'Today', items: [
+      { href: '/menu.html', label: 'Menu', icon: 'bi-house-door', key: 'menu' },
+      { href: '/prebookings.html', label: 'Pre-Bookings', icon: 'bi-inbox', key: 'prebookings' },
+      { href: '/returns.html', label: 'Returns', icon: 'bi-car-front', key: 'returns' },
+      { href: '/keybox.html', label: 'Key Box', icon: 'bi-key', key: 'keybox' }
+    ]},
+    { title: 'Bookings', items: [
+      { href: '/invoice.html', label: 'New Booking', icon: 'bi-plus-square', key: 'invoice' },
+      { href: '/invoices.html', label: 'All Invoices', icon: 'bi-journal-text', key: 'invoices' },
+      { href: '/credits.html', label: 'Customer Credits', icon: 'bi-piggy-bank', key: 'credits' }
+    ]},
+    { title: 'Customers', items: [
+      { href: '/longterm.html', label: 'Long Term', icon: 'bi-calendar-check', key: 'longterm' },
+      { href: '/accounts.html', label: 'Accounts', icon: 'bi-building', key: 'accounts' },
+      { href: '/email.html', label: 'Emails', icon: 'bi-envelope', key: 'email' }
+    ]},
+    { title: 'Money', items: [
+      { href: '/banking.html', label: 'Banking', icon: 'bi-bank', key: 'banking' },
+      { href: '/reports.html', label: 'Reports', icon: 'bi-bar-chart', key: 'reports' },
+      { href: '/endday.html', label: 'End Day', icon: 'bi-moon', key: 'endday' }
+    ]},
+    { title: 'System', adminOnly: true, items: [
+      { href: '/admin.html', label: 'Admin', icon: 'bi-gear', key: 'admin', adminOnly: true }
+    ]}
   ];
 
-  const links = navItems.map(item => `
-    <li class="nav-item${item.adminOnly ? ' admin-only' : ''}">
-      <a class="nav-link${activePage === item.key ? ' active' : ''}" href="${item.href}">
-        <i class="bi ${item.icon}"></i> ${item.label}${item.key === 'prebookings' ? ' <span class="badge rounded-pill bg-danger d-none" id="nav-prebook-badge"></span>' : ''}
-      </a>
-    </li>
+  const nav = groups.map(g => `
+    <div class="side-group${g.adminOnly ? ' admin-only' : ''}">${g.title}</div>
+    ${g.items.map(item => `
+      <a class="nv${activePage === item.key ? ' on' : ''}${item.adminOnly ? ' admin-only' : ''}" href="${item.href}" title="${item.label}"${activePage === item.key ? ' aria-current="page"' : ''}>
+        <i class="bi ${item.icon}"></i><span>${item.label}</span>${item.key === 'prebookings' ? '<span class="badge d-none" id="nav-prebook-badge"></span>' : ''}
+      </a>`).join('')}
   `).join('');
 
+  // Wire up the phone menu once the markup is in the page.
+  document.body.classList.add('with-sidebar');
+  // Desktop: full sidebar on wide screens, icon rail on narrower ones; the toggle remembers the choice.
+  let railPref = null;
+  try { railPref = localStorage.getItem('sideRail'); } catch (_) {}
+  const rail = railPref === null ? window.innerWidth < 1500 : railPref === '1';
+  document.body.classList.toggle('side-rail', rail);
+  setTimeout(() => {
+    const side = document.getElementById('side-menu');
+    const scrim = document.getElementById('side-scrim');
+    const burger = document.getElementById('side-burger');
+    const sub = document.getElementById('nav-carpark-sub');
+    if (sub) {
+      let cached = null;
+      try { cached = sessionStorage.getItem('carparkName'); } catch (_) {}
+      if (cached) sub.textContent = cached;
+      else fetch('/api/dashboard/carpark-info').then(r => r.ok ? r.json() : null).then(cp => {
+        if (cp && cp.name) { sub.textContent = cp.name; try { sessionStorage.setItem('carparkName', cp.name); } catch (_) {} }
+      }).catch(() => {});
+    }
+    const railBtn = document.getElementById('side-toggle');
+    if (railBtn) railBtn.addEventListener('click', () => {
+      const on = !document.body.classList.contains('side-rail');
+      document.body.classList.toggle('side-rail', on);
+      try { localStorage.setItem('sideRail', on ? '1' : '0'); } catch (_) {}
+    });
+    if (!side || !burger) return;
+    const toggle = (open) => {
+      side.classList.toggle('open', open);
+      scrim.classList.toggle('open', open);
+      burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    burger.addEventListener('click', () => toggle(!side.classList.contains('open')));
+    scrim.addEventListener('click', () => toggle(false));
+  }, 0);
+
   return `
-    <nav class="navbar navbar-expand-lg navbar-dark">
-      <div class="container-fluid">
-        <a class="navbar-brand" href="/menu.html">
-          <i class="bi bi-p-square-fill"></i> CAR STORAGE
-        </a>
-        <div class="d-flex align-items-center gap-2 me-2">
-          <span class="navbar-cars-count" id="nav-cars-count">-- Cars</span>
-        </div>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navMenu">
-          <ul class="navbar-nav me-auto flex-wrap">
-            ${links}
-          </ul>
-          <div class="d-flex align-items-center gap-2">
-            <span class="text-white-50 small">
-              <i class="bi bi-person-circle"></i>
-              <span id="nav-user-name">User</span>
-              <small class="ms-1 text-warning" id="nav-user-role"></small>
-            </span>
-            <button class="btn btn-sm btn-outline-light" onclick="logout()">
-              <i class="bi bi-box-arrow-right"></i>
-            </button>
-          </div>
-        </div>
+    <div class="side-top">
+      <button class="side-burger" id="side-burger" aria-label="Open menu" aria-expanded="false"><i class="bi bi-list"></i></button>
+      <a class="side-brand" href="/menu.html" style="padding:0"><span class="side-logo">P</span></a>
+      <span class="ttl">CAR STORAGE</span>
+      <span class="navbar-cars-count" id="nav-cars-count-top"></span>
+    </div>
+    <div class="side-scrim" id="side-scrim"></div>
+    <nav class="side" id="side-menu" aria-label="Main">
+      <a class="side-brand" href="/menu.html">
+        <span class="side-logo">P</span>
+        <span><span class="side-name d-block">CAR STORAGE</span><span class="side-sub" id="nav-carpark-sub">Yard</span></span>
+      </a>
+      <div class="side-yard"><span>In yard</span><span class="navbar-cars-count" id="nav-cars-count">--</span></div>
+      ${nav}
+      <button class="side-toggle" id="side-toggle" type="button" title="Shrink or expand the menu"><i class="bi bi-chevron-bar-left"></i><span class="lbl">Shrink menu</span></button>
+      <div class="side-user">
+        <span class="side-avatar" id="nav-user-avatar">?</span>
+        <div class="who"><span id="nav-user-name">User</span><small id="nav-user-role"></small></div>
+        <button class="side-out" onclick="logout()" title="Log out" aria-label="Log out"><i class="bi bi-box-arrow-right"></i><span class="lbl"> Log out</span></button>
       </div>
     </nav>
   `;

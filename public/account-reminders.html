@@ -8,20 +8,20 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link href="/css/style.css" rel="stylesheet">
   <style>
-    .rv-card { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start; }
-    .rv-card.sel { border: 2px solid #1a5276; padding: 13px 15px; }
-    .rv-pick { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: #16232e; cursor: pointer; }
+    .rv-card { background: #fff; border: 1px solid #E1E1DA; border-radius: 12px; padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start; }
+    .rv-card.sel { border: 2px solid #141414; padding: 13px 15px; }
+    .rv-pick { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: #141414; cursor: pointer; }
     .rv-pill { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; }
-    .rv-badge { background: #e6edf2; color: #1a5276; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
-    .rv-muted { color: #52616e; font-size: 13px; }
-    .rv-panel { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; overflow: hidden; }
-    .rv-panel-head { padding: 14px 20px; background: #f7f9fa; border-bottom: 1px solid #d9e1e7; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; }
-    .rv-label { font-size: 12px; font-weight: 700; color: #52616e; text-transform: uppercase; letter-spacing: .05em; }
-    .rv-chip { border-radius: 999px; padding: 9px 15px; border: 1px solid #b8c4cd; background: #fff; font-weight: 600; min-height: 42px; cursor: pointer; }
-    .rv-chip.on { background: #1a5276; color: #fff; border-color: #1a5276; }
-    .rv-frame { width: 100%; height: 560px; border: 1px solid #e0e7ec; border-radius: 10px; background: #fff; }
-    .rv-check { width: 22px; height: 22px; margin-top: 2px; accent-color: #1a5276; flex: none; cursor: pointer; }
-    .rv-attach { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #b8c4cd; border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 600; background: #fff; }
+    .rv-badge { background: #ECECE6; color: #141414; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
+    .rv-muted { color: #5D5D57; font-size: 13px; }
+    .rv-panel { background: #fff; border: 1px solid #E1E1DA; border-radius: 12px; overflow: hidden; }
+    .rv-panel-head { padding: 14px 20px; background: #F6F6F2; border-bottom: 1px solid #E1E1DA; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; }
+    .rv-label { font-size: 12px; font-weight: 700; color: #5D5D57; text-transform: uppercase; letter-spacing: .05em; }
+    .rv-chip { border-radius: 999px; padding: 9px 15px; border: 1px solid #BDBDB3; background: #fff; font-weight: 600; min-height: 42px; cursor: pointer; }
+    .rv-chip.on { background: #FFC72C; color: #141414; border-color: #141414; font-weight: 800; }
+    .rv-frame { width: 100%; height: 560px; border: 1px solid #E1E1DA; border-radius: 10px; background: #fff; }
+    .rv-check { width: 22px; height: 22px; margin-top: 2px; accent-color: #141414; flex: none; cursor: pointer; }
+    .rv-attach { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #BDBDB3; border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 600; background: #fff; }
   </style>
 </head>
 <body>
@@ -31,7 +31,7 @@
     <div class="page-header">
       <div>
         <h2 class="mb-0"><i class="bi bi-envelope-check me-2"></i>Emails to review</h2>
-        <div class="rv-muted mt-1">Invoices first, then the monthly statement &nbsp;·&nbsp; <strong style="color:#16232e">nothing is sent until you approve it</strong></div>
+        <div class="rv-muted mt-1">Invoices first, then the monthly statement &nbsp;·&nbsp; <strong style="color:#141414">nothing is sent until you approve it</strong></div>
       </div>
       <div class="d-flex flex-wrap gap-2">
         <a href="/accounts.html" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Accounts</a>
@@ -107,7 +107,7 @@
       { id: 'reminder',  label: 'Reminders & overdue notices', kinds: ['early', 'overdue'] },
     ];
     const PILL = {
-      invoice:   { style: 'background:#e3eef7;color:#1a4f78' },
+      invoice:   { style: 'background:#ECECE6;color:#141414' },
       statement: { style: 'background:#ece7f6;color:#4b2f86' },
       early:     { style: 'background:#fff0d6;color:#8a4b00' },
       overdue:   { style: 'background:#fde8e6;color:#9b1c11' },
@@ -242,7 +242,7 @@
       document.getElementById('pv-to').textContent = p.to || 'no billing email on file';
       document.getElementById('pv-subject').textContent = p.subject;
       document.getElementById('pv-frame').srcdoc = p.html;
-      document.getElementById('pv-attach').innerHTML = (p.attachNames || []).map((n) => `<span class="rv-attach"><i class="bi bi-file-earmark-pdf" style="color:#1a5276"></i>${escapeHtml(n)}</span>`).join('');
+      document.getElementById('pv-attach').innerHTML = (p.attachNames || []).map((n) => `<span class="rv-attach"><i class="bi bi-file-earmark-pdf" style="color:#141414"></i>${escapeHtml(n)}</span>`).join('');
       const warn = document.getElementById('pv-warn');
       warn.classList.toggle('d-none', !d.warning);
       warn.textContent = d.warning || '';

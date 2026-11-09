@@ -13,25 +13,25 @@
 
   <style>
     .ltv-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 18px; }
-    .ltv-card { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; padding: 16px 18px; }
-    .ltv-card .lbl { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #52616e; text-transform: uppercase; letter-spacing: .05em; }
+    .ltv-card { background: #fff; border: 1px solid #E1E1DA; border-radius: 12px; padding: 16px 18px; }
+    .ltv-card .lbl { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #5D5D57; text-transform: uppercase; letter-spacing: .05em; }
     .ltv-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
     .ltv-card .num { font-size: 30px; font-weight: 700; line-height: 1.2; margin-top: 4px; }
-    .ltv-card .num small { font-size: 14px; font-weight: 500; color: #52616e; }
-    .ltv-card .sub { color: #52616e; }
-    .ltv-toolbar { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 18px; }
-    .ltv-chip { border-radius: 999px; padding: 8px 14px; border: 1px solid #b8c4cd; background: #fff; font-weight: 600; font-size: 14px; min-height: 40px; cursor: pointer; }
-    .ltv-chip.active { background: #1a5276; color: #fff; border-color: #1a5276; }
-    .ltv-table { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; overflow-x: auto; }
-    .ltv-row { display: grid; grid-template-columns: 1.5fr 1.7fr 1fr 1.2fr 1fr 1.3fr 1.5fr; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #e6ecf0; align-items: center; min-width: 1180px; }
+    .ltv-card .num small { font-size: 14px; font-weight: 500; color: #5D5D57; }
+    .ltv-card .sub { color: #5D5D57; }
+    .ltv-toolbar { background: #fff; border: 1px solid #E1E1DA; border-radius: 12px; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .ltv-chip { border-radius: 999px; padding: 8px 14px; border: 1px solid #BDBDB3; background: #fff; font-weight: 600; font-size: 14px; min-height: 40px; cursor: pointer; }
+    .ltv-chip.active { background: #FFC72C; color: #141414; border-color: #141414; font-weight: 800; }
+    .ltv-table { background: #fff; border: 1px solid #E1E1DA; border-radius: 12px; overflow-x: auto; }
+    .ltv-row { display: grid; grid-template-columns: 1.5fr 1.7fr 1fr 1.2fr 1fr 1.3fr 1.5fr; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #ECECE6; align-items: center; min-width: 1180px; }
     .ltv-row:last-child { border-bottom: 0; }
-    .ltv-head { background: #f7f9fa; font-size: 12px; font-weight: 700; color: #52616e; text-transform: uppercase; letter-spacing: .05em; border-radius: 12px 12px 0 0; }
+    .ltv-head { background: #F6F6F2; font-size: 12px; font-weight: 700; color: #5D5D57; text-transform: uppercase; letter-spacing: .05em; border-radius: 12px 12px 0 0; }
     .ltv-pill { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 700; }
-    .ltv-bar { height: 8px; border-radius: 99px; background: #e3e9ee; overflow: hidden; }
+    .ltv-bar { height: 8px; border-radius: 99px; background: #E1E1DA; overflow: hidden; }
     .ltv-bar > div { height: 8px; border-radius: 99px; }
-    .ltv-ltbadge { background: #e6edf2; color: #1a5276; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
-    .ltv-muted { color: #52616e; font-size: 13px; }
-    .ltv-name { background: none; border: 0; padding: 0; font-weight: 700; font-size: 15px; color: #16232e; text-align: left; cursor: pointer; }
+    .ltv-ltbadge { background: #ECECE6; color: #141414; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
+    .ltv-muted { color: #5D5D57; font-size: 13px; }
+    .ltv-name { background: none; border: 0; padding: 0; font-weight: 700; font-size: 15px; color: #141414; text-align: left; cursor: pointer; }
     .ltv-name:hover { text-decoration: underline; }
   </style>
 
@@ -142,7 +142,7 @@
               <div class="small mt-2 d-none" id="lt-term-basis-wrap">Count the term from:
                 <select class="form-select form-select-sm d-inline-block w-auto ms-1" id="lt-term-basis"></select>
               </div>
-              <div class="small fw-semibold mt-1" id="lt-term-result" style="color:#1a5276"></div>
+              <div class="small fw-semibold mt-1" id="lt-term-result" style="color:#141414"></div>
               <div class="small text-muted mt-1">Prepay for 3/6/12 months is <strong>auto-spread</strong> across the contract for monthly reports.</div>
             </div>
             <div class="col-md-4">
@@ -417,9 +417,9 @@
     const BUCKET = {
       overdue:  { pill: 'background:#fde8e6;color:#9b1c11', bar: '#b42318', btn: 'btn-danger',            dot: '#b42318', label: 'Overdue' },
       soon:     { pill: 'background:#fff0d6;color:#8a4b00', bar: '#b45309', btn: 'btn-primary',           dot: '#b45309', label: 'Due in 14 days' },
-      upcoming: { pill: 'background:#e3eef7;color:#1a4f78', bar: '#1a5276', btn: 'btn-outline-primary',  dot: '#1a5276', label: 'Coming up' },
+      upcoming: { pill: 'background:#ECECE6;color:#141414', bar: '#141414', btn: 'btn-outline-primary',  dot: '#141414', label: 'Coming up' },
       paid:     { pill: 'background:#e3f4ea;color:#17603a', bar: '#1e7a46', btn: 'btn-outline-secondary', dot: '#1e7a46', label: 'Paid up' },
-      none:     { pill: 'background:#eceff1;color:#455560', bar: '#8a99a5', btn: 'btn-outline-secondary', dot: '#8a99a5', label: 'No payment info' },
+      none:     { pill: 'background:#ECECE6;color:#5D5D57', bar: '#85857d', btn: 'btn-outline-secondary', dot: '#85857d', label: 'No payment info' },
     };
     const ACTION_LABEL = { overdue: 'Send overdue notice', soon: 'Send payment request', upcoming: 'Send payment request', paid: 'Send payment request', none: 'Send payment request' };
 

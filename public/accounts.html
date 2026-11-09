@@ -13,32 +13,32 @@
 
   <style>
     .acv-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 18px; }
-    .acv-card { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; padding: 16px 18px; }
-    .acv-card .lbl { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #52616e; text-transform: uppercase; letter-spacing: .05em; }
+    .acv-card { background: #fff; border: 1px solid #E1E1DA; border-radius: 12px; padding: 16px 18px; }
+    .acv-card .lbl { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #5D5D57; text-transform: uppercase; letter-spacing: .05em; }
     .acv-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
     .acv-card .num { font-size: 30px; font-weight: 700; line-height: 1.2; margin-top: 4px; }
-    .acv-card .num small { font-size: 14px; font-weight: 500; color: #52616e; }
-    .acv-card .sub { color: #52616e; }
-    .acv-toolbar { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 18px; }
-    .acv-chip { border-radius: 999px; padding: 8px 14px; border: 1px solid #b8c4cd; background: #fff; font-weight: 600; font-size: 14px; min-height: 40px; cursor: pointer; }
-    .acv-chip.active { background: #1a5276; color: #fff; border-color: #1a5276; }
-    .acv-table { background: #fff; border: 1px solid #d9e1e7; border-radius: 12px; overflow-x: auto; }
-    .acv-row { display: grid; grid-template-columns: 1.5fr 0.9fr 1.4fr 2fr 1.1fr 1.3fr 1.4fr; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #e6ecf0; align-items: center; min-width: 1180px; }
+    .acv-card .num small { font-size: 14px; font-weight: 500; color: #5D5D57; }
+    .acv-card .sub { color: #5D5D57; }
+    .acv-toolbar { background: #fff; border: 1px solid #E1E1DA; border-radius: 12px; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .acv-chip { border-radius: 999px; padding: 8px 14px; border: 1px solid #BDBDB3; background: #fff; font-weight: 600; font-size: 14px; min-height: 40px; cursor: pointer; }
+    .acv-chip.active { background: #FFC72C; color: #141414; border-color: #141414; font-weight: 800; }
+    .acv-table { background: #fff; border: 1px solid #E1E1DA; border-radius: 12px; overflow-x: auto; }
+    .acv-row { display: grid; grid-template-columns: 1.5fr 0.9fr 1.4fr 2fr 1.1fr 1.3fr 1.4fr; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #ECECE6; align-items: center; min-width: 1180px; }
     .acv-row:last-child { border-bottom: 0; }
-    .acv-head { background: #f7f9fa; font-size: 12px; font-weight: 700; color: #52616e; text-transform: uppercase; letter-spacing: .05em; border-radius: 12px 12px 0 0; }
+    .acv-head { background: #F6F6F2; font-size: 12px; font-weight: 700; color: #5D5D57; text-transform: uppercase; letter-spacing: .05em; border-radius: 12px 12px 0 0; }
     .acv-pill { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 700; }
-    .acv-badge { background: #e6edf2; color: #1a5276; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
+    .acv-badge { background: #ECECE6; color: #141414; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
     .acv-inv { display: inline-block; border-radius: 6px; padding: 3px 9px; font-size: 13px; font-weight: 600; }
-    .acv-muted { color: #52616e; font-size: 13px; }
+    .acv-muted { color: #5D5D57; font-size: 13px; }
     .acv-sum { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-    .acv-toggle { background: none; border: 0; padding: 0; font-size: 13px; font-weight: 600; color: #1a5276; cursor: pointer; }
+    .acv-toggle { background: none; border: 0; padding: 0; font-size: 13px; font-weight: 600; color: #141414; cursor: pointer; }
     .acv-toggle:hover { text-decoration: underline; }
-    .acv-detail { background: #f7f9fa; border-bottom: 1px solid #e6ecf0; padding: 8px 20px 14px; min-width: 1180px; }
+    .acv-detail { background: #F6F6F2; border-bottom: 1px solid #ECECE6; padding: 8px 20px 14px; min-width: 1180px; }
     .acv-detail table { width: 100%; max-width: 820px; border-collapse: collapse; font-size: 13px; }
-    .acv-detail th { color: #52616e; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 6px 12px 6px 0; text-align: left; }
-    .acv-detail td { padding: 6px 12px 6px 0; border-top: 1px solid #e0e7ec; }
+    .acv-detail th { color: #5D5D57; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 6px 12px 6px 0; text-align: left; }
+    .acv-detail td { padding: 6px 12px 6px 0; border-top: 1px solid #E1E1DA; }
     .acv-detail td.num, .acv-detail th.num { text-align: right; padding-right: 0; }
-    .acv-name { background: none; border: 0; padding: 0; font-weight: 700; font-size: 15px; color: #16232e; text-align: left; cursor: pointer; }
+    .acv-name { background: none; border: 0; padding: 0; font-weight: 700; font-size: 15px; color: #141414; text-align: left; cursor: pointer; }
     .acv-name:hover { text-decoration: underline; }
   </style>
 
@@ -249,7 +249,7 @@
     // ── Overview: who owes what, and how old ────────────────────────────────
     const BUCKET = {
       overdue:  { pill: 'background:#fde8e6;color:#9b1c11', chip: 'background:#fde8e6;color:#9b1c11', btn: 'btn-danger', dot: '#b42318' },
-      upcoming: { pill: 'background:#e3eef7;color:#1a4f78', chip: 'background:#e3eef7;color:#1a4f78', btn: 'btn-outline-primary', dot: '#1a5276' },
+      upcoming: { pill: 'background:#ECECE6;color:#141414', chip: 'background:#ECECE6;color:#141414', btn: 'btn-outline-primary', dot: '#141414' },
       paid:     { pill: 'background:#e3f4ea;color:#17603a', chip: 'background:#e3f4ea;color:#17603a', btn: 'btn-outline-secondary', dot: '#1e7a46' },
     };
     const UNSENT_CHIP = 'background:#fff0d6;color:#6f3a00;border:1px dashed #b45309';
@@ -295,7 +295,7 @@
         { dot: BUCKET.overdue.dot, label: 'Overdue', n: s.overdue.count, unit: s.overdue.count === 1 ? 'account' : 'accounts', sub: `${money(s.overdue.amount)} to collect` },
         { dot: BUCKET.upcoming.dot, label: s.nextDue.date ? `Falls due ${fmtS(s.nextDue.date)}` : 'Next due', n: money(s.nextDue.amount), unit: '', sub: s.nextDue.date ? 'invoices not yet due' : 'nothing coming up' },
         { dot: '#b45309', label: 'Invoices to send', n: s.toSend.count, unit: s.toSend.count === 1 ? 'invoice' : 'invoices', sub: `${money(s.toSend.amount)} not yet emailed` },
-        { dot: '#8a99a5', label: 'Total owing', n: money(s.owing.amount), unit: '', sub: `across ${s.owing.accounts} account${s.owing.accounts === 1 ? '' : 's'}` },
+        { dot: '#85857d', label: 'Total owing', n: money(s.owing.amount), unit: '', sub: `across ${s.owing.accounts} account${s.owing.accounts === 1 ? '' : 's'}` },
       ];
       document.getElementById('ac-cards').innerHTML = cardDefs.map((c) => `
         <div class="acv-card">

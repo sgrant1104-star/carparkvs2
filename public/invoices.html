@@ -150,6 +150,8 @@
 
     async function init() {
       await checkAuth();
+      const qs = new URLSearchParams(location.search).get('search');
+      if (qs) document.getElementById('inv-search').value = qs;
       await loadInvoices(false);
       updateNavCarsCount();
     }
