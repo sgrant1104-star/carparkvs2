@@ -20,6 +20,8 @@
     .hrow .who { flex:1; min-width:0; }
     .hrow .who small { color:var(--muted); margin-left:6px; }
     .hrow .no { color:var(--muted); font-weight:600; width:56px; flex:none; font-variant-numeric:tabular-nums; }
+    .keytag { display:inline-flex; align-items:center; gap:5px; background:var(--ink); color:var(--yellow); border-radius:8px; padding:3px 10px; font-weight:800; font-size:.8rem; white-space:nowrap; flex:none; min-width:64px; justify-content:center; }
+    .keytag.none { background:#ECECE6; color:var(--muted); }
     .home-jump { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
     .home-jump a { display:flex; align-items:center; gap:8px; border:1.5px solid var(--line); border-radius:12px; padding:10px 12px; font-weight:700; font-size:.88rem; color:var(--ink); text-decoration:none; }
     .home-jump a:hover { border-color:var(--ink); background:var(--yellow-soft); }
@@ -157,6 +159,12 @@
       });
     })();
 
+    function keyTag(inv) {
+      if (inv.no_key) return '<span class="keytag none" title="No key">No key</span>';
+      if (inv.key_number) return `<span class="keytag" title="Key box number"><i class="bi bi-key-fill"></i>${escapeHtml(String(inv.key_number))}</span>`;
+      return '<span class="keytag none">&mdash;</span>';
+    }
+
     async function loadMenuData() {
       const user = await checkAuth();
       if (!user) return;
@@ -209,6 +217,7 @@
         <div class="hrow">
           <span class="no">${inv.invoice_number}</span>
           <div class="who"><strong>${escapeHtml(inv.first_name||'')} ${escapeHtml(inv.last_name||'')}</strong><small>${escapeHtml(inv.rego||'')}</small></div>
+          ${keyTag(inv)}
           <strong>${formatCurrency(inv.total_price)}</strong>
           ${statusBadge(inv.paid_status)}
           <a href="/invoice.html?id=${inv.id}" class="btn btn-sm btn-outline-secondary btn-action">Edit</a>
@@ -226,6 +235,7 @@
           <div class="hrow">
             <span class="tm">${inv.return_time ? escapeHtml(String(inv.return_time).slice(0,5)) : 'TBC'}</span>
             <div class="who"><strong>${escapeHtml(inv.first_name||'')} ${escapeHtml(inv.last_name||'')}</strong><small>${escapeHtml(inv.rego||'')}</small></div>
+            ${keyTag(inv)}
             ${statusBadge(inv.paid_status)}
             <a href="/returns.html" class="btn btn-sm btn-primary btn-action">Pick up</a>
           </div>
