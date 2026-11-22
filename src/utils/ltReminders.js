@@ -74,15 +74,19 @@ function computeStatus(customer, payments, todayYmd) {
       months: best.rows.length,
       totalExGst: round2(best.rows.reduce((s, r) => s + (parseFloat(r.amount_ex_gst) || 0), 0)),
     };
-    // One payment can settle more than one year (e.g. last year's unpaid term plus this
-    // year's, banked together). Its total is then NOT the price of a single term, so a
-    // renewal must use the contract's own yearly price instead of the combined amount.
+    // Renewal price. "Same as last time" is right when the last payment was one ordinary
+    // term at the contract price. It is wrong when one payment settled several terms at
+    // once (total far above one term), or when the latest term was paid at a different
+    // (e.g. older/lower) rate than the contract amount now on record. In both cases a
+    // full-length term renews at the contract amount, which is the price staff maintain.
     const contractPrice = customer.contract_amount != null && customer.contract_amount !== '' ? parseFloat(customer.contract_amount) : null;
-    if (contractPrice > 0 && contractStart && contractEnd && lastTerm.totalExGst > contractPrice * 1.5) {
+    if (contractPrice > 0 && contractStart && contractEnd) {
       let contractMonths = null;
       for (let n = 1; n <= 36; n++) if (addMonthsYmd(contractStart, n) === contractEnd) { contractMonths = n; break; }
-      if (contractMonths && contractMonths === lastTerm.months) {
-        lastTerm = { months: contractMonths, totalExGst: round2(contractPrice), paidCoveredMoreThanOneTerm: true, paidTotalExGst: lastTerm.totalExGst };
+      const termMonths = contractMonths ? Math.min(contractMonths, 12) : null;
+      if (termMonths && lastTerm.months >= termMonths
+          && (lastTerm.totalExGst > contractPrice * 1.5 || (lastTerm.months === termMonths && lastTerm.totalExGst < contractPrice * 0.95))) {
+        lastTerm = { months: termMonths, totalExGst: round2(contractPrice), paidTotalExGst: lastTerm.totalExGst, usedContractPrice: true };
       }
     }
   } else if (contractStart) {

@@ -163,7 +163,16 @@
       const pays = [];
       for (let i = 0; i < 12; i++) pays.push({ id: i + 1, payment_date: new Date(Date.UTC(2025, 11 + i, 1)).toISOString().slice(0, 10), amount_ex_gst: i === 11 ? 252.12 : 252.08, payment_batch_id: 'b1' });
       const st = R.computeStatus({ contract_amount: 1375, contract_start_date: '2025-12-01', expiry_date: '2026-12-01' }, pays, '2026-11-22');
-      assert(st.nextAmountInc === 1581.25 && st.lastTerm.paidCoveredMoreThanOneTerm, 'a two-year payment renews at the yearly contract price, not the combined amount');
+      assert(st.nextAmountInc === 1581.25 && st.lastTerm.usedContractPrice, 'a two-year payment renews at the yearly contract price, not the combined amount');
+    }
+    // The latest full term was paid at an older, lower rate than the contract amount now on record.
+    {
+      const pays = [];
+      for (let i = 0; i < 12; i++) pays.push({ id: i + 1, payment_date: new Date(Date.UTC(2025, 11 + i, 1)).toISOString().slice(0, 10), amount_ex_gst: i === 11 ? 114.62 : 114.58, payment_batch_id: 'b2' });
+      const st = R.computeStatus({ contract_amount: 1650, contract_start_date: '2025-12-01', expiry_date: '2026-12-01' }, pays, '2026-11-22');
+      assert(st.nextAmountInc === 1897.5, 'a full term paid below the contract amount renews at the contract amount');
+      const same = R.computeStatus({ contract_amount: 1375, contract_start_date: '2025-12-01', expiry_date: '2026-12-01' }, pays, '2026-11-22');
+      assert(same.nextAmountInc === 1581.25 && !same.lastTerm.usedContractPrice, 'a term paid at the contract amount is left alone');
     }
   } finally {
     if (created.length) {
