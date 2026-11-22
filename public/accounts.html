@@ -396,6 +396,9 @@
             <div class="d-flex gap-2 justify-content-end flex-wrap">
               <button type="button" class="btn btn-sm ${act.cls}" data-act="go" data-id="${a.id}">${act.label}</button>
               ${st.owing > 0 ? `<button type="button" class="btn btn-sm btn-outline-success" data-act="pay" data-id="${a.id}">Record payment</button>` : ''}
+              ${a.onHold
+                ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-act="release" data-id="${a.id}">Release hold</button>`
+                : (st.overdueAmt > 0 ? `<button type="button" class="btn btn-sm btn-outline-danger" data-act="hold" data-id="${a.id}" title="Stops new on-account bookings until what is overdue has been paid">Put on hold…</button>` : '')}
               <button type="button" class="btn btn-sm btn-outline-secondary" data-act="edit" data-id="${a.id}">Edit</button>
             </div>
           </div>${detail}`;
