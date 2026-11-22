@@ -74,6 +74,17 @@ function computeStatus(customer, payments, todayYmd) {
       months: best.rows.length,
       totalExGst: round2(best.rows.reduce((s, r) => s + (parseFloat(r.amount_ex_gst) || 0), 0)),
     };
+    // One payment can settle more than one year (e.g. last year's unpaid term plus this
+    // year's, banked together). Its total is then NOT the price of a single term, so a
+    // renewal must use the contract's own yearly price instead of the combined amount.
+    const contractPrice = customer.contract_amount != null && customer.contract_amount !== '' ? parseFloat(customer.contract_amount) : null;
+    if (contractPrice > 0 && contractStart && contractEnd && lastTerm.totalExGst > contractPrice * 1.5) {
+      let contractMonths = null;
+      for (let n = 1; n <= 36; n++) if (addMonthsYmd(contractStart, n) === contractEnd) { contractMonths = n; break; }
+      if (contractMonths && contractMonths === lastTerm.months) {
+        lastTerm = { months: contractMonths, totalExGst: round2(contractPrice), paidCoveredMoreThanOneTerm: true, paidTotalExGst: lastTerm.totalExGst };
+      }
+    }
   } else if (contractStart) {
     nextDue = contractStart;
     // Nothing paid yet: what they owe is the contract as written (its own length and price).

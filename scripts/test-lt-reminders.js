@@ -158,6 +158,13 @@
     assert(/Invoice 1 of 2/.test(two.html) && /Invoice 2 of 2/.test(two.html) && /\$3,795\.00/.test(two.html) && /1 January 2026/.test(two.html), 'email lays out two invoices and the total');
     assert(/payment outstanding/.test(two.subject) && !/keep your space/.test(two.subject), 'wording is "outstanding", not a renewal offer');
     assert(R.cleanExtraTerms('[{"from":"bad","months":12},{"from":"2026-01-01","months":99},{"from":"2026-01-01","months":3}]').length === 1, 'junk extra terms are ignored');
+    // One payment that settled two years at once must not become the renewal price.
+    {
+      const pays = [];
+      for (let i = 0; i < 12; i++) pays.push({ id: i + 1, payment_date: new Date(Date.UTC(2025, 11 + i, 1)).toISOString().slice(0, 10), amount_ex_gst: i === 11 ? 252.12 : 252.08, payment_batch_id: 'b1' });
+      const st = R.computeStatus({ contract_amount: 1375, contract_start_date: '2025-12-01', expiry_date: '2026-12-01' }, pays, '2026-11-22');
+      assert(st.nextAmountInc === 1581.25 && st.lastTerm.paidCoveredMoreThanOneTerm, 'a two-year payment renews at the yearly contract price, not the combined amount');
+    }
   } finally {
     if (created.length) {
       await db.prepare(`DELETE FROM lt_reminders WHERE longterm_customer_id IN (${created.join(',')})`).run();
